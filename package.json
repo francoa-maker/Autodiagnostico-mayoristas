@@ -1,0 +1,29 @@
+{
+  "name": "autodiagnostico-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "db:migrate": "node scripts/run_migrations.js",
+    "import:legacy:dry-run": "node scripts/import_legacy_catalog.js --dry-run",
+    "import:legacy:apply": "node scripts/import_legacy_catalog.js --apply",
+    "capture:legacy": "node scripts/capture_legacy_catalog.js",
+    "inspect:stock": "node scripts/inspect_supabase_stock.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "pg": "^8.12.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.9",
+    "@playwright/test": "^1.48.0"
+  }
+}

@@ -1,0 +1,8 @@
+[
+  ["Orden", "Marca", "Categoría", "SKU", "Stock", "Producto", "PVP", "Dist 1 u", "Dist 4 u", "Dist 8 u", "Link publicacion", "Foto URL", "Nota", "Incluir"],
+  [1, "AUTEL", "Escáneres: Auto", "30230", 12, "Autel MaxiCOM MX900", "$1.350.000", "$1.210.000", "$1.180.000", "$1.140.000", "https://autodiagnostico.com.ar/mx900", "https://example.invalid/mx900.webp", "", "TRUE"],
+  [2, "LAUNCH", "Escáneres: Auto", "40110", 0, "Launch X431 PRO3", "Consultar", "Consultar", "Consultar", "Consultar", "", "", "Sin stock por ahora", "TRUE"],
+  [3, "OTRAS MARCAS", "Adaptadores", "", 5, "Sin SKU - no debe importarse", "$1", "$1", "$1", "$1", "", "", "", "TRUE"],
+  [4, "KONNWEI", "Testers de Baterías", "50900", 3, "Konnwei KW208", "$180.000", "$165.000", "$150.000", "", "", "", "", "FALSE"],
+  [5, "FNIRSI", "Osciloscopios", "60500", 20, "FNIRSI DSO152", "U$S 210", "U$S 195", "U$S 185", "U$S 175", "", "", "Incluye puntas", "TRUE"]
+]

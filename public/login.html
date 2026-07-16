@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autodiagnóstico - Acceso distribuidores</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <div class="login-shell">
+      <div class="login-card">
+        <div class="login-mark">Auto<span>diagnostico</span></div>
+        <div class="login-eyebrow">Portal de distribuidores</div>
+        <div class="login-title"><strong>Acceso exclusivo para distribuidores autorizados</strong>Iniciá sesión con tu cuenta de Google para ver catálogo, precios y stock.</div>
+        <a class="google-btn" href="/auth/google">
+          <svg class="google-g" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.6 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.6 6.1 29.6 4 24 4 16.3 4 9.6 8.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-1.9 14.1-5.1l-6.5-5.4C29.6 36.4 26.9 37 24 37c-5.3 0-9.7-3.1-11.3-7.6l-6.6 5C9.5 40.6 16.2 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.5 5.4C41.4 36 45 30.5 45 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+          Continuar con Google
+        </a>
+        <p id="loginError" class="login-error"></p>
+        <div class="login-fine">Solo cuentas registradas por tu empresa. Al continuar, un administrador debe aprobar tu acceso antes de ver precios.</div>
+      </div>
+    </div>
+    <script>
+      const messages = {
+        google_not_configured: "Faltan cargar las credenciales de Google en el servidor.",
+        missing_code: "Google no devolvió el código de acceso.",
+        token_failed: "No se pudo validar el acceso con Google.",
+        profile_failed: "No se pudo leer el perfil de Google.",
+        invalid_state: "La sesión de login venció. Volvé a intentar."
+      };
+      const error = new URLSearchParams(location.search).get("error");
+      if (error) {
+        const el = document.getElementById("loginError");
+        el.textContent = messages[error] || "No se pudo iniciar sesión.";
+        el.classList.add("visible");
+      }
+    </script>
+  </body>
+</html>

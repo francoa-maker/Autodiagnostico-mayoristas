@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.log
+snapshots/*.json
+!snapshots/.gitkeep
+coverage/
+.DS_Store
+
+# Copied handoff reference material (legacy HTML, spec excerpts) - useful
+# locally while building the importer, not meant to live in this repo.
+/reference/

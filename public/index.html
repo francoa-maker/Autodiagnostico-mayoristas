@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autodiagnóstico - Catálogo Distribuidor</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <div class="cat-app">
+      <header class="cat-header">
+        <button class="cat-logo" id="logoBtn">Auto<span>diagnostico</span></button>
+        <div class="cat-hd"></div>
+        <span class="cat-badge">Lista Distribuidor</span>
+        <div class="cat-search"><span class="si">&#128269;</span><input type="text" id="searchInput" placeholder="Buscar producto, SKU..."></div>
+        <span class="cat-freshness" id="freshness"><span class="dot"></span>Cargando...</span>
+        <button class="cart-btn" id="cartBtn">&#128722; Pedido<span class="cart-count" id="cartCount">0</span></button>
+        <a class="cat-avatar" id="avatar" href="/auth/logout" title="Cerrar sesión">--</a>
+      </header>
+
+      <div class="cat-layout">
+        <aside class="cat-sidebar">
+          <div class="cs-title">Marca</div>
+          <div id="brandList"></div>
+          <div class="cs-div"></div>
+          <div class="cs-title">Categoría</div>
+          <div id="catFilterList"></div>
+        </aside>
+
+        <main class="cat-main">
+          <div id="hubView">
+            <div class="hub-hdr">
+              <h1>Catálogo Distribuidor</h1>
+              <p id="hubDesc">Cargando...</p>
+            </div>
+            <div class="hub-grid" id="hubGrid"></div>
+          </div>
+          <div id="catalogView" style="display:none">
+            <div class="cat-hdr-row">
+              <button class="back-btn" id="backBtn">&larr; Volver</button>
+              <h2 id="catalogTitle">Todos</h2>
+              <span class="result-count" id="resultCount"></span>
+            </div>
+            <div class="tabs-row" id="catTabs"></div>
+            <div class="grid" id="productGrid"></div>
+          </div>
+        </main>
+      </div>
+      <footer style="text-align:center;padding:24px;font-size:12px;color:#9a9a9a;border-top:1px solid var(--border);margin-top:20px">
+        Autodiagnostico.com.ar &middot; Lista Distribuidor &middot; Precios en ARS salvo indicación
+      </footer>
+    </div>
+
+    <div class="cart-overlay" id="cartOverlay"></div>
+    <aside class="cart-drawer" id="cartDrawer">
+      <div class="cart-head"><h3>Tu pedido tentativo</h3><button class="cart-close" id="cartClose">&times;</button></div>
+      <div class="cart-items" id="cartItems"><div class="cart-empty">Todavía no agregaste productos.<br>Elegí cantidades desde el catálogo.</div></div>
+      <div class="cart-foot" id="cartFoot" style="display:none">
+        <div class="cart-total-row"><span>Subtotal tentativo</span><span class="tabular" id="cartTotal">$ 0</span></div>
+        <div class="cart-note">Los precios finales y la disponibilidad se confirman al enviar la solicitud de cotización.</div>
+        <button class="btn-primary" id="submitQuoteBtn">Enviar solicitud de cotización</button>
+      </div>
+    </aside>
+
+    <script type="module" src="/assets/catalog.js"></script>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Autodiagnóstico - Pendiente de aprobación</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <div class="pending-shell">
+      <div class="pending-card">
+        <div class="pending-icon">&#9203;</div>
+        <h1>Tu solicitud está pendiente de aprobación</h1>
+        <p>Un administrador de Autodiagnóstico revisa cada cuenta nueva antes de habilitar el catálogo y los precios.</p>
+        <div class="pending-email" id="pendingEmail">...</div>
+        <div class="pending-actions">
+          <a class="btn-ghost" href="/auth/logout">Salir</a>
+        </div>
+        <div class="pending-contact">¿Ya sos cliente y esto es un error? Escribinos a <a href="mailto:ventas@autodiagnostico.com.ar">ventas@autodiagnostico.com.ar</a></div>
+      </div>
+    </div>
+    <script type="module">
+      import { fetchJson } from "/assets/api.js";
+
+      async function refresh() {
+        const { user } = await fetchJson("/api/me");
+        if (!user) { location.href = "/login"; return; }
+        document.getElementById("pendingEmail").textContent = user.email;
+        if (user.status === "approved") location.href = "/";
+      }
+
+      refresh();
+      setInterval(refresh, 20000); // moderate auto-refresh, per catalog_design_spec.md
+    </script>
+  </body>
+</html>

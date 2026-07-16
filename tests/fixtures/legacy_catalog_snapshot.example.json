@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-07-16T11:45:00-03:00",
+  "source_kind": "snapshot_json",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "products": [
+    {
+      "sku": "30230",
+      "name": "AUTEL MAXICHECK MX900",
+      "brand": "AUTEL",
+      "category": "Escáneres: Auto",
+      "image_url": "https://example.invalid/images/30230.webp",
+      "publication_url": "https://autodiagnostico.com.ar/example-product",
+      "note": null,
+      "visible": true,
+      "sort_order": 10,
+      "prices": {
+        "pvp": {
+          "state": "value",
+          "amount": 1350000,
+          "currency": "ARS",
+          "label": null
+        },
+        "one": {
+          "state": "value",
+          "amount": 1210000,
+          "currency": "ARS",
+          "label": null
+        },
+        "four": {
+          "state": "value",
+          "amount": 1180000,
+          "currency": "ARS",
+          "label": null
+        },
+        "eight": {
+          "state": "value",
+          "amount": 1140000,
+          "currency": "ARS",
+          "label": null
+        }
+      }
+    }
+  ]
+}
