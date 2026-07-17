@@ -11,6 +11,10 @@ describe("parsePriceCell", () => {
     expect(parsePriceCell("$1.350.000")).toEqual({ state: "value", amount: 1350000, currency: "ARS", label: null });
   });
 
+  it("parses en-US comma thousands as emitted by the Sheet's gviz formatted values", () => {
+    expect(parsePriceCell("$ 1,350,000")).toEqual({ state: "value", amount: 1350000, currency: "ARS", label: null });
+  });
+
   it("parses a USD amount", () => {
     expect(parsePriceCell("U$S 250")).toEqual({ state: "value", amount: 250, currency: "USD", label: null });
   });

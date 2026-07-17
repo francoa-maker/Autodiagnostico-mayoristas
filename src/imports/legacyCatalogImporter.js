@@ -77,7 +77,14 @@ export function parsePriceCell(raw) {
   } else {
     numeric = numeric.replace(/^\$/, "").trim();
   }
-  numeric = numeric.replace(/\./g, "").replace(",", ".");
+  // The Sheet's gviz formatted values use en-US comma thousands
+  // ("$ 1,350,000"); anything else is treated as es-AR (dot thousands,
+  // comma decimal), matching how the legacy HTML's _toPrice read digits.
+  if (/^\d{1,3}(,\d{3})+$/.test(numeric)) {
+    numeric = numeric.replace(/,/g, "");
+  } else {
+    numeric = numeric.replace(/\./g, "").replace(",", ".");
+  }
 
   const amount = Number(numeric);
   if (!numeric || Number.isNaN(amount)) {
