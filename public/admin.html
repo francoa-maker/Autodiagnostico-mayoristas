@@ -19,6 +19,7 @@
           <a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a>
           <a data-section="clients"><span class="ic">&#128100;</span>Clientes</a>
           <a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a>
+          <a data-section="settings"><span class="ic">&#9881;</span>Configuración</a>
         </nav>
         <div class="admin-user">
           <div class="av"></div>
@@ -61,19 +62,22 @@
           </div>
 
           <div class="bottom-grid">
-            <div class="panel">
-              <h3>Productos con bajo o sin stock <span style="font-weight:400;color:var(--muted);font-size:12px">(cantidad exacta - solo admin)</span></h3>
-              <div style="overflow-x:auto">
+            <details class="panel collapsible" id="lowStockPanel">
+              <summary>
+                <span>Productos con bajo o sin stock <span class="muted-note">(cantidad exacta - solo admin)</span></span>
+                <span class="chevron">&#9662;</span>
+              </summary>
+              <div style="overflow-x:auto;margin-top:12px">
                 <table>
                   <thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead>
                   <tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
                 </table>
               </div>
-            </div>
-            <div class="panel">
-              <h3>Actividad reciente</h3>
-              <div id="auditFeed">Cargando...</div>
-            </div>
+            </details>
+            <details class="panel collapsible">
+              <summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary>
+              <div id="auditFeed" style="margin-top:12px">Cargando...</div>
+            </details>
           </div>
         </div>
 
@@ -82,14 +86,17 @@
           <div class="admin-topline">
             <div>
               <h1>Productos y precios</h1>
-              <p>Editá los precios distribuidor (1u/4u/8u), el orden y la visibilidad. El PVP y el stock se leen en vivo de la fuente externa. Precio vacío = oculto; escribí "consultar" para mostrar "Consultar".</p>
+              <p>Editá los precios distribuidor (1u/4u/8u), el orden y la visibilidad (ojito). El PVP y el stock se leen en vivo. Precio vacío = oculto; escribí "consultar" para mostrar "Consultar".</p>
             </div>
-            <input type="search" id="productSearch" class="admin-search" placeholder="Buscar por SKU, nombre o marca...">
+            <div style="display:flex;gap:10px;align-items:center">
+              <input type="search" id="productSearch" class="admin-search" placeholder="Buscar por SKU, nombre o marca...">
+              <button class="btn-primary" id="newProductBtn">+ Nuevo producto</button>
+            </div>
           </div>
           <div class="panel">
             <div style="overflow-x:auto">
               <table>
-                <thead><tr><th>Orden</th><th>SKU</th><th>Producto</th><th>Marca</th><th>1 u</th><th>4 u</th><th>8 u</th><th>Visible</th><th></th></tr></thead>
+                <thead><tr><th style="width:60px">Orden</th><th>SKU</th><th>Producto</th><th>Marca</th><th>1 u</th><th>4 u</th><th>8 u</th><th style="width:50px">Visible</th><th style="width:120px"></th></tr></thead>
                 <tbody id="productsBody"><tr><td colspan="9" class="empty-row">Cargando...</td></tr></tbody>
               </table>
             </div>
@@ -125,25 +132,57 @@
           <div class="admin-topline">
             <div>
               <h1>Cotizaciones</h1>
-              <p>Solicitudes de cotización enviadas por los distribuidores</p>
+              <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la proforma.</p>
             </div>
           </div>
-          <div class="dash-grid">
-            <div class="panel">
+          <div class="quotes-layout">
+            <div class="panel quotes-list-panel">
               <div style="overflow-x:auto">
                 <table>
-                  <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th>Subtotal exhibido</th><th>Enviada</th></tr></thead>
+                  <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Total</th><th>Enviada</th></tr></thead>
                   <tbody id="quotesBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
                 </table>
               </div>
             </div>
             <div class="panel" id="quoteDetailPanel">
-              <h3 id="quoteDetailTitle">Detalle</h3>
-              <div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver el detalle.</div>
+              <div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver y editar el detalle.</div>
             </div>
           </div>
         </div>
+
+        <!-- ==================== CONFIGURACIÓN ==================== -->
+        <div class="admin-section" id="section-settings" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Configuración</h1>
+              <p>Datos de la empresa que aparecen en la proforma que se envía a los clientes</p>
+            </div>
+          </div>
+          <div class="panel" style="max-width:640px">
+            <form id="companyForm" class="form-grid">
+              <label>Nombre comercial<input name="name" placeholder="Autodiagnóstico"></label>
+              <label>Razón social<input name="legalName" placeholder="Patagonian Tools S.A."></label>
+              <label class="full">Dirección (una línea por renglón)<textarea name="addressLines" rows="3" placeholder="Dorrego Av. 2079 Dpto 509&#10;Buenos Aires, Argentina (1414)"></textarea></label>
+              <label>Teléfono<input name="phone" placeholder="54-11-5263-5484"></label>
+              <label>Email<input name="email" placeholder="ventas@autodiagnostico.com.ar"></label>
+              <label>Sitio web<input name="website" placeholder="autodiagnostico.com.ar"></label>
+              <label>CUIT / Tax ID<input name="taxId" placeholder="30-71610175-0"></label>
+              <label class="full">URL del logo (opcional; si se deja vacío se usa el texto "Autodiagnostico")<input name="logoUrl" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label>
+              <label>Validez de la proforma (días)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label>
+              <label class="full">Texto al pie de la proforma<textarea name="proformaFooter" rows="2" placeholder="Documento no válido como factura. Precios sujetos a confirmación."></textarea></label>
+              <div class="full" style="display:flex;gap:10px;align-items:center">
+                <button type="submit" class="btn-primary">Guardar cambios</button>
+                <span id="companySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
+              </div>
+            </form>
+          </div>
+        </div>
       </main>
+    </div>
+
+    <!-- Modal genérico (nuevo producto / agregar item) -->
+    <div class="modal-overlay" id="modalOverlay" hidden>
+      <div class="modal" id="modalBox"></div>
     </div>
 
     <script type="module" src="/assets/admin.js"></script>
