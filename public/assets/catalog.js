@@ -98,7 +98,7 @@ async function loadProducts() {
               <div class="price-row"><span class="pl">8u</span><span class="pv tabular">${priceCell(eight)}</span></div>
             </div>
             <div class="qty-row">
-              <div class="qty-stepper"><button class="qminus" type="button">&minus;</button><input class="qval" value="${qty}" readonly><button class="qplus" type="button">+</button></div>
+              <div class="qty-stepper"><button class="qminus" type="button">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*"><button class="qplus" type="button">+</button></div>
               <div class="est-price">Estimado<b class="tabular estval">${money(priceFor(p, tierForQuantity(qty)).amount)}</b></div>
             </div>
             <button class="add-btn${cartEntry ? " added" : ""}">${cartEntry ? `Agregado ✓ (${qty})` : "Agregar al pedido"}</button>
@@ -237,6 +237,29 @@ document.getElementById("productGrid").addEventListener("click", (e) => {
   }
 
   qtyInput.value = qty;
+  card.querySelector(".estval").textContent = money(priceFor(product, tierForQuantity(qty)).amount);
+});
+
+document.getElementById("productGrid").addEventListener("input", (e) => {
+  const qtyInput = e.target.closest(".qval");
+  if (!qtyInput) return;
+  const digitsOnly = qtyInput.value.replace(/[^0-9]/g, "");
+  if (digitsOnly !== qtyInput.value) qtyInput.value = digitsOnly;
+
+  const card = qtyInput.closest(".pcard");
+  const product = window.__products.get(card.dataset.id);
+  const qty = parseInt(digitsOnly, 10) || 1;
+  card.querySelector(".estval").textContent = money(priceFor(product, tierForQuantity(qty)).amount);
+});
+
+document.getElementById("productGrid").addEventListener("change", (e) => {
+  const qtyInput = e.target.closest(".qval");
+  if (!qtyInput) return;
+  const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+  qtyInput.value = qty;
+
+  const card = qtyInput.closest(".pcard");
+  const product = window.__products.get(card.dataset.id);
   card.querySelector(".estval").textContent = money(priceFor(product, tierForQuantity(qty)).amount);
 });
 

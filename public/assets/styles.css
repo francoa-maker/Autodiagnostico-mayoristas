@@ -154,7 +154,7 @@ a{color:inherit}
 .qty-stepper{display:flex;align-items:center;border:1px solid var(--border);border-radius:6px;overflow:hidden}
 .qty-stepper button{width:24px;height:24px;background:#fafafa;border:none;cursor:pointer;font-size:14px;color:var(--catalog-text)}
 .qty-stepper button:hover{background:#f0f0f0}
-.qty-stepper input{width:32px;border:none;text-align:center;font-size:12.5px}
+.qty-stepper input{width:38px;border:none;text-align:center;font-size:12.5px}
 .est-price{font-size:11.5px;color:var(--muted);margin-left:auto;text-align:right}
 .est-price b{color:var(--catalog-dark);font-size:13px;display:block}
 .add-btn{width:100%;padding:8px;font-size:12px;font-weight:700;border:none;border-radius:6px;cursor:pointer;
