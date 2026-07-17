@@ -51,6 +51,59 @@ router.patch("/admin/users/:id", async (req, res) => {
   res.json({ user: result.rows[0] });
 });
 
+// Product list for the admin editor: unlike /catalog/products this includes
+// hidden/inactive products and exposes sort_order/visible for editing.
+router.get("/admin/products", async (req, res) => {
+  const params = [];
+  let where = "p.active";
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    where += ` and (p.sku ilike $${params.length} or p.name ilike $${params.length} or p.brand ilike $${params.length})`;
+  }
+  const result = await pool.query(
+    `select p.id, p.sku, p.name, p.brand, p.category, p.visible, p.sort_order,
+            coalesce(
+              jsonb_object_agg(pp.tier, jsonb_build_object('state', pp.state, 'amount', pp.amount, 'currency', pp.currency, 'label', pp.custom_label))
+                filter (where pp.tier is not null),
+              '{}'::jsonb
+            ) as prices
+     from portal.products p
+     left join portal.product_prices pp on pp.product_id = p.id
+     where ${where}
+     group by p.id
+     order by p.sort_order nulls last, p.name`,
+    params
+  );
+  res.json({ products: result.rows });
+});
+
+router.patch("/admin/products/:id", async (req, res) => {
+  const { sortOrder, visible } = req.body || {};
+  if (sortOrder === undefined && visible === undefined) return res.status(400).json({ error: "nothing_to_update" });
+  const before = await pool.query(`select * from portal.products where id = $1`, [req.params.id]);
+  if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
+
+  const result = await pool.query(
+    `update portal.products set
+       sort_order = coalesce($2, sort_order),
+       visible = coalesce($3, visible),
+       updated_at = now()
+     where id = $1
+     returning *`,
+    [req.params.id, sortOrder === undefined ? null : Number(sortOrder), visible === undefined ? null : Boolean(visible)]
+  );
+
+  await recordAudit({
+    actorUserId: req.user.id,
+    action: "product.update",
+    entityType: "product",
+    entityId: req.params.id,
+    before: { sort_order: before.rows[0].sort_order, visible: before.rows[0].visible },
+    after: { sort_order: result.rows[0].sort_order, visible: result.rows[0].visible }
+  });
+  res.json({ product: result.rows[0] });
+});
+
 router.put("/admin/products/:id/prices/:tier", async (req, res) => {
   const { tier } = req.params;
   if (tier === "pvp") return res.status(400).json({ error: "pvp_is_read_only", detail: "PVP se lee en vivo desde Supabase, no se edita desde el portal." });

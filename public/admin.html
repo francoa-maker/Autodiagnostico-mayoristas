@@ -14,16 +14,11 @@
           <div><strong>Autodiagnóstico</strong><span>Panel administrador</span></div>
         </div>
         <div class="admin-section-label">General</div>
-        <nav class="admin-nav">
-          <a class="active"><span class="ic">&#9635;</span>Dashboard</a>
-        </nav>
-        <div class="admin-section-label">Próximamente</div>
-        <nav class="admin-nav">
-          <a><span class="ic">&#128230;</span>Productos</a>
-          <a><span class="ic">&#128181;</span>Precios</a>
-          <a><span class="ic">&#127991;</span>Categorías / Marcas</a>
-          <a><span class="ic">&#128100;</span>Clientes</a>
-          <a><span class="ic">&#9881;</span>Configuración</a>
+        <nav class="admin-nav" id="adminNav">
+          <a class="active" data-section="dashboard"><span class="ic">&#9635;</span>Dashboard</a>
+          <a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a>
+          <a data-section="clients"><span class="ic">&#128100;</span>Clientes</a>
+          <a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a>
         </nav>
         <div class="admin-user">
           <div class="av"></div>
@@ -33,49 +28,119 @@
       </aside>
 
       <main class="admin-main">
-        <div class="admin-topline">
-          <div>
-            <h1>Dashboard</h1>
-            <p>Resumen general del portal</p>
+        <!-- ==================== DASHBOARD ==================== -->
+        <div class="admin-section" id="section-dashboard">
+          <div class="admin-topline">
+            <div>
+              <h1>Dashboard</h1>
+              <p>Resumen general del portal</p>
+            </div>
+            <div class="source-card" id="sourceCard">
+              <span class="source-dot" id="sourceDot"></span>
+              <div class="txt"><b id="sourceHeadline">Cargando estado de la fuente de stock...</b><span id="sourceDetail"></span></div>
+              <span class="source-pill">Solo lectura</span>
+            </div>
           </div>
-          <div class="source-card" id="sourceCard">
-            <span class="source-dot" id="sourceDot"></span>
-            <div class="txt"><b id="sourceHeadline">Cargando estado de la fuente de stock...</b><span id="sourceDetail"></span></div>
-            <span class="source-pill">Solo lectura</span>
+
+          <div class="kpi-row" id="kpiRow"></div>
+
+          <div class="dash-grid">
+            <div class="panel">
+              <h3>Usuarios pendientes de aprobación</h3>
+              <div style="overflow-x:auto">
+                <table>
+                  <thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead>
+                  <tbody id="pendingUsersBody"><tr><td colspan="4" class="empty-row">Cargando...</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Últimas cotizaciones</h3>
+              <div id="recentQuotes">Cargando...</div>
+            </div>
+          </div>
+
+          <div class="bottom-grid">
+            <div class="panel">
+              <h3>Productos con bajo o sin stock <span style="font-weight:400;color:var(--muted);font-size:12px">(cantidad exacta - solo admin)</span></h3>
+              <div style="overflow-x:auto">
+                <table>
+                  <thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead>
+                  <tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Actividad reciente</h3>
+              <div id="auditFeed">Cargando...</div>
+            </div>
           </div>
         </div>
 
-        <div class="kpi-row" id="kpiRow"></div>
-
-        <div class="dash-grid">
-          <div class="panel">
-            <h3>Usuarios pendientes de aprobación</h3>
-            <div style="overflow-x:auto">
-              <table>
-                <thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead>
-                <tbody id="pendingUsersBody"><tr><td colspan="4" class="empty-row">Cargando...</td></tr></tbody>
-              </table>
+        <!-- ==================== PRODUCTOS Y PRECIOS ==================== -->
+        <div class="admin-section" id="section-products" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Productos y precios</h1>
+              <p>Editá los precios distribuidor (1u/4u/8u), el orden y la visibilidad. El PVP y el stock se leen en vivo de la fuente externa. Precio vacío = oculto; escribí "consultar" para mostrar "Consultar".</p>
             </div>
+            <input type="search" id="productSearch" class="admin-search" placeholder="Buscar por SKU, nombre o marca...">
           </div>
           <div class="panel">
-            <h3>Últimas cotizaciones</h3>
-            <div id="recentQuotes">Cargando...</div>
+            <div style="overflow-x:auto">
+              <table>
+                <thead><tr><th>Orden</th><th>SKU</th><th>Producto</th><th>Marca</th><th>1 u</th><th>4 u</th><th>8 u</th><th>Visible</th><th></th></tr></thead>
+                <tbody id="productsBody"><tr><td colspan="9" class="empty-row">Cargando...</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <div class="bottom-grid">
+        <!-- ==================== CLIENTES ==================== -->
+        <div class="admin-section" id="section-clients" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Clientes</h1>
+              <p>Todos los usuarios registrados en el portal</p>
+            </div>
+            <select id="clientStatusFilter" class="admin-search" style="max-width:220px">
+              <option value="">Todos los estados</option>
+              <option value="pending">Pendientes</option>
+              <option value="approved">Aprobados</option>
+              <option value="rejected">Rechazados</option>
+            </select>
+          </div>
           <div class="panel">
-            <h3>Productos con bajo o sin stock <span style="font-weight:400;color:var(--muted);font-size:12px">(cantidad exacta - solo admin)</span></h3>
             <div style="overflow-x:auto">
               <table>
-                <thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead>
-                <tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
+                <thead><tr><th>Email</th><th>Nombre</th><th>Empresa</th><th>Rol</th><th>Estado</th><th>Alta</th><th>Último login</th><th></th></tr></thead>
+                <tbody id="clientsBody"><tr><td colspan="8" class="empty-row">Cargando...</td></tr></tbody>
               </table>
             </div>
           </div>
-          <div class="panel">
-            <h3>Actividad reciente</h3>
-            <div id="auditFeed">Cargando...</div>
+        </div>
+
+        <!-- ==================== COTIZACIONES ==================== -->
+        <div class="admin-section" id="section-quotes" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Cotizaciones</h1>
+              <p>Solicitudes de cotización enviadas por los distribuidores</p>
+            </div>
+          </div>
+          <div class="dash-grid">
+            <div class="panel">
+              <div style="overflow-x:auto">
+                <table>
+                  <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th>Subtotal exhibido</th><th>Enviada</th></tr></thead>
+                  <tbody id="quotesBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="panel" id="quoteDetailPanel">
+              <h3 id="quoteDetailTitle">Detalle</h3>
+              <div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver el detalle.</div>
+            </div>
           </div>
         </div>
       </main>

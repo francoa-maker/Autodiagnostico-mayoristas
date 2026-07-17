@@ -1,4 +1,4 @@
-import { fetchJson, patchJson, money } from "/assets/api.js";
+import { fetchJson, patchJson, putJson, money, STOCK_LABEL } from "/assets/api.js";
 
 function timeAgo(iso) {
   if (!iso) return "-";
@@ -155,6 +155,201 @@ async function refreshKpis() {
     pendingUsers: pendingUserCount
   });
 }
+
+// ==================== Navegación entre secciones ====================
+
+const sectionLoaders = { products: loadProducts, clients: loadClients, quotes: loadQuotes };
+const loadedSections = new Set();
+
+document.getElementById("adminNav").addEventListener("click", (e) => {
+  const link = e.target.closest("a[data-section]");
+  if (!link) return;
+  document.querySelectorAll("#adminNav a").forEach((a) => a.classList.toggle("active", a === link));
+  document.querySelectorAll(".admin-section").forEach((s) => (s.hidden = s.id !== `section-${link.dataset.section}`));
+  const loader = sectionLoaders[link.dataset.section];
+  if (loader && !loadedSections.has(link.dataset.section)) {
+    loadedSections.add(link.dataset.section);
+    loader();
+  }
+});
+
+// ==================== Productos y precios ====================
+
+function priceInputValue(price) {
+  if (!price || price.state === "hidden") return "";
+  if (price.state === "consult") return "consultar";
+  if (price.state === "custom") return price.label || "";
+  return String(price.amount ?? "");
+}
+
+// Vacío = oculto, "consultar" = Consultar, número = precio ARS,
+// cualquier otro texto = etiqueta custom (se muestra tal cual).
+function priceBodyFromInput(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return { state: "hidden", amount: null };
+  if (/^consultar$/i.test(text)) return { state: "consult", amount: null };
+  const amount = Number(text.replace(/\./g, "").replace(",", "."));
+  if (!Number.isNaN(amount) && text.match(/^[\d.,]+$/)) return { state: "value", amount, currency: "ARS" };
+  return { state: "custom", amount: null, label: text };
+}
+
+async function loadProducts() {
+  const search = document.getElementById("productSearch").value.trim();
+  const { products } = await fetchJson(`/api/admin/products${search ? `?search=${encodeURIComponent(search)}` : ""}`);
+  const body = document.getElementById("productsBody");
+  body.innerHTML =
+    products
+      .map(
+        (p) => `<tr data-id="${p.id}">
+          <td><input class="cell-input" data-field="order" type="number" value="${p.sort_order ?? ""}" style="width:64px"></td>
+          <td style="font-family:var(--font-mono)">${p.sku}</td>
+          <td>${p.name}</td>
+          <td>${p.brand}</td>
+          <td><input class="cell-input" data-field="one" value="${priceInputValue(p.prices.one)}" style="width:110px"></td>
+          <td><input class="cell-input" data-field="four" value="${priceInputValue(p.prices.four)}" style="width:110px"></td>
+          <td><input class="cell-input" data-field="eight" value="${priceInputValue(p.prices.eight)}" style="width:110px"></td>
+          <td style="text-align:center"><input data-field="visible" type="checkbox" ${p.visible ? "checked" : ""}></td>
+          <td><button class="link-btn" data-action="save">Guardar</button></td>
+        </tr>`
+      )
+      .join("") || '<tr><td colspan="9" class="empty-row">Sin resultados.</td></tr>';
+}
+
+let productSearchTimer = null;
+document.getElementById("productSearch").addEventListener("input", () => {
+  clearTimeout(productSearchTimer);
+  productSearchTimer = setTimeout(loadProducts, 350);
+});
+
+document.getElementById("productsBody").addEventListener("click", async (e) => {
+  const btn = e.target.closest('button[data-action="save"]');
+  if (!btn) return;
+  const row = btn.closest("tr");
+  const id = row.dataset.id;
+  const get = (field) => row.querySelector(`[data-field="${field}"]`);
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
+  try {
+    await patchJson(`/api/admin/products/${id}`, {
+      sortOrder: get("order").value === "" ? undefined : Number(get("order").value),
+      visible: get("visible").checked
+    });
+    for (const tier of ["one", "four", "eight"]) {
+      await putJson(`/api/admin/products/${id}/prices/${tier}`, priceBodyFromInput(get(tier).value));
+    }
+    btn.textContent = "Guardado ✓";
+    setTimeout(() => (btn.textContent = "Guardar"), 1500);
+  } catch (error) {
+    alert("No se pudo guardar: " + error.message);
+    btn.textContent = "Guardar";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ==================== Clientes ====================
+
+const ROLE_LABEL = { admin: "Admin", customer: "Cliente" };
+const STATUS_LABEL = { pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado" };
+const STATUS_PILL = { pending: "pending", approved: "approved", rejected: "rejected" };
+
+async function loadClients() {
+  const status = document.getElementById("clientStatusFilter").value;
+  const { users } = await fetchJson(`/api/admin/users${status ? `?status=${status}` : ""}`);
+  const body = document.getElementById("clientsBody");
+  body.innerHTML =
+    users
+      .map(
+        (u) => `<tr data-id="${u.id}">
+          <td>${u.email}</td>
+          <td>${u.display_name || "-"}</td>
+          <td>${u.company_name || "-"}</td>
+          <td>${ROLE_LABEL[u.role] || u.role}</td>
+          <td><span class="status-pill ${STATUS_PILL[u.status] || "pending"}">${STATUS_LABEL[u.status] || u.status}</span></td>
+          <td>${timeAgo(u.created_at)}</td>
+          <td>${timeAgo(u.last_login_at)}</td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap">
+            ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
+            ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
+            ${u.role === "customer" ? '<button class="link-btn ghost" data-action="make-admin">Hacer admin</button>' : '<button class="link-btn ghost" data-action="make-customer">Quitar admin</button>'}
+          </td>
+        </tr>`
+      )
+      .join("") || '<tr><td colspan="8" class="empty-row">No hay usuarios con ese filtro.</td></tr>';
+}
+
+document.getElementById("clientStatusFilter").addEventListener("change", loadClients);
+
+document.getElementById("clientsBody").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const id = btn.closest("tr").dataset.id;
+  const payload = {
+    approve: { status: "approved" },
+    reject: { status: "rejected" },
+    "make-admin": { role: "admin" },
+    "make-customer": { role: "customer" }
+  }[btn.dataset.action];
+  btn.disabled = true;
+  try {
+    await patchJson(`/api/admin/users/${id}`, payload);
+    await loadClients();
+  } catch (error) {
+    alert("No se pudo actualizar el usuario: " + error.message);
+    btn.disabled = false;
+  }
+});
+
+// ==================== Cotizaciones ====================
+
+const QUOTE_STATUS_LABEL = { submitted: "Enviada", quoted: "Cotizada", accepted: "Aceptada", rejected: "Rechazada", expired: "Vencida" };
+
+async function loadQuotes() {
+  const { quotes } = await fetchJson("/api/admin/quotes");
+  const body = document.getElementById("quotesBody");
+  body.innerHTML =
+    quotes
+      .map(
+        (q) => `<tr data-id="${q.id}" style="cursor:pointer">
+          <td><strong>#${q.request_number}</strong></td>
+          <td>${q.display_name || q.email}${q.company_name ? `<br><span style="color:var(--muted);font-size:11.5px">${q.company_name}</span>` : ""}</td>
+          <td><span class="status-pill ${q.status === "submitted" ? "pending" : "approved"}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span></td>
+          <td class="tabular">${money(q.displayed_subtotal)}</td>
+          <td>${timeAgo(q.submitted_at)}</td>
+        </tr>`
+      )
+      .join("") || '<tr><td colspan="5" class="empty-row">Todavía no hay cotizaciones.</td></tr>';
+}
+
+document.getElementById("quotesBody").addEventListener("click", async (e) => {
+  const row = e.target.closest("tr[data-id]");
+  if (!row) return;
+  const { quote, items } = await fetchJson(`/api/quotes/${row.dataset.id}`);
+  document.getElementById("quoteDetailTitle").textContent = `Detalle #${quote.request_number}`;
+  document.getElementById("quoteDetailBody").className = "";
+  document.getElementById("quoteDetailBody").innerHTML = `
+    ${quote.customer_notes ? `<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px"><b>Notas del cliente:</b> ${quote.customer_notes}</p>` : ""}
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>SKU</th><th>Producto</th><th>Cant.</th><th>Tier</th><th>Precio unit.</th><th>Stock al enviar</th></tr></thead>
+        <tbody>
+          ${items
+            .map(
+              (i) => `<tr>
+                <td style="font-family:var(--font-mono)">${i.sku_snapshot}</td>
+                <td>${i.product_name_snapshot}</td>
+                <td class="tabular">${i.quantity}</td>
+                <td>${{ one: "1 u", four: "4 u", eight: "8 u" }[i.pricing_tier] || i.pricing_tier}</td>
+                <td class="tabular">${money(i.quoted_unit_price)}</td>
+                <td>${STOCK_LABEL[i.stock_status_at_submit] || i.stock_status_at_submit}</td>
+              </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p style="text-align:right;margin-top:10px;font-size:14px"><b>Subtotal exhibido: ${money(quote.displayed_subtotal)}</b></p>`;
+});
 
 (async function init() {
   await loadMe();

@@ -279,3 +279,10 @@ tr:last-child td{border-bottom:none}
   .kpi-row{grid-template-columns:repeat(2,1fr)}
   .bottom-grid{grid-template-columns:1fr}
 }
+
+/* ==================== Secciones del panel admin ==================== */
+.admin-section[hidden]{display:none}
+.admin-search{padding:9px 14px;border:1px solid var(--border,#e0e0e0);border-radius:8px;font-size:13px;min-width:260px;background:#fff;outline:none}
+.admin-search:focus{border-color:var(--brand-red,#c8102e)}
+.cell-input{padding:6px 8px;border:1px solid var(--border,#e0e0e0);border-radius:6px;font-size:12.5px;font-family:var(--font-mono,monospace);outline:none}
+.cell-input:focus{border-color:var(--brand-red,#c8102e)}
