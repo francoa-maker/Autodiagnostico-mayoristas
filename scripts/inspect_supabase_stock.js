@@ -4,7 +4,11 @@
 // anything, only SELECTs from information_schema/pg_catalog and the table
 // itself (LIMIT-ed sample rows only).
 //
-// Usage: DATABASE_URL=... STOCK_TABLE=schema.table node scripts/inspect_supabase_stock.js
+// Usage: STOCK_DATABASE_URL=... STOCK_TABLE=schema.table node scripts/inspect_supabase_stock.js
+//
+// Connects to STOCK_DATABASE_URL (the Supabase project) - NOT DATABASE_URL,
+// which is the portal's own separate database and has nothing to do with
+// the stock source.
 import pg from "pg";
 
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$/;
@@ -20,15 +24,16 @@ function splitTable(qualified) {
 }
 
 async function main() {
-  if (!process.env.DATABASE_URL) {
-    console.error("DATABASE_URL no está definido.");
+  if (!process.env.STOCK_DATABASE_URL) {
+    console.error("STOCK_DATABASE_URL no está definido (la conexión a Supabase, no DATABASE_URL).");
     process.exit(1);
   }
   const qualifiedTable = assertIdentifier(process.env.STOCK_TABLE || "public.productos", "STOCK_TABLE");
   const { schema, table } = splitTable(qualifiedTable);
   const skuColumn = assertIdentifier(process.env.STOCK_COLUMN_SKU || "sku", "STOCK_COLUMN_SKU");
+  const pvpColumn = process.env.STOCK_COLUMN_PVP || "pvp";
 
-  const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  const client = new pg.Client({ connectionString: process.env.STOCK_DATABASE_URL });
   await client.connect();
 
   try {
@@ -84,6 +89,9 @@ async function main() {
       console.error(`\nSTOCK_COLUMN_SKU="${skuColumn}" no es una columna real de ${qualifiedTable}. Corregí el env var antes de seguir.`);
       return;
     }
+
+    const hasPvpColumn = columns.rows.some((c) => c.column_name === pvpColumn);
+    console.log(`\nSTOCK_COLUMN_PVP="${pvpColumn}" ${hasPvpColumn ? "existe" : "NO existe - corregí el env var, el catálogo va a mostrar PVP oculto para todo"}.`);
 
     const nullOrEmptySku = await client.query(
       `select count(*) as n from ${qualifiedTable} where ${skuColumn} is null or btrim(${skuColumn}::text) = ''`

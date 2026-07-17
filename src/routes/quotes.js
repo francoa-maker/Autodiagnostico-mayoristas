@@ -37,8 +37,17 @@ router.post("/quotes", async (req, res) => {
          group by p.id`,
         [productIds]
       );
-      const byId = new Map(productsResult.rows.map((row) => [row.id, row]));
       const stockMap = await getStockForSkus(productsResult.rows.map((row) => row.sku_normalized));
+      // PVP is read live from Supabase (see stockRepository), not stored in
+      // portal.product_prices - merge it in so the one/four/eight fallback
+      // below (`product.prices?.pvp`) has something to fall back to.
+      const byId = new Map(
+        productsResult.rows.map((row) => {
+          const stock = stockMap.get(row.sku_normalized);
+          const pvp = stock?.pvp != null ? { state: "value", amount: stock.pvp, currency: "ARS" } : null;
+          return [row.id, { ...row, prices: { ...row.prices, pvp } }];
+        })
+      );
 
       const quoteResult = await client.query(
         `insert into portal.quote_requests (user_id, customer_notes) values ($1, $2) returning id, request_number`,

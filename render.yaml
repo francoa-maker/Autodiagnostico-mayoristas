@@ -1,6 +1,8 @@
-# Portal web service only - no Ninox client, no price/stock scheduler.
-# DATABASE_URL points at the existing Supabase project (portal schema),
-# never at a new Render-managed Postgres.
+# Portal web service + its OWN Postgres database. No Ninox client, no
+# price/stock scheduler. STOCK_DATABASE_URL (below) points at the existing
+# Supabase project instead - read-only, stock + PVP only - and is a
+# genuinely different database from DATABASE_URL, which Render wires
+# automatically from the `databases:` entry below.
 services:
   - type: web
     name: autodiagnostico-portal
@@ -15,13 +17,17 @@ services:
       - key: APP_BASE_URL
         sync: false
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: autodiagnostico-portal-db
+          property: connectionString
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      - key: STOCK_DATABASE_URL
+        sync: false
       - key: STOCK_TABLE
         sync: false
       - key: STOCK_COLUMN_SKU
@@ -30,9 +36,15 @@ services:
         sync: false
       - key: STOCK_COLUMN_UPDATED_AT
         sync: false
+      - key: STOCK_COLUMN_PVP
+        sync: false
       - key: LOW_STOCK_THRESHOLD
         value: "10"
       - key: LEGACY_CATALOG_SOURCE_URL
         sync: false
       - key: LEGACY_CATALOG_IMPORT_ENABLED
         value: "false"
+
+databases:
+  - name: autodiagnostico-portal-db
+    plan: starter

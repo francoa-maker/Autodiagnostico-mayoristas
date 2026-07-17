@@ -17,6 +17,11 @@ function parseArgs(argv) {
   return args;
 }
 
+// 'pvp' is reported here purely as a reference value from the legacy sheet -
+// it is NOT written to portal.product_prices (see STORED_TIERS in
+// legacyCatalogImporter.js). PVP is read live from Supabase instead; this
+// summary just lets a human eyeball whether the legacy sheet's PVP roughly
+// agrees with what Supabase will serve, before --apply ever runs.
 function printPriceStateSummary(products) {
   const counts = { pvp: {}, one: {}, four: {}, eight: {} };
   const customRows = [];
@@ -27,7 +32,7 @@ function printPriceStateSummary(products) {
       if (state === "custom") customRows.push({ sku: product.sku, tier, label: product.prices[tier].label });
     }
   }
-  console.log("\nEstados de precio por tier:");
+  console.log("\nEstados de precio por tier (pvp es solo referencia - no se guarda, viene en vivo de Supabase):");
   for (const tier of ["pvp", "one", "four", "eight"]) {
     console.log(`  ${tier}: ${JSON.stringify(counts[tier])}`);
   }

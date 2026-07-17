@@ -64,9 +64,15 @@ router.get("/catalog/products", async (req, res) => {
 
   // Non-admin responses never include exactQty/sourceUpdatedAt at all - not
   // even as null - since the stock source's exact quantity must never reach
-  // a customer, per the handoff's non-negotiable rule.
+  // a customer, per the handoff's non-negotiable rule. PVP, unlike exact
+  // stock, IS customer-visible - it's just read live from Supabase instead
+  // of portal.product_prices (see src/stock/stockRepository.js).
   const products = productsResult.rows.map((row) => {
-    const stock = stockMap.get(row.sku_normalized) || { status: "out_of_stock", exactQty: null, sourceUpdatedAt: null };
+    const stock = stockMap.get(row.sku_normalized) || { status: "out_of_stock", exactQty: null, sourceUpdatedAt: null, pvp: null };
+    const prices = {
+      ...row.prices,
+      pvp: stock.pvp !== null ? { state: "value", amount: stock.pvp, currency: "ARS", label: null } : { state: "hidden", amount: null, currency: "ARS", label: null }
+    };
     const base = {
       id: row.id,
       sku: row.sku,
@@ -76,7 +82,7 @@ router.get("/catalog/products", async (req, res) => {
       imageUrl: row.image_url,
       publicationUrl: row.publication_url,
       note: row.note,
-      prices: row.prices,
+      prices,
       stockStatus: stock.status
     };
     if (isAdmin) {

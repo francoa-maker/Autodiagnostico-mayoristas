@@ -1,6 +1,14 @@
 import crypto from "node:crypto";
 import { normalizeSku } from "../skuNormalize.js";
 
+// PVP is deliberately excluded here: it's read live, read-only, from the
+// Supabase stock source for every product (src/stock/stockRepository.js),
+// not something this importer stores in portal.product_prices or diffs.
+// The legacy sheet's PVP column is still parsed into the snapshot below
+// (see rowsToSnapshotProducts) purely as a reference value for humans
+// eyeballing the dry-run report - it is never written to the database.
+const STORED_TIERS = ["one", "four", "eight"];
+
 // Column names as they appear in the legacy Sheet (see reference/*catalogo*.html
 // SHEET_CFG in the handoff). Matched case/accent-insensitively so small
 // spelling drift in the Sheet header row doesn't break capture.
@@ -156,7 +164,7 @@ export function diffSnapshot(snapshotProducts, existingBySkuNormalized) {
       continue;
     }
 
-    const tiersChanged = ["pvp", "one", "four", "eight"].filter((tier) => {
+    const tiersChanged = STORED_TIERS.filter((tier) => {
       const before = existing.prices[tier];
       const after = incoming.prices[tier];
       return !before || before.state !== after.state || Number(before.amount) !== Number(after.amount) || before.currency !== after.currency;
@@ -286,7 +294,7 @@ export async function applySnapshot(client, { products, sourceKind, sourceLabel,
     // only touch the tiers diffSnapshot actually flagged as changed - an
     // untouched tier's product_prices row (and its updated_at) is left
     // exactly as-is, matching what "unchanged" means at the row level.
-    const tiersToWrite = classification.kind === "new" ? ["pvp", "one", "four", "eight"] : classification.tiersChanged;
+    const tiersToWrite = classification.kind === "new" ? STORED_TIERS : classification.tiersChanged;
 
     for (const tier of tiersToWrite) {
       const price = product.prices[tier];

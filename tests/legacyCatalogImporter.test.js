@@ -92,15 +92,17 @@ describe("diffSnapshot", () => {
     ]);
 
     const incoming = [
-      { sku: "AUT-1", name: "Autel MX900", brand: "AUTEL", prices: { pvp: priceValue(100), one: priceValue(90), four: priceValue(85), eight: priceValue(80) } }, // unchanged
-      { sku: "AUT-2", name: "Autel MX808", brand: "AUTEL", prices: { pvp: priceValue(999), one: priceValue(45), four: priceValue(40), eight: priceValue(35) } }, // pvp changed
+      { sku: "AUT-1", name: "Autel MX900", brand: "AUTEL", prices: { pvp: priceValue(999), one: priceValue(90), four: priceValue(85), eight: priceValue(80) } }, // pvp differs but is ignored - stays unchanged
+      { sku: "AUT-2", name: "Autel MX808", brand: "AUTEL", prices: { pvp: priceValue(50), one: priceValue(45), four: priceValue(999), eight: priceValue(35) } }, // four changed
       { sku: "AUT-3", name: "Autel MaxiIM", brand: "AUTEL", prices: { pvp: priceValue(1), one: priceValue(1), four: priceValue(1), eight: priceValue(1) } }, // new
       { sku: "aut-3", name: "Autel MaxiIM (dup)", brand: "AUTEL", prices: { pvp: priceValue(1), one: priceValue(1), four: priceValue(1), eight: priceValue(1) } } // duplicate of AUT-3 once normalized
     ];
 
     const report = diffSnapshot(incoming, existing);
+    // AUT-1's pvp differs (100 vs 999) but pvp is never diffed - it's read
+    // live from Supabase, not portal-owned - so it stays "unchanged".
     expect(report.unchanged).toEqual(["AUT-1"]);
-    expect(report.updated).toEqual([{ sku: "AUT-2", tiersChanged: ["pvp"] }]);
+    expect(report.updated).toEqual([{ sku: "AUT-2", tiersChanged: ["four"] }]);
     expect(report.new).toEqual(["AUT-3"]);
     expect(report.duplicates).toEqual(["aut-3"]);
   });

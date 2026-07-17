@@ -53,7 +53,8 @@ router.patch("/admin/users/:id", async (req, res) => {
 
 router.put("/admin/products/:id/prices/:tier", async (req, res) => {
   const { tier } = req.params;
-  if (!["pvp", "one", "four", "eight"].includes(tier)) return res.status(400).json({ error: "invalid_tier" });
+  if (tier === "pvp") return res.status(400).json({ error: "pvp_is_read_only", detail: "PVP se lee en vivo desde Supabase, no se edita desde el portal." });
+  if (!["one", "four", "eight"].includes(tier)) return res.status(400).json({ error: "invalid_tier" });
   const { state, amount, currency, label, reason } = req.body || {};
 
   try {

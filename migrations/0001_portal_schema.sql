@@ -20,8 +20,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE TYPE portal.quote_status AS ENUM ('submitted','reviewing','quoted','accepted','rejected','expired','cancelled');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- PVP is intentionally not a tier here: it's read live, read-only, from the
+-- existing Supabase stock source for every product (see
+-- src/stock/stockRepository.js), not imported/stored/admin-edited like the
+-- other three tiers. Only what the portal actually owns gets an enum value.
 DO $$ BEGIN
-  CREATE TYPE portal.price_tier AS ENUM ('pvp','one','four','eight');
+  CREATE TYPE portal.price_tier AS ENUM ('one','four','eight');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE TYPE portal.price_state AS ENUM ('value','consult','hidden','unavailable','custom');
