@@ -419,12 +419,7 @@ profileForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = document.getElementById("profileMsg");
   const f = e.target;
-  const taxType = f.tax_id_type.value;
-  if (!isValidTaxId(taxType, f.tax_cuit.value)) {
-    msg.style.color = "var(--danger, #c8102e)";
-    msg.textContent = taxType === "DNI" ? "El DNI debe tener 7 u 8 dígitos." : `El ${taxType} no tiene un formato válido.`;
-    return;
-  }
+  // Sin chequeo de formato del documento: se guarda tal cual.
   const profile = {};
   for (const field of ["company_name", "tax_cuit", "tax_id_type", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
     profile[field] = f[field] ? f[field].value.trim() : "";

@@ -1,24 +1,30 @@
 // "Mis datos" del cliente: datos fiscales + dirección de entrega (formato
-// Andreani). Self-service — cada usuario aprobado edita SOLO lo suyo.
+// Andreani). Self-service — cada usuario aprobado edita SOLO lo suyo. El admin
+// también puede completarlos desde el panel (ver saveUserProfile, usado por
+// routes/admin.js). No se valida el formato del CUIT/documento: se guarda tal
+// cual (AFIP lo verá facturación).
 import express from "express";
 import { pool } from "../db.js";
 import { requireApproved } from "../middleware.js";
-import { normalizeDigits, isValidTaxId, allowedTaxIdTypes, defaultTaxIdType } from "../cuit.js";
+import { normalizeDigits, allowedTaxIdTypes, defaultTaxIdType } from "../cuit.js";
 
 const router = express.Router();
 router.use(requireApproved);
 
 export const TAX_CONDITIONS = ["responsable_inscripto", "monotributo", "exento", "consumidor_final"];
 
-// Campos mínimos para poder cursar un pedido. floor/apartment/notes opcionales.
+export const PROFILE_COLUMNS = `company_name, tax_cuit, tax_id_type, tax_condition,
+  ship_street, ship_number, ship_floor, ship_apartment, ship_postal_code,
+  ship_city, ship_province, ship_phone, ship_notes`;
+
+// "Completo" = tiene todo lo necesario para una proforma con envío. Ya no se
+// exige para cotizar (con nombre+email alcanza); sólo alimenta el flag de UI.
 export function profileComplete(u) {
   return Boolean(
     u &&
       u.company_name &&
       u.tax_cuit &&
-      TAX_CONDITIONS.includes(u.tax_condition) &&
-      allowedTaxIdTypes(u.tax_condition).includes(u.tax_id_type) &&
-      isValidTaxId(u.tax_id_type, u.tax_cuit) &&
+      u.tax_condition &&
       u.ship_street &&
       u.ship_number &&
       u.ship_postal_code &&
@@ -28,42 +34,19 @@ export function profileComplete(u) {
   );
 }
 
-const PROFILE_COLUMNS = `company_name, tax_cuit, tax_id_type, tax_condition,
-  ship_street, ship_number, ship_floor, ship_apartment, ship_postal_code,
-  ship_city, ship_province, ship_phone, ship_notes`;
-
-router.get("/profile", async (req, res) => {
-  const r = await pool.query(`select ${PROFILE_COLUMNS} from portal.users where id = $1`, [req.user.id]);
-  const profile = r.rows[0] || {};
-  res.json({ profile, complete: profileComplete(profile) });
-});
-
-router.put("/profile", async (req, res) => {
-  const p = req.body?.profile || {};
-  const companyName = String(p.company_name ?? "").trim();
-  const taxNumber = normalizeDigits(p.tax_cuit);
-  const condition = p.tax_condition;
-
-  if (!companyName) return res.status(400).json({ error: "company_name_required" });
-  if (!TAX_CONDITIONS.includes(condition)) return res.status(400).json({ error: "invalid_tax_condition" });
-
-  // El tipo de documento debe ser uno de los permitidos por la condición.
-  const allowed = allowedTaxIdTypes(condition);
-  const taxIdType = allowed.includes(p.tax_id_type) ? p.tax_id_type : defaultTaxIdType(condition);
-  if (!isValidTaxId(taxIdType, taxNumber)) {
-    const label = taxIdType === "DNI" ? "El DNI debe tener 7 u 8 dígitos." : `El ${taxIdType} no tiene un formato válido (11 dígitos + verificador).`;
-    return res.status(400).json({ error: "invalid_tax_id", detail: label });
-  }
-
+// Guarda el perfil de un usuario (self o desde el admin). Lenient: acepta datos
+// parciales y NO valida el formato del documento. Devuelve el perfil guardado.
+export async function saveUserProfile(userId, p = {}) {
   const text = (v) => {
     const s = String(v ?? "").trim();
     return s || null;
   };
-  // Dirección: requeridos los campos que Andreani necesita sí o sí.
-  const required = { ship_street: p.ship_street, ship_number: p.ship_number, ship_postal_code: p.ship_postal_code, ship_city: p.ship_city, ship_province: p.ship_province, ship_phone: p.ship_phone };
-  for (const [k, v] of Object.entries(required)) {
-    if (!text(v)) return res.status(400).json({ error: "address_incomplete", field: k });
-  }
+  const condition = TAX_CONDITIONS.includes(p.tax_condition) ? p.tax_condition : null;
+  // El tipo de documento se alinea a la condición cuando ésta lo fija (CUIT),
+  // salvo Consumidor Final que admite DNI/CUIL/CUIT.
+  const taxIdType = condition
+    ? (allowedTaxIdTypes(condition).includes(p.tax_id_type) ? p.tax_id_type : defaultTaxIdType(condition))
+    : (["CUIT", "CUIL", "DNI"].includes(p.tax_id_type) ? p.tax_id_type : "CUIT");
 
   const r = await pool.query(
     `update portal.users set
@@ -74,12 +57,23 @@ router.put("/profile", async (req, res) => {
      where id = $1
      returning ${PROFILE_COLUMNS}`,
     [
-      req.user.id, companyName, taxNumber, taxIdType, condition,
+      userId, text(p.company_name), normalizeDigits(p.tax_cuit) || null, taxIdType, condition,
       text(p.ship_street), text(p.ship_number), text(p.ship_floor), text(p.ship_apartment),
       text(p.ship_postal_code), text(p.ship_city), text(p.ship_province), text(p.ship_phone), text(p.ship_notes)
     ]
   );
-  res.json({ profile: r.rows[0], complete: profileComplete(r.rows[0]) });
+  return r.rows[0];
+}
+
+router.get("/profile", async (req, res) => {
+  const r = await pool.query(`select ${PROFILE_COLUMNS} from portal.users where id = $1`, [req.user.id]);
+  const profile = r.rows[0] || {};
+  res.json({ profile, complete: profileComplete(profile) });
+});
+
+router.put("/profile", async (req, res) => {
+  const profile = await saveUserProfile(req.user.id, req.body?.profile || {});
+  res.json({ profile, complete: profileComplete(profile) });
 });
 
 export default router;

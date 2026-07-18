@@ -394,6 +394,7 @@ async function loadClients() {
           <td>${timeAgo(u.created_at)}</td>
           <td>${timeAgo(u.last_login_at)}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="link-btn" data-action="edit-profile">Datos</button>
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
             ${u.role === "customer" ? '<button class="link-btn ghost" data-action="make-admin">Hacer admin</button>' : '<button class="link-btn ghost" data-action="make-customer">Quitar admin</button>'}
@@ -412,6 +413,11 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
   if (!btn) return;
   const row = btn.closest("tr");
   const id = row.dataset.id;
+
+  if (btn.dataset.action === "edit-profile") {
+    openClientProfileModal(id, row.dataset.email);
+    return;
+  }
 
   if (btn.dataset.action === "delete-user") {
     if (!confirm(`¿Eliminar al cliente ${row.dataset.email}? Se borran también TODAS sus cotizaciones. Esta acción no se puede deshacer.`)) return;
@@ -443,6 +449,86 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
     btn.disabled = false;
   }
 });
+
+// Completar/editar los datos fiscales + dirección de un cliente desde el panel.
+const TAX_CONDITION_OPTS = [["responsable_inscripto", "Responsable Inscripto"], ["monotributo", "Monotributo"], ["exento", "Exento"], ["consumidor_final", "Consumidor Final"]];
+function adminAllowedTypes(cond) { return cond === "consumidor_final" ? ["DNI", "CUIL", "CUIT"] : ["CUIT"]; }
+function adminDefaultType(cond) { return cond === "consumidor_final" ? "DNI" : "CUIT"; }
+
+async function openClientProfileModal(id, email) {
+  let p = {};
+  try {
+    ({ profile: p } = await fetchJson(`/api/admin/users/${id}/profile`));
+    p = p || {};
+  } catch (error) {
+    alert("No se pudieron cargar los datos: " + error.message);
+    return;
+  }
+  const v = (k) => esc(p[k] || "");
+  openModal(`
+    <div class="modal-head"><h3>Datos del cliente</h3><button class="modal-x" data-close>&times;</button></div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">${esc(email)}</div>
+    <form id="clientProfileForm" class="form-grid">
+      <label class="full">Razón social / Nombre<input name="company_name" value="${v("company_name")}"></label>
+      <label>Condición de IVA
+        <select name="tax_condition">
+          <option value="">Sin especificar</option>
+          ${TAX_CONDITION_OPTS.map(([val, lbl]) => `<option value="${val}"${p.tax_condition === val ? " selected" : ""}>${lbl}</option>`).join("")}
+        </select>
+      </label>
+      <label><span id="cpTaxLabel">Documento</span>
+        <div style="display:flex;gap:6px">
+          <select name="tax_id_type" style="width:88px"></select>
+          <input name="tax_cuit" value="${v("tax_cuit")}" style="flex:1;min-width:0">
+        </div>
+      </label>
+      <label>Calle<input name="ship_street" value="${v("ship_street")}"></label>
+      <label>Número<input name="ship_number" value="${v("ship_number")}"></label>
+      <label>Piso<input name="ship_floor" value="${v("ship_floor")}"></label>
+      <label>Depto<input name="ship_apartment" value="${v("ship_apartment")}"></label>
+      <label>Código postal<input name="ship_postal_code" value="${v("ship_postal_code")}"></label>
+      <label>Localidad<input name="ship_city" value="${v("ship_city")}"></label>
+      <label>Provincia<input name="ship_province" value="${v("ship_province")}"></label>
+      <label>Teléfono<input name="ship_phone" value="${v("ship_phone")}"></label>
+      <label class="full">Notas de entrega<textarea name="ship_notes" rows="2">${v("ship_notes")}</textarea></label>
+      <div class="full" style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+        <span id="cpMsg" style="font-size:12.5px;margin-right:auto"></span>
+        <button type="button" class="link-btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </div>
+    </form>`);
+
+  const form = document.getElementById("clientProfileForm");
+  const syncType = (preferred) => {
+    const cond = form.tax_condition.value;
+    const types = adminAllowedTypes(cond);
+    const keep = types.includes(preferred) ? preferred : (types.includes(form.tax_id_type.value) ? form.tax_id_type.value : adminDefaultType(cond));
+    form.tax_id_type.innerHTML = types.map((t) => `<option value="${t}"${t === keep ? " selected" : ""}>${t}</option>`).join("");
+    form.tax_id_type.disabled = types.length === 1;
+    document.getElementById("cpTaxLabel").textContent = form.tax_id_type.value;
+  };
+  syncType(p.tax_id_type);
+  form.tax_condition.addEventListener("change", () => syncType());
+  form.tax_id_type.addEventListener("change", () => (document.getElementById("cpTaxLabel").textContent = form.tax_id_type.value));
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const out = {};
+    for (const f of ["company_name", "tax_cuit", "tax_id_type", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
+      out[f] = form[f] ? form[f].value.trim() : "";
+    }
+    const msg = document.getElementById("cpMsg");
+    try {
+      await putJson(`/api/admin/users/${id}/profile`, { profile: out });
+      msg.style.color = "var(--success,#137333)";
+      msg.textContent = "Guardado ✓";
+      setTimeout(closeModal, 800);
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)";
+      msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
+    }
+  });
+}
 
 // ==================== Cotizaciones ====================
 

@@ -8,6 +8,7 @@ import { computeQuoteTotals } from "../quoteTotals.js";
 import { renderProformaHtml, renderWarehouseHtml } from "../proforma.js";
 import { sendGmail } from "../mailer.js";
 import { resolveWholesaleUnit } from "../pricing.js";
+import { saveUserProfile, profileComplete, PROFILE_COLUMNS } from "./profile.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -110,6 +111,22 @@ router.get("/admin/users", async (req, res) => {
     params
   );
   res.json({ users: result.rows });
+});
+
+// Datos fiscales + dirección de un cliente, para que el admin los complete
+// desde el panel (además del self-service del cliente en "Mis datos").
+router.get("/admin/users/:id/profile", async (req, res) => {
+  const r = await pool.query(`select ${PROFILE_COLUMNS} from portal.users where id = $1`, [req.params.id]);
+  if (!r.rows[0]) return res.status(404).json({ error: "not_found" });
+  res.json({ profile: r.rows[0], complete: profileComplete(r.rows[0]) });
+});
+
+router.put("/admin/users/:id/profile", async (req, res) => {
+  const exists = await pool.query(`select id from portal.users where id = $1`, [req.params.id]);
+  if (!exists.rows[0]) return res.status(404).json({ error: "not_found" });
+  const profile = await saveUserProfile(req.params.id, req.body?.profile || {});
+  await recordAudit({ actorUserId: req.user.id, action: "user.profile.update", entityType: "user", entityId: req.params.id, after: profile });
+  res.json({ profile, complete: profileComplete(profile) });
 });
 
 // Meses (YYYY-MM, zona AR) con al menos un registro de cliente.
