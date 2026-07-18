@@ -5,7 +5,7 @@ import { getStockSourceHealth, getStockForSkus } from "../stock/stockRepository.
 import { recordAudit } from "../audit.js";
 import { normalizeSku } from "../skuNormalize.js";
 import { computeQuoteTotals } from "../quoteTotals.js";
-import { renderProformaHtml } from "../proforma.js";
+import { renderProformaHtml, renderWarehouseHtml } from "../proforma.js";
 import { sendGmail } from "../mailer.js";
 
 const router = express.Router();
@@ -48,11 +48,11 @@ function tierForQuantity(qty) {
 // computed IVA as tax, and the gross total as quoted_total.
 async function recomputeQuoteTotals(client, quoteId) {
   const items = await client.query(
-    `select quantity, quoted_unit_price, displayed_price_snapshot from portal.quote_items where quote_request_id = $1`,
+    `select quantity, quoted_unit_price, displayed_price_snapshot, iva_rate from portal.quote_items where quote_request_id = $1`,
     [quoteId]
   );
   const q = await client.query(
-    `select discount, discount_type, shipping, surcharge, iva_rate from portal.quote_requests where id = $1`,
+    `select discount, discount_type, shipping, surcharge from portal.quote_requests where id = $1`,
     [quoteId]
   );
   const row = q.rows[0] || {};
@@ -61,14 +61,13 @@ async function recomputeQuoteTotals(client, quoteId) {
     discount: row.discount,
     discountType: row.discount_type,
     shipping: row.shipping,
-    surcharge: row.surcharge,
-    ivaRate: row.iva_rate
+    surcharge: row.surcharge
   });
   await client.query(
     `update portal.quote_requests set quoted_subtotal = $2, tax = $3, quoted_total = $4, updated_at = now() where id = $1`,
-    [quoteId, totals.itemsGross, totals.iva, totals.total]
+    [quoteId, totals.itemsGross, totals.ivaTotal, totals.total]
   );
-  return { quotedSubtotal: totals.itemsGross, iva: totals.iva, neto: totals.neto, quotedTotal: totals.total };
+  return { quotedSubtotal: totals.itemsGross, iva: totals.ivaTotal, neto: totals.netoTotal, quotedTotal: totals.total, ivaGroups: totals.ivaGroups };
 }
 
 const DEFAULT_COMPANY_PROFILE = {
@@ -81,7 +80,8 @@ const DEFAULT_COMPANY_PROFILE = {
   taxId: "",
   logoUrl: "",
   proformaFooter: "Documento no válido como factura. Precios sujetos a confirmación.",
-  proformaValidityDays: 7
+  proformaValidityDays: 7,
+  warehouseEmail: "joaquin.guerri@patagoniatools.com.ar"
 };
 
 async function getCompanyProfile() {
@@ -199,7 +199,7 @@ router.get("/admin/products", async (req, res) => {
     where += ` and (p.sku ilike $${params.length} or p.name ilike $${params.length} or p.brand ilike $${params.length})`;
   }
   const result = await pool.query(
-    `select p.id, p.sku, p.name, p.brand, p.category, p.visible, p.sort_order,
+    `select p.id, p.sku, p.name, p.brand, p.category, p.visible, p.sort_order, p.iva_rate,
             coalesce(
               jsonb_object_agg(pp.tier, jsonb_build_object('state', pp.state, 'amount', pp.amount, 'currency', pp.currency, 'label', pp.custom_label))
                 filter (where pp.tier is not null),
@@ -220,11 +220,13 @@ router.get("/admin/products", async (req, res) => {
 // the same transaction. SKU is normalized the same way the legacy importer
 // does, so it lines up with the stock source's SKU column.
 router.post("/admin/products", async (req, res) => {
-  const { sku, name, brand, category, imageUrl, publicationUrl, note, visible, sortOrder, prices } = req.body || {};
+  const { sku, name, brand, category, imageUrl, publicationUrl, note, visible, sortOrder, prices, ivaRate } = req.body || {};
   if (!sku || !String(sku).trim()) return res.status(400).json({ error: "sku_required" });
   if (!name || !String(name).trim()) return res.status(400).json({ error: "name_required" });
   const sortCheck = asNumber(sortOrder);
   if (!sortCheck.ok) return res.status(400).json({ error: "invalid_number", field: "sortOrder" });
+  const ivaCheck = asNumber(ivaRate);
+  if (!ivaCheck.ok) return res.status(400).json({ error: "invalid_number", field: "ivaRate" });
   for (const tier of TIERS) {
     const p = prices?.[tier];
     if (p && p.amount != null && !asNumber(p.amount).ok) return res.status(400).json({ error: "invalid_number", field: tier });
@@ -242,19 +244,20 @@ router.post("/admin/products", async (req, res) => {
         const revived = await client.query(
           `update portal.products set active = true, sku = $2, name = $3, brand = coalesce($4, brand),
              category = coalesce($5, category), image_url = $6, publication_url = $7, note = $8,
-             visible = coalesce($9, visible), sort_order = coalesce($10, sort_order), updated_by = $11, updated_at = now()
+             visible = coalesce($9, visible), sort_order = coalesce($10, sort_order), iva_rate = coalesce($12, iva_rate),
+             updated_by = $11, updated_at = now()
            where sku_normalized = $1 returning *`,
           [skuNormalized, String(sku).trim(), name, brand || null, category || null, imageUrl || null, publicationUrl || null, note || null,
-           visible === undefined ? null : Boolean(visible), sortCheck.value, req.user.id]
+           visible === undefined ? null : Boolean(visible), sortCheck.value, req.user.id, ivaCheck.value]
         );
         return revived.rows[0];
       }
       const inserted = await client.query(
-        `insert into portal.products (sku, sku_normalized, name, brand, category, image_url, publication_url, note, visible, sort_order, created_by, updated_by)
-         values ($1,$2,$3,coalesce($4,'OTRAS MARCAS'),coalesce($5,'Sin categoría'),$6,$7,$8,coalesce($9,true),coalesce($10,9999),$11,$11)
+        `insert into portal.products (sku, sku_normalized, name, brand, category, image_url, publication_url, note, visible, sort_order, iva_rate, created_by, updated_by)
+         values ($1,$2,$3,coalesce($4,'OTRAS MARCAS'),coalesce($5,'Sin categoría'),$6,$7,$8,coalesce($9,true),coalesce($10,9999),coalesce($11,10.5),$12,$12)
          returning *`,
         [String(sku).trim(), skuNormalized, name, brand || null, category || null, imageUrl || null, publicationUrl || null,
-         note || null, visible === undefined ? null : Boolean(visible), sortOrder === undefined ? null : Number(sortOrder), req.user.id]
+         note || null, visible === undefined ? null : Boolean(visible), sortCheck.value, ivaCheck.value, req.user.id]
       );
       const row = inserted.rows[0];
       for (const tier of TIERS) {
@@ -278,9 +281,11 @@ router.post("/admin/products", async (req, res) => {
 });
 
 router.patch("/admin/products/:id", async (req, res) => {
-  const { sku, sortOrder, visible, name, brand, category, imageUrl, publicationUrl, note } = req.body || {};
+  const { sku, sortOrder, visible, name, brand, category, imageUrl, publicationUrl, note, ivaRate } = req.body || {};
   const sortCheck = asNumber(sortOrder);
   if (!sortCheck.ok) return res.status(400).json({ error: "invalid_number", field: "sortOrder" });
+  const ivaCheck = asNumber(ivaRate);
+  if (!ivaCheck.ok) return res.status(400).json({ error: "invalid_number", field: "ivaRate" });
 
   const before = await pool.query(`select * from portal.products where id = $1`, [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
@@ -311,13 +316,14 @@ router.patch("/admin/products/:id", async (req, res) => {
        image_url = coalesce($7, image_url),
        publication_url = coalesce($8, publication_url),
        note = coalesce($9, note),
+       iva_rate = coalesce($13, iva_rate),
        updated_by = $10,
        updated_at = now()
      where id = $1
      returning *`,
     [req.params.id, sortCheck.value, visible === undefined ? null : Boolean(visible),
      name ?? null, brand ?? null, category ?? null, imageUrl ?? null, publicationUrl ?? null, note ?? null, req.user.id,
-     newSku, newNormalized]
+     newSku, newNormalized, ivaCheck.value]
   );
 
   await recordAudit({
@@ -487,12 +493,12 @@ router.get("/admin/quotes/:id", async (req, res) => {
 // Header-level edits: status, adjustments (discount/shipping/surcharge/tax),
 // notes. Totals are recomputed from the adjustments in the same transaction.
 router.patch("/admin/quotes/:id", async (req, res) => {
-  const { status, discount, discountType, shipping, surcharge, ivaRate, adminNotes, publicNotes, currency } = req.body || {};
+  const { status, discount, discountType, shipping, surcharge, adminNotes, publicNotes, currency } = req.body || {};
   if (discountType !== undefined && !["nominal", "percent"].includes(discountType)) {
     return res.status(400).json({ error: "invalid_discount_type" });
   }
   if (status != null && !QUOTE_STATUSES.includes(status)) return res.status(400).json({ error: "invalid_status" });
-  for (const [field, v] of Object.entries({ discount, shipping, surcharge, ivaRate })) {
+  for (const [field, v] of Object.entries({ discount, shipping, surcharge })) {
     if (v !== undefined && !asNumber(v).ok) return res.status(400).json({ error: "invalid_number", field });
   }
   try {
@@ -509,19 +515,17 @@ router.patch("/admin/quotes/:id", async (req, res) => {
            discount_type = coalesce($4, discount_type),
            shipping = coalesce($5, shipping),
            surcharge = coalesce($6, surcharge),
-           iva_rate = coalesce($7, iva_rate),
-           admin_notes = coalesce($8, admin_notes),
-           public_notes = coalesce($9, public_notes),
-           currency = coalesce($10, currency),
-           quoted_at = case when $11 then now() else quoted_at end,
-           quoted_by_user_id = case when $11 then $12 else quoted_by_user_id end,
-           assigned_admin_id = coalesce(assigned_admin_id, $12),
+           admin_notes = coalesce($7, admin_notes),
+           public_notes = coalesce($8, public_notes),
+           currency = coalesce($9, currency),
+           quoted_at = case when $10 then now() else quoted_at end,
+           quoted_by_user_id = case when $10 then $11 else quoted_by_user_id end,
+           assigned_admin_id = coalesce(assigned_admin_id, $11),
            updated_at = now()
          where id = $1`,
         [req.params.id, status || null,
          discount === undefined ? null : Number(discount), discountType || null,
          shipping === undefined ? null : Number(shipping), surcharge === undefined ? null : Number(surcharge),
-         ivaRate === undefined ? null : Number(ivaRate),
          adminNotes ?? null, publicNotes ?? null, currency || null, nowQuoting, req.user.id]
       );
       const totals = await recomputeQuoteTotals(client, req.params.id);
@@ -541,17 +545,18 @@ router.patch("/admin/quotes/:id", async (req, res) => {
 // customer submit path does; quoted_unit_price defaults to the product's
 // current tier price for the given quantity unless the admin overrides it.
 router.post("/admin/quotes/:id/items", async (req, res) => {
-  const { productId, quantity, unitPrice } = req.body || {};
+  const { productId, quantity, unitPrice, ivaRate } = req.body || {};
   if (!productId) return res.status(400).json({ error: "product_required" });
   if (!UUID_RE.test(String(productId))) return res.status(400).json({ error: "invalid_product_id" });
   if (!asNumber(unitPrice).ok) return res.status(400).json({ error: "invalid_number", field: "unitPrice" });
+  if (ivaRate !== undefined && !asNumber(ivaRate).ok) return res.status(400).json({ error: "invalid_number", field: "ivaRate" });
   const qty = Math.max(1, Math.floor(Number(quantity)) || 1);
   try {
     const item = await withTransaction(async (client) => {
       const q = await client.query(`select id from portal.quote_requests where id = $1`, [req.params.id]);
       if (!q.rows[0]) throw Object.assign(new Error("not_found"), { statusCode: 404 });
       const prod = await client.query(
-        `select p.id, p.sku, p.sku_normalized, p.name, p.brand, p.category,
+        `select p.id, p.sku, p.sku_normalized, p.name, p.brand, p.category, p.iva_rate,
                 coalesce(jsonb_object_agg(pp.tier, jsonb_build_object('state', pp.state, 'amount', pp.amount, 'currency', pp.currency))
                   filter (where pp.tier is not null), '{}'::jsonb) as prices
          from portal.products p left join portal.product_prices pp on pp.product_id = p.id
@@ -563,15 +568,16 @@ router.post("/admin/quotes/:id/items", async (req, res) => {
       const tier = tierForQuantity(qty);
       const tierPrice = product.prices?.[tier] || null;
       const resolvedUnit = unitPrice != null ? Number(unitPrice) : tierPrice?.amount != null ? Number(tierPrice.amount) : null;
+      const resolvedRate = ivaRate != null && ivaRate !== "" ? Number(ivaRate) : (product.iva_rate ?? 10.5);
       const stockMap = await getStockForSkus([product.sku_normalized]);
       const stock = stockMap.get(product.sku_normalized) || { status: "out_of_stock", exactQty: null };
       const inserted = await client.query(
         `insert into portal.quote_items
            (quote_request_id, product_id, sku_snapshot, product_name_snapshot, brand_snapshot, category_snapshot,
-            quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
+            quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal, iva_rate)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,
         [req.params.id, product.id, product.sku, product.name, product.brand, product.category,
-         qty, tier, JSON.stringify(tierPrice || {}), resolvedUnit, stock.status, stock.exactQty]
+         qty, tier, JSON.stringify(tierPrice || {}), resolvedUnit, stock.status, stock.exactQty, resolvedRate]
       );
       await recomputeQuoteTotals(client, req.params.id);
       return inserted.rows[0];
@@ -588,9 +594,10 @@ router.post("/admin/quotes/:id/items", async (req, res) => {
 // Edit a line: quantity and/or quoted unit price. Editing the price is the
 // core of the admin quoting flow ("a qué precio compraría cada producto").
 router.put("/admin/quotes/:id/items/:itemId", async (req, res) => {
-  const { quantity, unitPrice } = req.body || {};
+  const { quantity, unitPrice, ivaRate } = req.body || {};
   if (quantity !== undefined && !asNumber(quantity).ok) return res.status(400).json({ error: "invalid_number", field: "quantity" });
   if (!asNumber(unitPrice).ok) return res.status(400).json({ error: "invalid_number", field: "unitPrice" });
+  if (ivaRate !== undefined && !asNumber(ivaRate).ok) return res.status(400).json({ error: "invalid_number", field: "ivaRate" });
   try {
     const item = await withTransaction(async (client) => {
       const before = await client.query(`select * from portal.quote_items where id = $1 and quote_request_id = $2`, [req.params.itemId, req.params.id]);
@@ -601,10 +608,12 @@ router.put("/admin/quotes/:id/items/:itemId", async (req, res) => {
         `update portal.quote_items set
            quantity = $3,
            pricing_tier = $4,
-           quoted_unit_price = $5
+           quoted_unit_price = $5,
+           iva_rate = $6
          where id = $1 and quote_request_id = $2 returning *`,
         [req.params.itemId, req.params.id, qty, tier,
-         unitPrice === undefined ? before.rows[0].quoted_unit_price : (unitPrice === null || unitPrice === "" ? null : Number(unitPrice))]
+         unitPrice === undefined ? before.rows[0].quoted_unit_price : (unitPrice === null || unitPrice === "" ? null : Number(unitPrice)),
+         ivaRate === undefined || ivaRate === null || ivaRate === "" ? before.rows[0].iva_rate : Number(ivaRate)]
       );
       await recomputeQuoteTotals(client, req.params.id);
       return updated.rows[0];
@@ -663,14 +672,25 @@ router.put("/admin/company-profile", async (req, res) => {
 // printable route and the email sender.
 async function loadProformaContext(quoteId, fallbackSigner) {
   const quoteResult = await pool.query(
-    `select q.*, u.email, u.display_name, u.company_name
+    `select q.*, u.email, u.display_name, u.company_name,
+            u.tax_cuit, u.tax_condition,
+            u.ship_street, u.ship_number, u.ship_floor, u.ship_apartment,
+            u.ship_postal_code, u.ship_city, u.ship_province, u.ship_phone, u.ship_notes
      from portal.quote_requests q join portal.users u on u.id = q.user_id
      where q.id = $1`,
     [quoteId]
   );
   const quote = quoteResult.rows[0];
   if (!quote) return null;
-  const items = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by created_at`, [quoteId]);
+  // La miniatura sale de la foto actual del producto (join por product_id);
+  // los items snapshotean identidad y precio pero no la imagen.
+  const items = await pool.query(
+    `select qi.*, p.image_url
+     from portal.quote_items qi
+     left join portal.products p on p.id = qi.product_id
+     where qi.quote_request_id = $1 order by qi.created_at`,
+    [quoteId]
+  );
   const company = await getCompanyProfile();
   let signer = fallbackSigner;
   if (quote.quoted_by_user_id) {
@@ -735,6 +755,50 @@ router.post("/admin/quotes/:id/send-proforma", async (req, res) => {
 
   await recordAudit({ actorUserId: req.user.id, action: "quote.proforma.sent", entityType: "quote_request", entityId: req.params.id, metadata: { to } });
   res.json({ ok: true, to });
+});
+
+// Envía al depósito la hoja de armado (picking + dirección de entrega) desde
+// la casilla del vendedor. Destinatario: warehouseEmail del perfil de empresa
+// (default joaquin.guerri@) + un correo extra opcional por cotización.
+router.post("/admin/quotes/:id/send-warehouse", async (req, res) => {
+  if (!req.user.gmail_connected) {
+    return res.status(400).json({ error: "gmail_not_connected", detail: "Conectá tu Gmail primero para enviar desde tu casilla." });
+  }
+  const tokenRow = await pool.query(`select gmail_refresh_token, gmail_address from portal.users where id = $1`, [req.user.id]);
+  const refreshToken = tokenRow.rows[0]?.gmail_refresh_token;
+  if (!refreshToken) return res.status(400).json({ error: "gmail_not_connected" });
+
+  const ctx = await loadProformaContext(req.params.id, null);
+  if (!ctx) return res.status(404).json({ error: "not_found" });
+
+  const recipients = [ctx.company.warehouseEmail, req.body?.extraEmail]
+    .map((e) => (e ? String(e).trim() : ""))
+    .filter(Boolean);
+  if (!recipients.length) return res.status(400).json({ error: "no_recipient", detail: "No hay casilla de depósito configurada." });
+  const to = recipients[0];
+  const cc = recipients.slice(1).join(", ") || undefined;
+
+  const html = renderWarehouseHtml(ctx);
+  const subject = `Pedido para preparar #${ctx.quote.request_number} - ${ctx.quote.company_name || ctx.quote.display_name || ctx.quote.email}`;
+
+  try {
+    await sendGmail({
+      refreshToken,
+      from: tokenRow.rows[0].gmail_address || req.user.email,
+      fromName: req.user.display_name || ctx.company.name,
+      to,
+      cc,
+      subject,
+      html,
+      replyTo: req.user.email
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(502).json({ error: "gmail_send_failed", detail: error.message });
+  }
+
+  await recordAudit({ actorUserId: req.user.id, action: "quote.warehouse.sent", entityType: "quote_request", entityId: req.params.id, metadata: { recipients } });
+  res.json({ ok: true, recipients });
 });
 
 export default router;

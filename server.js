@@ -6,6 +6,7 @@ import authRouter from "./src/routes/auth.js";
 import catalogRouter from "./src/routes/catalog.js";
 import quotesRouter from "./src/routes/quotes.js";
 import adminRouter from "./src/routes/admin.js";
+import profileRouter from "./src/routes/profile.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -52,6 +53,7 @@ app.get("/health", (req, res) => {
 // authRouter mounts /auth/* and /api/me at root (no /api prefix, matching
 // the ninots convention of keeping auth outside the requireUser-gated tree).
 app.use(wrapRouterErrors(authRouter));
+app.use("/api", wrapRouterErrors(profileRouter));
 app.use("/api", wrapRouterErrors(catalogRouter));
 app.use("/api", wrapRouterErrors(quotesRouter));
 app.use("/api", wrapRouterErrors(adminRouter));

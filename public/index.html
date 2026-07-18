@@ -14,6 +14,7 @@
         <span class="cat-badge">Lista Distribuidor</span>
         <div class="cat-search"><span class="si">&#128269;</span><input type="text" id="searchInput" placeholder="Buscar producto, SKU..."></div>
         <span class="cat-freshness" id="freshness"><span class="dot"></span>Cargando...</span>
+        <button class="cart-btn" id="myDataBtn">&#128100; Mis datos</button>
         <button class="cart-btn" id="cartBtn">&#128722; Pedido<span class="cart-count" id="cartCount">0</span></button>
         <a class="cat-avatar" id="avatar" href="/auth/logout" title="Cerrar sesión">--</a>
       </header>
@@ -61,6 +62,45 @@
         <button class="btn-primary" id="submitQuoteBtn">Enviar solicitud de cotización</button>
       </div>
     </aside>
+
+    <!-- Modal "Mis datos" (datos fiscales + dirección de entrega) -->
+    <div class="modal-overlay" id="profileOverlay" hidden>
+      <div class="modal" id="profileModal">
+        <div class="modal-head">
+          <h3>Mis datos</h3>
+          <button class="modal-x" id="profileClose">&times;</button>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Necesitamos estos datos para poder cotizar y despachar tu pedido. El CUIT se valida sólo por formato.</p>
+        <form id="profileForm" class="form-grid">
+          <label class="full">Razón social / Nombre de la empresa *<input name="company_name" required></label>
+          <label>CUIT *<input name="tax_cuit" placeholder="30-71610175-0" required></label>
+          <label>Condición de IVA *
+            <select name="tax_condition" required>
+              <option value="">Elegir...</option>
+              <option value="responsable_inscripto">Responsable Inscripto</option>
+              <option value="monotributo">Monotributo</option>
+              <option value="exento">Exento</option>
+              <option value="consumidor_final">Consumidor Final</option>
+            </select>
+          </label>
+          <div class="full" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px">Dirección de entrega (formato Andreani)</div>
+          <label>Calle *<input name="ship_street" required></label>
+          <label>Número *<input name="ship_number" required></label>
+          <label>Piso<input name="ship_floor"></label>
+          <label>Depto<input name="ship_apartment"></label>
+          <label>Código postal *<input name="ship_postal_code" required></label>
+          <label>Localidad *<input name="ship_city" required></label>
+          <label>Provincia *<input name="ship_province" required></label>
+          <label>Teléfono *<input name="ship_phone" required></label>
+          <label class="full">Referencias / notas de entrega<textarea name="ship_notes" rows="2"></textarea></label>
+          <div class="full" style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
+            <span id="profileMsg" style="font-size:12.5px;margin-right:auto"></span>
+            <button type="button" class="link-btn ghost" id="profileCancel">Cancelar</button>
+            <button type="submit" class="btn-primary">Guardar datos</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <script type="module" src="/assets/catalog.js"></script>
   </body>

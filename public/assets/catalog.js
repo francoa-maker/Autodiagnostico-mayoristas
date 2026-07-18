@@ -1,4 +1,18 @@
-import { fetchJson, postJson, money, STOCK_LABEL } from "/assets/api.js";
+import { fetchJson, postJson, putJson, money, STOCK_LABEL } from "/assets/api.js";
+
+// Validación de formato de CUIT en el cliente (UX); el server valida de forma
+// autoritativa en PUT /api/profile.
+function isValidCuit(raw) {
+  const d = String(raw ?? "").replace(/\D/g, "");
+  if (d.length !== 11) return false;
+  const w = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 10; i++) sum += Number(d[i]) * w[i];
+  let c = 11 - (sum % 11);
+  if (c === 11) c = 0;
+  if (c === 10) return false;
+  return c === Number(d[10]);
+}
 
 const BRAND_COLORS = ["#c8102e", "#1f6feb", "#0f766e", "#7c3aed", "#b45309", "#334155", "#0369a1", "#be123c", "#4d7c0f", "#9333ea", "#0891b2", "#444444"];
 function brandColor(name) {
@@ -286,6 +300,13 @@ document.getElementById("cartItems").addEventListener("click", (e) => {
 
 document.getElementById("submitQuoteBtn").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
+  // Exigir datos fiscales completos antes del primer pedido: si faltan, abrir
+  // "Mis datos" en vez de enviar.
+  if (!profileState.complete) {
+    closeCart();
+    openProfileModal("Completá tus datos fiscales y de entrega para poder enviar el pedido.");
+    return;
+  }
   btn.disabled = true;
   btn.textContent = "Enviando...";
   try {
@@ -297,15 +318,84 @@ document.getElementById("submitQuoteBtn").addEventListener("click", async (e) =>
     document.getElementById("cartItems").innerHTML = `<div class="cart-success"><div class="ok-icon">&#10003;</div>
       <p><strong>Solicitud #${quote.requestNumber} enviada.</strong><br>Te contactaremos para confirmar precios y disponibilidad.</p></div>`;
   } catch (error) {
-    alert("No se pudo enviar la solicitud: " + error.message);
+    if (error.status === 428) {
+      closeCart();
+      openProfileModal("Completá tus datos fiscales y de entrega para poder enviar el pedido.");
+    } else {
+      alert("No se pudo enviar la solicitud: " + error.message);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = "Enviar solicitud de cotización";
   }
 });
 
+// ==================== Mis datos (perfil fiscal + entrega) ====================
+
+const profileState = { complete: false, profile: {} };
+const profileOverlay = document.getElementById("profileOverlay");
+const profileForm = document.getElementById("profileForm");
+
+async function loadProfile() {
+  try {
+    const { profile, complete } = await fetchJson("/api/profile");
+    profileState.profile = profile || {};
+    profileState.complete = complete;
+    // Aviso sutil en el botón si faltan datos.
+    const btn = document.getElementById("myDataBtn");
+    if (!complete) btn.textContent = "\u{1F464} Completá tus datos";
+    else btn.innerHTML = "\u{1F464} Mis datos";
+  } catch { /* no bloquear el catálogo si falla */ }
+}
+
+function openProfileModal(message) {
+  const p = profileState.profile || {};
+  for (const field of ["company_name", "tax_cuit", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
+    if (profileForm[field]) profileForm[field].value = p[field] || "";
+  }
+  document.getElementById("profileMsg").textContent = message || "";
+  document.getElementById("profileMsg").style.color = "var(--muted)";
+  profileOverlay.hidden = false;
+}
+function closeProfileModal() {
+  profileOverlay.hidden = true;
+}
+
+document.getElementById("myDataBtn").addEventListener("click", () => openProfileModal(""));
+document.getElementById("profileClose").addEventListener("click", closeProfileModal);
+document.getElementById("profileCancel").addEventListener("click", closeProfileModal);
+profileOverlay.addEventListener("click", (e) => { if (e.target === profileOverlay) closeProfileModal(); });
+
+profileForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById("profileMsg");
+  const f = e.target;
+  if (!isValidCuit(f.tax_cuit.value)) {
+    msg.style.color = "var(--danger, #c8102e)";
+    msg.textContent = "El CUIT no tiene un formato válido.";
+    return;
+  }
+  const profile = {};
+  for (const field of ["company_name", "tax_cuit", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
+    profile[field] = f[field] ? f[field].value.trim() : "";
+  }
+  try {
+    const r = await putJson("/api/profile", { profile });
+    profileState.profile = r.profile;
+    profileState.complete = r.complete;
+    msg.style.color = "var(--success, #137333)";
+    msg.textContent = "Datos guardados ✓";
+    await loadProfile();
+    setTimeout(closeProfileModal, 900);
+  } catch (error) {
+    msg.style.color = "var(--danger, #c8102e)";
+    msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
+  }
+});
+
 (async function init() {
   await loadMe();
+  await loadProfile();
   await loadBrands();
   await loadCategories();
 })();
