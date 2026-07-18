@@ -19,10 +19,13 @@ async function deleteJson(url) {
   return fetchJson(url, { method: "DELETE" });
 }
 
+let currentUser = null;
+
 async function loadMe() {
   const { user } = await fetchJson("/api/me");
   if (!user) return (location.href = "/login");
   if (user.role !== "admin") return (location.href = "/");
+  currentUser = user;
   document.getElementById("adminName").textContent = user.display_name || user.email;
   document.getElementById("adminEmail").textContent = user.email;
 }
@@ -436,12 +439,29 @@ function itemUnit(it) {
   return snap.amount != null ? Number(snap.amount) : null;
 }
 
+const IVA_RATES = [21, 10.5, 0];
+
+// Espeja la lógica de src/quoteTotals.js para el preview en vivo del editor.
+function previewTotals({ items, discount, discountType, shipping, ivaRate }) {
+  const itemsGross = items.reduce((sum, it) => {
+    const u = itemUnit(it);
+    return u != null ? sum + u * Number(it.quantity) : sum;
+  }, 0);
+  const discountAmount = discountType === "percent" ? (itemsGross * (Number(discount) || 0)) / 100 : Number(discount) || 0;
+  const baseGross = itemsGross - discountAmount + (Number(shipping) || 0);
+  const rate = Number(ivaRate) || 0;
+  const neto = baseGross / (1 + rate / 100);
+  return { itemsGross, discountAmount, baseGross, neto, iva: baseGross - neto, total: baseGross };
+}
+
 async function renderQuoteEditor(id) {
   const panel = document.getElementById("quoteDetailBody");
   panel.className = "";
   panel.innerHTML = "Cargando...";
   const { quote, items } = await fetchJson(`/api/admin/quotes/${id}`);
   const cur = quote.currency || "ARS";
+  const dtype = quote.discount_type || "nominal";
+  const ivaRate = quote.iva_rate != null ? Number(quote.iva_rate) : 21;
 
   const itemRows = items
     .map(
@@ -458,14 +478,16 @@ async function renderQuoteEditor(id) {
     )
     .join("");
 
+  const gmailConnected = currentUser?.gmail_connected;
+
   panel.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div>
         <h3 style="margin:0">Cotización #${quote.request_number}</h3>
         <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${esc(quote.company_name || quote.display_name || quote.email)} · ${esc(quote.email)}</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="quoteStatus" class="admin-search" style="min-width:150px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="quoteStatus" class="admin-search" style="min-width:140px">
           ${QUOTE_STATUS.map((s) => `<option value="${s}"${quote.status === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}
         </select>
         <button class="btn-primary" id="proformaBtn">Ver proforma</button>
@@ -488,27 +510,76 @@ async function renderQuoteEditor(id) {
 
     <div class="quote-totals">
       <div class="qt-adjustments">
-        <label>Descuento<input id="qDiscount" type="number" value="${Number(quote.discount || 0)}"></label>
-        <label>Envío<input id="qShipping" type="number" value="${Number(quote.shipping || 0)}"></label>
-        <label>Impuestos<input id="qTax" type="number" value="${Number(quote.tax || 0)}"></label>
+        <label>Descuento
+          <div style="display:flex;gap:4px">
+            <input id="qDiscount" type="number" step="0.01" value="${Number(quote.discount || 0)}" style="width:88px">
+            <select id="qDiscountType" style="border:1px solid var(--border,#e0e0e0);border-radius:7px;font-size:12px">
+              <option value="nominal"${dtype === "nominal" ? " selected" : ""}>$</option>
+              <option value="percent"${dtype === "percent" ? " selected" : ""}>%</option>
+            </select>
+          </div>
+        </label>
+        <label>Envío<input id="qShipping" type="number" step="0.01" value="${Number(quote.shipping || 0)}"></label>
+        <label>IVA
+          <select id="qIvaRate" style="width:110px;padding:7px 10px;border:1px solid var(--border,#e0e0e0);border-radius:7px;font-size:13px">
+            ${IVA_RATES.map((r) => `<option value="${r}"${ivaRate === r ? " selected" : ""}>${r}%</option>`).join("")}
+          </select>
+        </label>
       </div>
       <div class="qt-summary">
-        <div><span>Subtotal</span><b id="qSubtotal">${money(quote.quoted_subtotal ?? quote.displayed_subtotal, cur)}</b></div>
-        <div class="grand"><span>Total</span><b id="qTotal">${money(quote.quoted_total ?? quote.displayed_subtotal, cur)}</b></div>
+        <div><span>Subtotal (IVA incl.)</span><b id="qSubtotal">-</b></div>
+        <div><span>Descuento</span><b id="qDiscountShown">-</b></div>
+        <div><span>Neto gravado</span><b id="qNeto">-</b></div>
+        <div><span>IVA <span id="qIvaPct">${ivaRate}</span>%</span><b id="qIva">-</b></div>
+        <div class="grand"><span>Total</span><b id="qTotal">-</b></div>
       </div>
     </div>
 
     <label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la proforma)
       <textarea id="qPublicNotes" rows="2" class="admin-search" style="width:100%;margin-top:4px">${esc(quote.public_notes || "")}</textarea>
     </label>
-    <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
       <button class="btn-primary" id="saveQuoteBtn">Guardar cotización</button>
+      <button class="btn-primary" id="sendProformaBtn" style="background:#137333">✉ Enviar proforma al cliente</button>
       <span id="quoteSaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">
+      ${gmailConnected
+        ? `Se enviará a <b>${esc(quote.email)}</b> desde tu casilla (${esc(currentUser.gmail_address || currentUser.email)}).`
+        : `Para enviar desde tu casilla necesitás <a href="/auth/google/gmail">conectar tu Gmail</a> una vez.`}
     </div>
   `;
 
+  const recalc = () => {
+    const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].map((r) => ({
+      quantity: Number(r.querySelector('[data-f="quantity"]').value) || 0,
+      quoted_unit_price: r.querySelector('[data-f="unitPrice"]').value === "" ? null : Number(r.querySelector('[data-f="unitPrice"]').value),
+      displayed_price_snapshot: {}
+    }));
+    const t = previewTotals({
+      items: rows,
+      discount: document.getElementById("qDiscount").value,
+      discountType: document.getElementById("qDiscountType").value,
+      shipping: document.getElementById("qShipping").value,
+      ivaRate: document.getElementById("qIvaRate").value
+    });
+    const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+    document.getElementById("qSubtotal").textContent = money(r2(t.itemsGross), cur);
+    document.getElementById("qDiscountShown").textContent = "-" + money(r2(t.discountAmount), cur);
+    document.getElementById("qNeto").textContent = money(r2(t.neto), cur);
+    document.getElementById("qIva").textContent = money(r2(t.iva), cur);
+    document.getElementById("qTotal").textContent = money(r2(t.total), cur);
+    document.getElementById("qIvaPct").textContent = document.getElementById("qIvaRate").value;
+  };
+  ["qDiscount", "qDiscountType", "qShipping", "qIvaRate"].forEach((elId) => {
+    document.getElementById(elId).addEventListener("input", recalc);
+  });
+  recalc();
+
   document.getElementById("proformaBtn").addEventListener("click", () => window.open(`/api/admin/quotes/${id}/proforma`, "_blank"));
   document.getElementById("saveQuoteBtn").addEventListener("click", () => saveQuoteHeader(id));
+  document.getElementById("sendProformaBtn").addEventListener("click", () => sendProforma(id, quote.email));
   wireQuoteItemActions(id);
   wireAddProduct(id);
 }
@@ -519,8 +590,9 @@ async function saveQuoteHeader(id) {
     await patchJson(`/api/admin/quotes/${id}`, {
       status: document.getElementById("quoteStatus").value,
       discount: Number(document.getElementById("qDiscount").value || 0),
+      discountType: document.getElementById("qDiscountType").value,
       shipping: Number(document.getElementById("qShipping").value || 0),
-      tax: Number(document.getElementById("qTax").value || 0),
+      ivaRate: Number(document.getElementById("qIvaRate").value),
       publicNotes: document.getElementById("qPublicNotes").value
     });
     msg.textContent = "Guardado ✓";
@@ -529,6 +601,39 @@ async function saveQuoteHeader(id) {
     await loadQuotes();
   } catch (error) {
     alert("No se pudo guardar la cotización: " + error.message);
+  }
+}
+
+async function sendProforma(id, clientEmail) {
+  if (!currentUser?.gmail_connected) {
+    if (confirm("Necesitás conectar tu Gmail una vez para enviar desde tu casilla. ¿Conectar ahora?")) {
+      location.href = "/auth/google/gmail";
+    }
+    return;
+  }
+  const to = prompt("Enviar proforma a:", clientEmail || "");
+  if (!to) return;
+  const btn = document.getElementById("sendProformaBtn");
+  btn.disabled = true;
+  btn.textContent = "Enviando...";
+  try {
+    // Persistir precios/ajustes en pantalla (sin re-render) antes de enviar.
+    await patchJson(`/api/admin/quotes/${id}`, {
+      status: document.getElementById("quoteStatus").value,
+      discount: Number(document.getElementById("qDiscount").value || 0),
+      discountType: document.getElementById("qDiscountType").value,
+      shipping: Number(document.getElementById("qShipping").value || 0),
+      ivaRate: Number(document.getElementById("qIvaRate").value),
+      publicNotes: document.getElementById("qPublicNotes").value
+    });
+    await postJson(`/api/admin/quotes/${id}/send-proforma`, { to });
+    alert("Proforma enviada a " + to);
+    await renderQuoteEditor(id);
+    await loadQuotes();
+  } catch (error) {
+    alert("No se pudo enviar: " + (error.body?.detail || error.message));
+    const b = document.getElementById("sendProformaBtn");
+    if (b) { b.disabled = false; b.textContent = "✉ Enviar proforma al cliente"; }
   }
 }
 

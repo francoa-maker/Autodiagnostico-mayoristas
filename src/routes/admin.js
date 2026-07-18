@@ -4,6 +4,9 @@ import { requireAdmin } from "../middleware.js";
 import { getStockSourceHealth, getStockForSkus } from "../stock/stockRepository.js";
 import { recordAudit } from "../audit.js";
 import { normalizeSku } from "../skuNormalize.js";
+import { computeQuoteTotals } from "../quoteTotals.js";
+import { renderProformaHtml } from "../proforma.js";
+import { sendGmail } from "../mailer.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -18,31 +21,33 @@ function tierForQuantity(qty) {
   return "one";
 }
 
-// Recompute a quote's stored totals from its current items + adjustments.
-// quoted_unit_price wins over the customer-facing displayed snapshot; only
-// items with a resolvable unit price contribute to the subtotal.
+// Recompute a quote's stored totals from its current items + adjustments,
+// using the shared computeQuoteTotals (IVA is backed out of the IVA-included
+// line prices, not added on top). Stores itemsGross as quoted_subtotal, the
+// computed IVA as tax, and the gross total as quoted_total.
 async function recomputeQuoteTotals(client, quoteId) {
   const items = await client.query(
     `select quantity, quoted_unit_price, displayed_price_snapshot from portal.quote_items where quote_request_id = $1`,
     [quoteId]
   );
-  let subtotal = 0;
-  for (const it of items.rows) {
-    const snap = it.displayed_price_snapshot || {};
-    const unit = it.quoted_unit_price != null ? Number(it.quoted_unit_price) : snap.amount != null ? Number(snap.amount) : null;
-    if (unit != null) subtotal += unit * Number(it.quantity);
-  }
   const q = await client.query(
-    `select discount, shipping, surcharge, tax from portal.quote_requests where id = $1`,
+    `select discount, discount_type, shipping, surcharge, iva_rate from portal.quote_requests where id = $1`,
     [quoteId]
   );
   const row = q.rows[0] || {};
-  const total = subtotal - Number(row.discount || 0) + Number(row.shipping || 0) + Number(row.surcharge || 0) + Number(row.tax || 0);
+  const totals = computeQuoteTotals({
+    items: items.rows,
+    discount: row.discount,
+    discountType: row.discount_type,
+    shipping: row.shipping,
+    surcharge: row.surcharge,
+    ivaRate: row.iva_rate
+  });
   await client.query(
-    `update portal.quote_requests set quoted_subtotal = $2, quoted_total = $3, updated_at = now() where id = $1`,
-    [quoteId, subtotal, total]
+    `update portal.quote_requests set quoted_subtotal = $2, tax = $3, quoted_total = $4, updated_at = now() where id = $1`,
+    [quoteId, totals.itemsGross, totals.iva, totals.total]
   );
-  return { quotedSubtotal: subtotal, quotedTotal: total };
+  return { quotedSubtotal: totals.itemsGross, iva: totals.iva, neto: totals.neto, quotedTotal: totals.total };
 }
 
 const DEFAULT_COMPANY_PROFILE = {
@@ -61,20 +66,6 @@ const DEFAULT_COMPANY_PROFILE = {
 async function getCompanyProfile() {
   const result = await pool.query(`select value from portal.app_settings where key = 'company_profile'`);
   return { ...DEFAULT_COMPANY_PROFILE, ...(result.rows[0]?.value || {}) };
-}
-
-function esc(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function fmtMoney(amount, currency = "ARS") {
-  if (amount === null || amount === undefined || amount === "") return "-";
-  const prefix = currency === "USD" ? "US$ " : "$ ";
-  return prefix + Number(amount).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 router.get("/admin/users", async (req, res) => {
@@ -334,29 +325,38 @@ router.get("/admin/quotes/:id", async (req, res) => {
 // Header-level edits: status, adjustments (discount/shipping/surcharge/tax),
 // notes. Totals are recomputed from the adjustments in the same transaction.
 router.patch("/admin/quotes/:id", async (req, res) => {
-  const { status, discount, shipping, surcharge, tax, adminNotes, publicNotes, currency } = req.body || {};
+  const { status, discount, discountType, shipping, surcharge, ivaRate, adminNotes, publicNotes, currency } = req.body || {};
+  if (discountType !== undefined && !["nominal", "percent"].includes(discountType)) {
+    return res.status(400).json({ error: "invalid_discount_type" });
+  }
   try {
     const result = await withTransaction(async (client) => {
       const before = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
       if (!before.rows[0]) throw Object.assign(new Error("not_found"), { statusCode: 404 });
+      // "Firma" del vendedor: al pasar la cotización a 'quoted' queda
+      // registrado quién la cotizó (quoted_by_user_id + quoted_at).
+      const nowQuoting = status === "quoted";
       await client.query(
         `update portal.quote_requests set
            status = coalesce($2, status),
            discount = coalesce($3, discount),
-           shipping = coalesce($4, shipping),
-           surcharge = coalesce($5, surcharge),
-           tax = coalesce($6, tax),
-           admin_notes = coalesce($7, admin_notes),
-           public_notes = coalesce($8, public_notes),
-           currency = coalesce($9, currency),
-           quoted_at = case when $2 = 'quoted' then now() else quoted_at end,
-           assigned_admin_id = coalesce(assigned_admin_id, $10),
+           discount_type = coalesce($4, discount_type),
+           shipping = coalesce($5, shipping),
+           surcharge = coalesce($6, surcharge),
+           iva_rate = coalesce($7, iva_rate),
+           admin_notes = coalesce($8, admin_notes),
+           public_notes = coalesce($9, public_notes),
+           currency = coalesce($10, currency),
+           quoted_at = case when $11 then now() else quoted_at end,
+           quoted_by_user_id = case when $11 then $12 else quoted_by_user_id end,
+           assigned_admin_id = coalesce(assigned_admin_id, $12),
            updated_at = now()
          where id = $1`,
         [req.params.id, status || null,
-         discount === undefined ? null : Number(discount), shipping === undefined ? null : Number(shipping),
-         surcharge === undefined ? null : Number(surcharge), tax === undefined ? null : Number(tax),
-         adminNotes ?? null, publicNotes ?? null, currency || null, req.user.id]
+         discount === undefined ? null : Number(discount), discountType || null,
+         shipping === undefined ? null : Number(shipping), surcharge === undefined ? null : Number(surcharge),
+         ivaRate === undefined ? null : Number(ivaRate),
+         adminNotes ?? null, publicNotes ?? null, currency || null, nowQuoting, req.user.id]
       );
       const totals = await recomputeQuoteTotals(client, req.params.id);
       const after = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
@@ -488,151 +488,83 @@ router.put("/admin/company-profile", async (req, res) => {
 
 // ------------------------------------------------------ proforma (printable)
 
-// Self-contained printable HTML for a quote. Admin-only (requireAdmin at the
-// router level) and opened via window.open, so the session cookie gates it.
-router.get("/admin/quotes/:id/proforma", async (req, res) => {
+// Loads a quote + its client + items + company profile + the signer (the
+// admin who quoted it, falling back to the current admin). Shared by the
+// printable route and the email sender.
+async function loadProformaContext(quoteId, fallbackSigner) {
   const quoteResult = await pool.query(
     `select q.*, u.email, u.display_name, u.company_name
      from portal.quote_requests q join portal.users u on u.id = q.user_id
      where q.id = $1`,
-    [req.params.id]
+    [quoteId]
   );
   const quote = quoteResult.rows[0];
-  if (!quote) return res.status(404).send("Cotización no encontrada");
-  const items = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by created_at`, [req.params.id]);
+  if (!quote) return null;
+  const items = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by created_at`, [quoteId]);
   const company = await getCompanyProfile();
-  const currency = quote.currency || "ARS";
+  let signer = fallbackSigner;
+  if (quote.quoted_by_user_id) {
+    const s = await pool.query(`select display_name, email from portal.users where id = $1`, [quote.quoted_by_user_id]);
+    if (s.rows[0]) signer = s.rows[0];
+  }
+  return { quote, items: items.rows, company, signer };
+}
 
-  const rows = items.rows
-    .map((it) => {
-      const snap = it.displayed_price_snapshot || {};
-      const unit = it.quoted_unit_price != null ? Number(it.quoted_unit_price) : snap.amount != null ? Number(snap.amount) : null;
-      const lineTotal = unit != null ? unit * Number(it.quantity) : null;
-      return `<tr>
-        <td class="desc"><span class="sku">[${esc(it.sku_snapshot)}]</span> ${esc(it.product_name_snapshot)}${it.brand_snapshot ? ` <span class="brand">${esc(it.brand_snapshot)}</span>` : ""}</td>
-        <td class="num">${Number(it.quantity)}</td>
-        <td class="num">${unit != null ? fmtMoney(unit, currency) : "-"}</td>
-        <td class="num total">${lineTotal != null ? fmtMoney(lineTotal, currency) : "-"}</td>
-      </tr>`;
-    })
-    .join("");
+// Self-contained printable HTML for a quote. Admin-only (requireAdmin at the
+// router level) and opened via window.open, so the session cookie gates it.
+router.get("/admin/quotes/:id/proforma", async (req, res) => {
+  const ctx = await loadProformaContext(req.params.id, { display_name: req.user.display_name, email: req.user.email });
+  if (!ctx) return res.status(404).send("Cotización no encontrada");
+  res.set("Content-Type", "text/html; charset=utf-8").send(renderProformaHtml({ ...ctx, forEmail: false }));
+});
 
-  const subtotal = quote.quoted_subtotal != null ? Number(quote.quoted_subtotal) : Number(quote.displayed_subtotal || 0);
-  const discount = Number(quote.discount || 0);
-  const shipping = Number(quote.shipping || 0);
-  const surcharge = Number(quote.surcharge || 0);
-  const tax = Number(quote.tax || 0);
-  const total = quote.quoted_total != null ? Number(quote.quoted_total) : subtotal - discount + shipping + surcharge + tax;
+// Send the proforma to the client from the vendor's own Gmail mailbox. Requires
+// the admin to have connected Gmail (incremental gmail.send consent). On
+// success the quote is marked 'quoted' and signed by the sender.
+router.post("/admin/quotes/:id/send-proforma", async (req, res) => {
+  if (!req.user.gmail_connected) {
+    return res.status(400).json({ error: "gmail_not_connected", detail: "Conectá tu Gmail primero para enviar desde tu casilla." });
+  }
+  const tokenRow = await pool.query(`select gmail_refresh_token, gmail_address from portal.users where id = $1`, [req.user.id]);
+  const refreshToken = tokenRow.rows[0]?.gmail_refresh_token;
+  if (!refreshToken) return res.status(400).json({ error: "gmail_not_connected" });
 
-  const adjRow = (label, value, sign) =>
-    value ? `<tr><td class="lbl">${label}</td><td class="num">${sign}${fmtMoney(Math.abs(value), currency)}</td></tr>` : "";
+  // Sign + mark as quoted before rendering, so the emailed proforma carries
+  // the signature and the recomputed totals.
+  await withTransaction(async (client) => {
+    await client.query(
+      `update portal.quote_requests set status = 'quoted', quoted_at = coalesce(quoted_at, now()),
+         quoted_by_user_id = $2, assigned_admin_id = coalesce(assigned_admin_id, $2), updated_at = now()
+       where id = $1`,
+      [req.params.id, req.user.id]
+    );
+    await recomputeQuoteTotals(client, req.params.id);
+  });
 
-  const logo = company.logoUrl
-    ? `<img src="${esc(company.logoUrl)}" alt="${esc(company.name)}" class="logo-img">`
-    : `<div class="logo-text">Auto<span>diagnostico</span></div>`;
+  const ctx = await loadProformaContext(req.params.id, { display_name: req.user.display_name, email: req.user.email });
+  if (!ctx) return res.status(404).json({ error: "not_found" });
 
-  const dateStr = new Date(quote.submitted_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const to = (req.body?.to && String(req.body.to).trim()) || ctx.quote.email;
+  const html = renderProformaHtml({ ...ctx, forEmail: true });
+  const subject = `Proforma #${ctx.quote.request_number} - ${ctx.company.name}`;
 
-  const html = `<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Proforma #${quote.request_number} - ${esc(company.name)}</title>
-<style>
-  :root{--red:#c8102e;--ink:#1a1a1a;--muted:#777;--line:#e2e2e2}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:var(--ink);background:#f3f4f6;padding:24px}
-  .sheet{max-width:820px;margin:0 auto;background:#fff;padding:44px 48px;box-shadow:0 2px 16px rgba(0,0,0,.08)}
-  .toolbar{max-width:820px;margin:0 auto 16px;display:flex;gap:10px;justify-content:flex-end}
-  .toolbar button{background:var(--red);color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:14px;cursor:pointer;font-weight:600}
-  .toolbar button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
-  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:26px}
-  .logo-img{max-height:64px;max-width:280px}
-  .logo-text{font-size:30px;font-weight:800;letter-spacing:-.5px;color:var(--ink)}
-  .logo-text span{color:var(--red)}
-  .company{text-align:right;font-size:12px;color:var(--muted);line-height:1.55}
-  .company .cname{font-size:14px;color:var(--ink);font-weight:700}
-  .meta-row{display:flex;justify-content:space-between;gap:32px;margin-bottom:26px}
-  .bill-to{font-size:12.5px;line-height:1.6}
-  .bill-to .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px}
-  .bill-to .cname{font-weight:700;font-size:13.5px}
-  h1{font-size:24px;font-weight:800;margin-bottom:4px}
-  .docmeta{font-size:12px;color:var(--muted);text-align:right;line-height:1.7}
-  .docmeta b{color:var(--ink)}
-  table.items{width:100%;border-collapse:collapse;margin-bottom:8px}
-  table.items thead th{background:var(--ink);color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:9px 12px;text-align:left}
-  table.items thead th.num{text-align:right}
-  table.items tbody td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:top}
-  table.items td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  table.items td.total{font-weight:600}
-  .desc .sku{color:var(--muted);font-family:ui-monospace,monospace;font-size:11.5px}
-  .desc .brand{color:var(--muted);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:1px 5px;margin-left:4px}
-  .totals{display:flex;justify-content:flex-end;margin-top:14px}
-  .totals table{min-width:280px;border-collapse:collapse}
-  .totals td{padding:6px 12px;font-size:13px}
-  .totals td.lbl{color:var(--muted)}
-  .totals td.num{text-align:right;font-variant-numeric:tabular-nums}
-  .totals tr.grand td{background:var(--red);color:#fff;font-weight:700;font-size:15px;padding:11px 12px}
-  .notes{margin-top:26px;font-size:12px;color:var(--muted);line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
-  .footer{margin-top:30px;text-align:center;font-size:11px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
-  @media print{body{background:#fff;padding:0}.sheet{box-shadow:none;padding:24px 8px;max-width:none}.toolbar{display:none}}
-</style></head>
-<body>
-  <div class="toolbar">
-    <button onclick="window.print()">Imprimir / Guardar PDF</button>
-    <button class="ghost" onclick="window.close()">Cerrar</button>
-  </div>
-  <div class="sheet">
-    <div class="head">
-      <div>${logo}</div>
-      <div class="company">
-        <div class="cname">${esc(company.legalName || company.name)}</div>
-        ${company.addressLines.map((l) => `<div>${esc(l)}</div>`).join("")}
-        ${company.phone ? `<div>Tel: ${esc(company.phone)}</div>` : ""}
-        ${company.email ? `<div>${esc(company.email)}</div>` : ""}
-        ${company.website ? `<div>${esc(company.website)}</div>` : ""}
-        ${company.taxId ? `<div>CUIT: ${esc(company.taxId)}</div>` : ""}
-      </div>
-    </div>
+  try {
+    await sendGmail({
+      refreshToken,
+      from: tokenRow.rows[0].gmail_address || req.user.email,
+      fromName: req.user.display_name || ctx.company.name,
+      to,
+      subject,
+      html,
+      replyTo: req.user.email
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(502).json({ error: "gmail_send_failed", detail: error.message });
+  }
 
-    <div class="meta-row">
-      <div class="bill-to">
-        <div class="lbl">Cliente</div>
-        <div class="cname">${esc(quote.company_name || quote.display_name || quote.email)}</div>
-        ${quote.display_name && quote.company_name ? `<div>${esc(quote.display_name)}</div>` : ""}
-        <div>${esc(quote.email)}</div>
-      </div>
-      <div>
-        <h1>Proforma</h1>
-        <div class="docmeta">
-          <div>N° <b>#${quote.request_number}</b></div>
-          <div>Fecha: <b>${esc(dateStr)}</b></div>
-          <div>Moneda: <b>${esc(currency)}</b></div>
-          ${company.proformaValidityDays ? `<div>Validez: <b>${Number(company.proformaValidityDays)} días</b></div>` : ""}
-        </div>
-      </div>
-    </div>
-
-    <table class="items">
-      <thead><tr><th>Descripción</th><th class="num">Cantidad</th><th class="num">Precio unit.</th><th class="num">Importe</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#999;padding:24px">Sin items</td></tr>'}</tbody>
-    </table>
-
-    <div class="totals">
-      <table>
-        <tr><td class="lbl">Subtotal</td><td class="num">${fmtMoney(subtotal, currency)}</td></tr>
-        ${adjRow("Descuento", discount, "-")}
-        ${adjRow("Envío", shipping, "+")}
-        ${adjRow("Recargo", surcharge, "+")}
-        ${adjRow("Impuestos", tax, "+")}
-        <tr class="grand"><td>Total</td><td class="num">${fmtMoney(total, currency)}</td></tr>
-      </table>
-    </div>
-
-    ${quote.public_notes ? `<div class="notes"><b>Notas:</b> ${esc(quote.public_notes)}</div>` : ""}
-    <div class="footer">${esc(company.proformaFooter || "")}</div>
-  </div>
-</body></html>`;
-
-  res.set("Content-Type", "text/html; charset=utf-8").send(html);
+  await recordAudit({ actorUserId: req.user.id, action: "quote.proforma.sent", entityType: "quote_request", entityId: req.params.id, metadata: { to } });
+  res.json({ ok: true, to });
 });
 
 export default router;

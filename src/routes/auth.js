@@ -8,7 +8,8 @@ import {
   sessionCookieHeader,
   clearSessionCookieHeader,
   findOrCreateUser,
-  revokeSession
+  revokeSession,
+  parseCookies
 } from "../auth.js";
 import { pool } from "../db.js";
 
@@ -83,6 +84,79 @@ router.get("/auth/google/callback", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.redirect("/login?error=token_failed");
+  }
+});
+
+// --- Autorización incremental de Gmail (solo admin/vendedor) --------------
+// Separada del login para no tocar su camino: pide el scope gmail.send con
+// access_type=offline para obtener un refresh_token que permita enviar la
+// proforma "desde la casilla del vendedor". El refresh_token se guarda en
+// portal.users y nunca se expone por la API.
+const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const GMAIL_STATE_COOKIE = "portal_gmail_state";
+
+function gmailSecure() {
+  return appBaseUrl().startsWith("https://") ? "; Secure" : "";
+}
+
+router.get("/auth/google/gmail", (req, res) => {
+  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  if (!googleConfigured()) return res.redirect("/?gmail=not_configured");
+  const state = crypto.randomBytes(24).toString("base64url");
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", process.env.GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", `${appBaseUrl()}/auth/google/gmail/callback`);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", GMAIL_SCOPE);
+  authUrl.searchParams.set("access_type", "offline");
+  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("include_granted_scopes", "true");
+  authUrl.searchParams.set("login_hint", req.user.email);
+  authUrl.searchParams.set("state", state);
+  res.setHeader("set-cookie", `${GMAIL_STATE_COOKIE}=${state}; HttpOnly; Path=/; SameSite=Lax; Max-Age=600${gmailSecure()}`);
+  res.redirect(authUrl.toString());
+});
+
+router.get("/auth/google/gmail/callback", async (req, res) => {
+  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  const { code, state } = req.query;
+  const cookieState = parseCookies(req.headers.cookie)[GMAIL_STATE_COOKIE];
+  if (!state || state !== cookieState) return res.redirect("/?gmail=invalid_state");
+  if (!code) return res.redirect("/?gmail=missing_code");
+  try {
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: `${appBaseUrl()}/auth/google/gmail/callback`,
+        grant_type: "authorization_code"
+      })
+    });
+    if (!tokenResponse.ok) return res.redirect("/?gmail=token_failed");
+    const token = await tokenResponse.json();
+    if (!token.refresh_token) {
+      // Google only returns a refresh_token with prompt=consent; if the user
+      // had already granted it and Google skipped it, ask them to reconnect.
+      return res.redirect("/?gmail=no_refresh_token");
+    }
+    let gmailAddress = req.user.email;
+    try {
+      const prof = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { authorization: `Bearer ${token.access_token}` } });
+      if (prof.ok) gmailAddress = (await prof.json()).email || gmailAddress;
+    } catch { /* keep session email */ }
+
+    await pool.query(
+      `update portal.users set gmail_refresh_token = $2, gmail_address = $3, gmail_connected_at = now(), updated_at = now() where id = $1`,
+      [req.user.id, token.refresh_token, gmailAddress]
+    );
+    res.setHeader("set-cookie", `${GMAIL_STATE_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${gmailSecure()}`);
+    res.redirect("/?gmail=connected");
+  } catch (error) {
+    console.error(error);
+    res.redirect("/?gmail=token_failed");
   }
 });
 

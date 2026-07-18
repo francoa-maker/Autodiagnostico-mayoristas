@@ -67,8 +67,11 @@ export async function attachSession(req, _res, next) {
 
   try {
     const tokenHash = hashToken(token);
+    // gmail_refresh_token is deliberately NOT selected here: req.user is
+    // returned verbatim by /api/me, so only the boolean + address are exposed.
     const result = await pool.query(
-      `select u.id, u.email, u.display_name, u.avatar_url, u.role, u.status, u.company_name
+      `select u.id, u.email, u.display_name, u.avatar_url, u.role, u.status, u.company_name,
+              (u.gmail_refresh_token is not null) as gmail_connected, u.gmail_address
        from portal.sessions s
        join portal.users u on u.id = s.user_id
        where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now()`,
