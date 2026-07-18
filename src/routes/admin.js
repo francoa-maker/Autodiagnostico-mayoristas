@@ -91,17 +91,59 @@ async function getCompanyProfile() {
 
 router.get("/admin/users", async (req, res) => {
   const params = [];
-  let where = "true";
+  const conditions = [];
   if (req.query.status) {
+    if (!USER_STATUSES.includes(req.query.status)) return res.status(400).json({ error: "invalid_status" });
     params.push(req.query.status);
-    where = `status = $${params.length}`;
+    conditions.push(`status = $${params.length}`);
   }
+  if (req.query.month) {
+    if (!MONTH_RE.test(req.query.month)) return res.status(400).json({ error: "invalid_month" });
+    params.push(req.query.month);
+    conditions.push(`to_char(created_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') = $${params.length}`);
+  }
+  const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await pool.query(
     `select id, email, display_name, company_name, role, status, created_at, last_login_at
-     from portal.users where ${where} order by created_at desc`,
+     from portal.users ${where} order by created_at desc`,
     params
   );
   res.json({ users: result.rows });
+});
+
+// Meses (YYYY-MM, zona AR) con al menos un registro de cliente.
+router.get("/admin/users/months", async (req, res) => {
+  const result = await pool.query(
+    `select distinct to_char(created_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') as month
+     from portal.users order by month desc`
+  );
+  res.json({ months: result.rows.map((r) => r.month) });
+});
+
+// Borrado definitivo de un cliente. Como quote_requests.user_id es RESTRICT,
+// primero se borran sus cotizaciones (cascada a items/revisiones) y sesiones,
+// todo en una transacción. Mismas protecciones que el PATCH: no borrarse a
+// uno mismo ni al último admin.
+router.delete("/admin/users/:id", async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: "cannot_delete_self", detail: "No podés borrar tu propia cuenta." });
+  const target = await pool.query(`select id, role, status, email from portal.users where id = $1`, [req.params.id]);
+  if (!target.rows[0]) return res.status(404).json({ error: "not_found" });
+  if (target.rows[0].role === "admin" && target.rows[0].status === "approved") {
+    const admins = await pool.query(`select count(*)::int as n from portal.users where role = 'admin' and status = 'approved'`);
+    if (admins.rows[0].n <= 1) return res.status(400).json({ error: "last_admin", detail: "No se puede borrar al único administrador." });
+  }
+  try {
+    const counts = await withTransaction(async (client) => {
+      const q = await client.query(`delete from portal.quote_requests where user_id = $1 returning id`, [req.params.id]);
+      await client.query(`delete from portal.users where id = $1`, [req.params.id]);
+      return { quotes: q.rowCount };
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "user.delete", entityType: "user", entityId: req.params.id, before: target.rows[0], metadata: { deletedQuotes: counts.quotes } });
+    res.json({ ok: true, deletedQuotes: counts.quotes });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "user_delete_failed" });
+  }
 });
 
 router.patch("/admin/users/:id", async (req, res) => {
@@ -359,18 +401,71 @@ router.get("/admin/stock/low", async (req, res) => {
   res.json({ products: low });
 });
 
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const AR_TZ = "America/Argentina/Buenos_Aires";
+
 router.get("/admin/quotes", async (req, res) => {
+  const params = [];
+  const conditions = [];
+  if (req.query.status) {
+    if (!QUOTE_STATUSES.includes(req.query.status)) return res.status(400).json({ error: "invalid_status" });
+    params.push(req.query.status);
+    conditions.push(`q.status = $${params.length}`);
+  }
+  if (req.query.month) {
+    if (!MONTH_RE.test(req.query.month)) return res.status(400).json({ error: "invalid_month" });
+    params.push(req.query.month);
+    conditions.push(`to_char(q.submitted_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') = $${params.length}`);
+  }
+  const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await pool.query(
     `select q.*, u.email, u.display_name, u.company_name
      from portal.quote_requests q join portal.users u on u.id = q.user_id
-     order by q.submitted_at desc limit 200`
+     ${where}
+     order by q.submitted_at desc limit 500`,
+    params
   );
   res.json({ quotes: result.rows });
+});
+
+// Meses (YYYY-MM, zona AR) que tienen al menos una cotización, para poblar el
+// selector de mes sin traer todas las filas.
+router.get("/admin/quotes/months", async (req, res) => {
+  const result = await pool.query(
+    `select distinct to_char(submitted_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') as month
+     from portal.quote_requests order by month desc`
+  );
+  res.json({ months: result.rows.map((r) => r.month) });
+});
+
+// Borrado definitivo de una cotización (cascada a items y revisiones).
+router.delete("/admin/quotes/:id", async (req, res) => {
+  const del = await pool.query(`delete from portal.quote_requests where id = $1 returning request_number`, [req.params.id]);
+  if (!del.rows[0]) return res.status(404).json({ error: "not_found" });
+  await recordAudit({ actorUserId: req.user.id, action: "quote.delete", entityType: "quote_request", entityId: req.params.id, before: { request_number: del.rows[0].request_number } });
+  res.json({ ok: true });
 });
 
 router.get("/admin/audit", async (req, res) => {
   const result = await pool.query(`select * from portal.audit_log order by created_at desc limit 200`);
   res.json({ entries: result.rows });
+});
+
+// Resumen liviano para el auto-refresh del panel: contadores + marca de
+// tiempo del último cliente/cotización. El front lo consulta cada pocos
+// segundos y, si cambió algún "latest", refresca la lista correspondiente y
+// avisa. Son sólo COUNT/MAX, mucho más barato que recargar las listas.
+router.get("/admin/summary", async (req, res) => {
+  const r = await pool.query(`
+    select
+      (select count(*)::int from portal.users where status = 'pending') as pending_users,
+      (select count(*)::int from portal.quote_requests where status = 'submitted') as pending_quotes,
+      (select count(*)::int from portal.quote_requests) as total_quotes,
+      (select count(*)::int from portal.users) as total_users,
+      (select max(created_at) from portal.users) as latest_user_at,
+      (select max(submitted_at) from portal.quote_requests) as latest_quote_at
+  `);
+  res.json(r.rows[0]);
 });
 
 // ------------------------------------------------------ quote editing (admin)

@@ -110,12 +110,17 @@
               <h1>Clientes</h1>
               <p>Todos los usuarios registrados en el portal</p>
             </div>
-            <select id="clientStatusFilter" class="admin-search" style="max-width:220px">
-              <option value="">Todos los estados</option>
-              <option value="pending">Pendientes</option>
-              <option value="approved">Aprobados</option>
-              <option value="rejected">Rechazados</option>
-            </select>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <select id="clientMonthFilter" class="admin-search" style="min-width:150px">
+                <option value="">Todos los meses</option>
+              </select>
+              <select id="clientStatusFilter" class="admin-search" style="min-width:150px">
+                <option value="">Todos los estados</option>
+                <option value="pending">Pendientes</option>
+                <option value="approved">Aprobados</option>
+                <option value="rejected">Rechazados</option>
+              </select>
+            </div>
           </div>
           <div class="panel">
             <div style="overflow-x:auto">
@@ -134,13 +139,27 @@
               <h1>Cotizaciones</h1>
               <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la proforma.</p>
             </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <select id="quoteMonthFilter" class="admin-search" style="min-width:150px">
+                <option value="">Todos los meses</option>
+              </select>
+              <select id="quoteStatusFilter" class="admin-search" style="min-width:150px">
+                <option value="">Todos los estados</option>
+                <option value="submitted">Enviadas</option>
+                <option value="reviewing">En revisión</option>
+                <option value="quoted">Cotizadas</option>
+                <option value="accepted">Aceptadas</option>
+                <option value="rejected">Rechazadas</option>
+                <option value="cancelled">Canceladas</option>
+              </select>
+            </div>
           </div>
           <div class="quotes-layout">
             <div class="panel quotes-list-panel">
               <div style="overflow-x:auto">
                 <table>
-                  <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Total</th><th>Enviada</th></tr></thead>
-                  <tbody id="quotesBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
+                  <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Total</th><th>Enviada</th><th></th></tr></thead>
+                  <tbody id="quotesBody"><tr><td colspan="6" class="empty-row">Cargando...</td></tr></tbody>
                 </table>
               </div>
             </div>

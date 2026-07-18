@@ -186,7 +186,12 @@ overlay.addEventListener("click", (e) => {
 
 // ==================== Navegación entre secciones ====================
 
-const sectionLoaders = { products: loadProducts, clients: loadClients, quotes: loadQuotes, settings: loadCompanyProfile };
+const sectionLoaders = {
+  products: loadProducts,
+  clients: async () => { await populateMonths("clientMonthFilter", "/api/admin/users/months"); await loadClients(); },
+  quotes: async () => { await populateMonths("quoteMonthFilter", "/api/admin/quotes/months"); await loadQuotes(); },
+  settings: loadCompanyProfile
+};
 const loadedSections = new Set();
 
 document.getElementById("adminNav").addEventListener("click", (e) => {
@@ -356,12 +361,16 @@ const STATUS_PILL = { pending: "pending", approved: "approved", rejected: "rejec
 
 async function loadClients() {
   const status = document.getElementById("clientStatusFilter").value;
-  const { users } = await fetchJson(`/api/admin/users${status ? `?status=${status}` : ""}`);
+  const month = document.getElementById("clientMonthFilter")?.value || "";
+  const qs = new URLSearchParams();
+  if (status) qs.set("status", status);
+  if (month) qs.set("month", month);
+  const { users } = await fetchJson(`/api/admin/users${qs.toString() ? `?${qs}` : ""}`);
   const body = document.getElementById("clientsBody");
   body.innerHTML =
     users
       .map(
-        (u) => `<tr data-id="${u.id}">
+        (u) => `<tr data-id="${u.id}" data-email="${esc(u.email)}">
           <td>${esc(u.email)}</td>
           <td>${esc(u.display_name || "-")}</td>
           <td>${esc(u.company_name || "-")}</td>
@@ -373,6 +382,7 @@ async function loadClients() {
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
             ${u.role === "customer" ? '<button class="link-btn ghost" data-action="make-admin">Hacer admin</button>' : '<button class="link-btn ghost" data-action="make-customer">Quitar admin</button>'}
+            <button class="link-btn ghost" data-action="delete-user" title="Eliminar cliente">🗑</button>
           </td>
         </tr>`
       )
@@ -380,11 +390,29 @@ async function loadClients() {
 }
 
 document.getElementById("clientStatusFilter").addEventListener("change", loadClients);
+document.getElementById("clientMonthFilter").addEventListener("change", loadClients);
 
 document.getElementById("clientsBody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
-  const id = btn.closest("tr").dataset.id;
+  const row = btn.closest("tr");
+  const id = row.dataset.id;
+
+  if (btn.dataset.action === "delete-user") {
+    if (!confirm(`¿Eliminar al cliente ${row.dataset.email}? Se borran también TODAS sus cotizaciones. Esta acción no se puede deshacer.`)) return;
+    btn.disabled = true;
+    try {
+      const r = await deleteJson(`/api/admin/users/${id}`);
+      await loadClients();
+      await populateMonths("clientMonthFilter", "/api/admin/users/months");
+      if (r.deletedQuotes) await loadQuotes();
+    } catch (error) {
+      alert("No se pudo eliminar: " + (error.body?.detail || error.message));
+      btn.disabled = false;
+    }
+    return;
+  }
+
   const payload = {
     approve: { status: "approved" },
     reject: { status: "rejected" },
@@ -396,7 +424,7 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
     await patchJson(`/api/admin/users/${id}`, payload);
     await loadClients();
   } catch (error) {
-    alert("No se pudo actualizar el usuario: " + error.message);
+    alert("No se pudo actualizar el usuario: " + (error.body?.detail || error.message));
     btn.disabled = false;
   }
 });
@@ -408,8 +436,28 @@ const QUOTE_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", qu
 
 let currentQuoteId = null;
 
+const MONTH_NAMES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function monthLabel(ym) {
+  const [y, m] = ym.split("-");
+  return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+}
+
+// Rellena un <select> de meses conservando la opción "Todos" y la selección.
+async function populateMonths(selectId, url) {
+  const sel = document.getElementById(selectId);
+  const current = sel.value;
+  const { months } = await fetchJson(url);
+  sel.innerHTML = '<option value="">Todos los meses</option>' + months.map((m) => `<option value="${m}">${monthLabel(m)}</option>`).join("");
+  if (current && months.includes(current)) sel.value = current;
+}
+
 async function loadQuotes() {
-  const { quotes } = await fetchJson("/api/admin/quotes");
+  const month = document.getElementById("quoteMonthFilter")?.value || "";
+  const status = document.getElementById("quoteStatusFilter")?.value || "";
+  const qs = new URLSearchParams();
+  if (month) qs.set("month", month);
+  if (status) qs.set("status", status);
+  const { quotes } = await fetchJson(`/api/admin/quotes${qs.toString() ? `?${qs}` : ""}`);
   const body = document.getElementById("quotesBody");
   body.innerHTML =
     quotes
@@ -420,18 +468,44 @@ async function loadQuotes() {
           <td><span class="status-pill ${q.status === "submitted" ? "pending" : "approved"}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span></td>
           <td class="num tabular">${money(q.quoted_total ?? q.displayed_subtotal)}</td>
           <td>${timeAgo(q.submitted_at)}</td>
+          <td><button class="link-btn ghost" data-action="del-quote" title="Eliminar cotización">🗑</button></td>
         </tr>`
       )
-      .join("") || '<tr><td colspan="5" class="empty-row">Todavía no hay cotizaciones.</td></tr>';
+      .join("") || '<tr><td colspan="6" class="empty-row">No hay cotizaciones con ese filtro.</td></tr>';
 }
 
-document.getElementById("quotesBody").addEventListener("click", (e) => {
+document.getElementById("quotesBody").addEventListener("click", async (e) => {
+  const delBtn = e.target.closest('button[data-action="del-quote"]');
+  if (delBtn) {
+    e.stopPropagation();
+    const row = delBtn.closest("tr[data-id]");
+    const num = row.querySelector("strong")?.textContent || "";
+    if (!confirm(`¿Eliminar la cotización ${num}? Esta acción no se puede deshacer.`)) return;
+    delBtn.disabled = true;
+    try {
+      await deleteJson(`/api/admin/quotes/${row.dataset.id}`);
+      if (currentQuoteId === row.dataset.id) {
+        currentQuoteId = null;
+        document.getElementById("quoteDetailBody").className = "empty-row";
+        document.getElementById("quoteDetailBody").textContent = "Elegí una cotización de la lista para ver y editar el detalle.";
+      }
+      await loadQuotes();
+      await populateMonths("quoteMonthFilter", "/api/admin/quotes/months");
+    } catch (error) {
+      alert("No se pudo eliminar: " + error.message);
+      delBtn.disabled = false;
+    }
+    return;
+  }
   const row = e.target.closest("tr[data-id]");
   if (!row) return;
   currentQuoteId = row.dataset.id;
   document.querySelectorAll(".quote-row").forEach((r) => r.classList.toggle("active", r === row));
   renderQuoteEditor(currentQuoteId);
 });
+
+document.getElementById("quoteMonthFilter").addEventListener("change", loadQuotes);
+document.getElementById("quoteStatusFilter").addEventListener("change", loadQuotes);
 
 function itemUnit(it) {
   if (it.quoted_unit_price != null) return Number(it.quoted_unit_price);
@@ -747,9 +821,70 @@ document.getElementById("companyForm").addEventListener("submit", async (e) => {
 
 // ==================== init ====================
 
+// ==================== Auto-refresh (polling cada 12s) ====================
+
+let lastSummary = null;
+
+function toast(msg) {
+  let host = document.getElementById("toastHost");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toastHost";
+    host.className = "toast-host";
+    document.body.appendChild(host);
+  }
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 300); }, 6000);
+}
+
+function currentSection() {
+  return document.querySelector("#adminNav a.active")?.dataset.section;
+}
+
+async function pollSummary() {
+  let s;
+  try {
+    s = await fetchJson("/api/admin/summary");
+  } catch {
+    return; // error de red puntual: reintenta en el próximo tick
+  }
+  if (lastSummary) {
+    const newQuote = s.latest_quote_at !== lastSummary.latest_quote_at && s.total_quotes > lastSummary.total_quotes;
+    const newUser = s.latest_user_at !== lastSummary.latest_user_at && s.total_users > lastSummary.total_users;
+    if (newQuote) {
+      toast("📩 Llegó una nueva cotización");
+      loadRecentQuotes().catch(() => {});
+      if (currentSection() === "quotes") {
+        loadQuotes().catch(() => {});
+        populateMonths("quoteMonthFilter", "/api/admin/quotes/months").catch(() => {});
+      }
+    }
+    if (newUser) {
+      toast("👤 Nuevo cliente registrado");
+      loadPendingUsers().catch(() => {});
+      if (currentSection() === "clients") {
+        loadClients().catch(() => {});
+        populateMonths("clientMonthFilter", "/api/admin/users/months").catch(() => {});
+      }
+    }
+    if (newQuote || newUser || s.pending_users !== lastSummary.pending_users || s.pending_quotes !== lastSummary.pending_quotes) {
+      refreshKpis().catch(() => {});
+    }
+  }
+  lastSummary = s;
+}
+
 (async function init() {
   await loadMe();
   await loadStockHealth();
   await refreshKpis();
   await loadAudit();
+  await pollSummary(); // siembra lastSummary sin notificar
+  setInterval(pollSummary, 12000);
+  // Refresca al volver a la pestaña (más inmediato tras estar en otra app).
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollSummary(); });
 })();
