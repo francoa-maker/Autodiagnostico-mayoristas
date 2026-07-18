@@ -351,3 +351,72 @@ details.collapsible > div{padding:0 18px 18px}
   .quotes-layout{grid-template-columns:1fr}
   .form-grid{grid-template-columns:1fr}
 }
+
+/* ==================== Responsive / celular (v3) ==================== */
+/* Bloque al final para ganar en cascada sobre las media queries de arriba
+   (p. ej. la que ocultaba .admin-sidebar en mobile, que dejaba al panel sin
+   navegación). Acá la sidebar pasa a ser una barra superior desplazable. */
+@media (max-width:760px){
+  .admin-app{flex-direction:column}
+  .admin-sidebar{
+    display:flex;flex-direction:row;align-items:center;gap:6px;width:100%;
+    padding:8px 10px;overflow-x:auto;position:sticky;top:0;z-index:60;
+    -webkit-overflow-scrolling:touch
+  }
+  .admin-brand{display:none}
+  .admin-section-label{display:none}
+  .admin-nav{flex-direction:row;gap:4px;flex:0 0 auto}
+  .admin-nav a{
+    border-left:none;border-bottom:2px solid transparent;border-radius:6px;
+    padding:8px 12px;white-space:nowrap;font-size:12.5px
+  }
+  .admin-nav a.active{border-left:none;border-bottom-color:var(--brand-red);background:var(--admin-sidebar-hover)}
+  .admin-user{margin:0 0 0 auto;padding:0;border-top:none;flex:0 0 auto}
+  .admin-user .av,.admin-user div{display:none}
+  .admin-user a{margin-left:0;padding:8px 10px;color:#cbd3e1;border:1px solid rgba(255,255,255,.15);border-radius:6px}
+
+  .admin-main{padding:16px 13px 60px}
+  .admin-topline{gap:12px}
+  .admin-topline h1{font-size:20px}
+  .admin-search{min-width:0;width:100%}
+  .source-card{width:100%}
+
+  .kpi-row{grid-template-columns:repeat(2,1fr);gap:10px}
+  .kpi-card{padding:12px 13px}
+  .kpi-card .kv{font-size:18px}
+  .dash-grid,.bottom-grid{grid-template-columns:1fr}
+
+  /* Tablas: permitir scroll horizontal en su contenedor y compactar celdas */
+  .panel{padding:14px}
+  th,td{padding:7px 8px;font-size:12px}
+
+  /* Editor de cotización y formularios apilados */
+  .quotes-layout{grid-template-columns:1fr}
+  .quotes-list-panel{max-height:none}
+  .quote-totals{flex-direction:column;gap:14px}
+  .qt-adjustments{width:100%}
+  .qt-summary{min-width:0;width:100%}
+  .form-grid{grid-template-columns:1fr}
+  .modal{padding:18px 16px}
+
+  /* Botones de acción a lo ancho para el pulgar */
+  .btn-primary{padding:11px 16px}
+}
+
+/* Catálogo (cliente) en celular: header que envuelve y toca cómodo */
+@media (max-width:620px){
+  .cat-header{flex-wrap:wrap;height:auto;padding:10px 14px;gap:10px}
+  .cat-search{width:100%;order:3}
+  .grid{grid-template-columns:1fr 1fr;gap:10px}
+  .hub-grid{grid-template-columns:1fr 1fr;gap:10px}
+}
+@media (max-width:400px){
+  .grid,.hub-grid{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:1fr}
+}
+
+/* Evita zoom involuntario en iOS al enfocar inputs (fuente < 16px) */
+@media (max-width:760px){
+  input,select,textarea{font-size:16px}
+  .cell-input{font-size:14px}
+}

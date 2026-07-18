@@ -13,8 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import crypto from "node:crypto";
-import { rowsToSnapshotProducts } from "../src/imports/legacyCatalogImporter.js";
+import { rowsToSnapshotProducts, hashSnapshot } from "../src/imports/legacyCatalogImporter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const snapshotsDir = path.join(__dirname, "..", "snapshots");
@@ -157,7 +156,11 @@ async function main() {
   }
 
   const { products, skippedNoSku, skippedExcluded } = rowsToSnapshotProducts(rows);
-  const sha256 = crypto.createHash("sha256").update(JSON.stringify(products)).digest("hex");
+  // Use the importer's canonical hash (stable across key order / missing
+  // fields) so the sha256 stored here matches what the dry-run/apply step
+  // reasons about - a hand-rolled JSON.stringify hash could diverge silently
+  // and break the apply's idempotency guard.
+  const sha256 = hashSnapshot(products);
 
   const snapshot = {
     captured_at: localTimestamp(),

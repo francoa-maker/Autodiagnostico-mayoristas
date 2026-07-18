@@ -11,6 +11,36 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT || 3000);
 
+// Express 4 does not forward rejected promises from async route handlers to
+// the error middleware, so a single failing query (e.g. a misconfigured
+// STOCK_TABLE) would become an unhandledRejection and could take down the
+// whole process. Wrapping every route handler in Promise.resolve().catch(next)
+// routes those failures to the error handler as a clean 500 instead. Done once
+// at mount time so individual routes don't each need a try/catch.
+function wrapRouterErrors(router) {
+  for (const layer of router.stack || []) {
+    if (!layer.route) continue;
+    for (const routeLayer of layer.route.stack) {
+      const original = routeLayer.handle;
+      if (typeof original !== "function" || original.length >= 4) continue; // skip error handlers
+      routeLayer.handle = function wrapped(req, res, next) {
+        Promise.resolve(original(req, res, next)).catch(next);
+      };
+    }
+  }
+  return router;
+}
+
+// Last-resort backstops: log instead of letting an unexpected rejection or
+// exception crash the service. The wrapper above should catch route errors
+// first; these only fire for anything outside the request/response cycle.
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("uncaughtException:", error);
+});
+
 const app = express();
 app.use(express.json());
 app.use(attachSession);
@@ -21,10 +51,10 @@ app.get("/health", (req, res) => {
 
 // authRouter mounts /auth/* and /api/me at root (no /api prefix, matching
 // the ninots convention of keeping auth outside the requireUser-gated tree).
-app.use(authRouter);
-app.use("/api", catalogRouter);
-app.use("/api", quotesRouter);
-app.use("/api", adminRouter);
+app.use(wrapRouterErrors(authRouter));
+app.use("/api", wrapRouterErrors(catalogRouter));
+app.use("/api", wrapRouterErrors(quotesRouter));
+app.use("/api", wrapRouterErrors(adminRouter));
 
 app.use("/assets", express.static(path.join(publicDir, "assets")));
 

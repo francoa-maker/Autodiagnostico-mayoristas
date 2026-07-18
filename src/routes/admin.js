@@ -13,6 +13,27 @@ router.use(requireAdmin);
 
 // ------------------------------------------------------------------ helpers
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const USER_STATUSES = ["pending", "approved", "rejected", "blocked"];
+const USER_ROLES = ["customer", "admin"];
+const QUOTE_STATUSES = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
+const PRICE_STATES = ["value", "consult", "hidden", "unavailable", "custom"];
+
+// Reject a malformed :id / :itemId with a clean 400 before it reaches
+// Postgres (which would otherwise throw a raw "invalid input syntax for
+// type uuid" 500). Applies to every route that uses these params.
+router.param("id", (req, res, next, value) => (UUID_RE.test(value) ? next() : res.status(400).json({ error: "invalid_id" })));
+router.param("itemId", (req, res, next, value) => (UUID_RE.test(value) ? next() : res.status(400).json({ error: "invalid_item_id" })));
+
+// Coerce a value expected to be numeric. Returns { ok, value } so callers can
+// answer 400 instead of letting NaN reach a numeric column and blow up the
+// transaction with a generic 500. undefined/null/"" pass through as null.
+function asNumber(raw) {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, value: null };
+  const n = Number(raw);
+  return Number.isFinite(n) ? { ok: true, value: n } : { ok: false };
+}
+
 const TIERS = ["one", "four", "eight"];
 
 function tierForQuantity(qty) {
@@ -85,8 +106,22 @@ router.get("/admin/users", async (req, res) => {
 
 router.patch("/admin/users/:id", async (req, res) => {
   const { status, role, rejectionReason } = req.body || {};
+  if (status != null && !USER_STATUSES.includes(status)) return res.status(400).json({ error: "invalid_status" });
+  if (role != null && !USER_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
+
   const before = await pool.query(`select * from portal.users where id = $1`, [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
+  const target = before.rows[0];
+
+  // Lockout protection: the change must not remove the last remaining admin,
+  // and an admin cannot demote or un-approve themselves (which would kick
+  // them out of the panel mid-session).
+  const losesAdmin = (role != null && role !== "admin") || (status != null && status !== "approved");
+  if (losesAdmin && target.role === "admin" && target.status === "approved") {
+    if (target.id === req.user.id) return res.status(400).json({ error: "cannot_demote_self", detail: "No podés quitarte tu propio acceso de admin." });
+    const admins = await pool.query(`select count(*)::int as n from portal.users where role = 'admin' and status = 'approved'`);
+    if (admins.rows[0].n <= 1) return res.status(400).json({ error: "last_admin", detail: "No se puede dejar el portal sin ningún administrador." });
+  }
 
   const result = await pool.query(
     `update portal.users set
@@ -146,6 +181,13 @@ router.post("/admin/products", async (req, res) => {
   const { sku, name, brand, category, imageUrl, publicationUrl, note, visible, sortOrder, prices } = req.body || {};
   if (!sku || !String(sku).trim()) return res.status(400).json({ error: "sku_required" });
   if (!name || !String(name).trim()) return res.status(400).json({ error: "name_required" });
+  const sortCheck = asNumber(sortOrder);
+  if (!sortCheck.ok) return res.status(400).json({ error: "invalid_number", field: "sortOrder" });
+  for (const tier of TIERS) {
+    const p = prices?.[tier];
+    if (p && p.amount != null && !asNumber(p.amount).ok) return res.status(400).json({ error: "invalid_number", field: tier });
+    if (p && p.state && !PRICE_STATES.includes(p.state)) return res.status(400).json({ error: "invalid_price_state", field: tier });
+  }
   const skuNormalized = normalizeSku(sku);
 
   try {
@@ -153,14 +195,15 @@ router.post("/admin/products", async (req, res) => {
       const existing = await client.query(`select id, active from portal.products where sku_normalized = $1`, [skuNormalized]);
       if (existing.rows[0]) {
         // Reactivate a previously soft-deleted product instead of failing on
-        // the unique(sku_normalized) constraint.
+        // the unique(sku_normalized) constraint. Also refreshes the visible
+        // sku text (sku_normalized stays fixed so stock/quote joins hold).
         const revived = await client.query(
-          `update portal.products set active = true, name = $2, brand = coalesce($3, brand),
-             category = coalesce($4, category), image_url = $5, publication_url = $6, note = $7,
-             visible = coalesce($8, visible), sort_order = coalesce($9, sort_order), updated_by = $10, updated_at = now()
+          `update portal.products set active = true, sku = $2, name = $3, brand = coalesce($4, brand),
+             category = coalesce($5, category), image_url = $6, publication_url = $7, note = $8,
+             visible = coalesce($9, visible), sort_order = coalesce($10, sort_order), updated_by = $11, updated_at = now()
            where sku_normalized = $1 returning *`,
-          [skuNormalized, name, brand || null, category || null, imageUrl || null, publicationUrl || null, note || null,
-           visible === undefined ? null : Boolean(visible), sortOrder === undefined ? null : Number(sortOrder), req.user.id]
+          [skuNormalized, String(sku).trim(), name, brand || null, category || null, imageUrl || null, publicationUrl || null, note || null,
+           visible === undefined ? null : Boolean(visible), sortCheck.value, req.user.id]
         );
         return revived.rows[0];
       }
@@ -193,12 +236,31 @@ router.post("/admin/products", async (req, res) => {
 });
 
 router.patch("/admin/products/:id", async (req, res) => {
-  const { sortOrder, visible, name, brand, category, imageUrl, publicationUrl, note } = req.body || {};
+  const { sku, sortOrder, visible, name, brand, category, imageUrl, publicationUrl, note } = req.body || {};
+  const sortCheck = asNumber(sortOrder);
+  if (!sortCheck.ok) return res.status(400).json({ error: "invalid_number", field: "sortOrder" });
+
   const before = await pool.query(`select * from portal.products where id = $1`, [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
 
+  // Editing the visible SKU also recomputes sku_normalized (the stock/quote
+  // join key) so the two never drift apart; a normalized collision with
+  // another product is rejected rather than violating the unique constraint.
+  let newSku = null;
+  let newNormalized = null;
+  if (sku != null && String(sku).trim() && normalizeSku(sku) !== before.rows[0].sku_normalized) {
+    newSku = String(sku).trim();
+    newNormalized = normalizeSku(sku);
+    const clash = await pool.query(`select 1 from portal.products where sku_normalized = $1 and id <> $2`, [newNormalized, req.params.id]);
+    if (clash.rows[0]) return res.status(409).json({ error: "sku_already_exists", detail: `Ya existe otro producto con SKU ${newSku}.` });
+  } else if (sku != null && String(sku).trim()) {
+    newSku = String(sku).trim(); // same normalized, just refresh the visible text
+  }
+
   const result = await pool.query(
     `update portal.products set
+       sku = coalesce($11, sku),
+       sku_normalized = coalesce($12, sku_normalized),
        sort_order = coalesce($2, sort_order),
        visible = coalesce($3, visible),
        name = coalesce($4, name),
@@ -211,8 +273,9 @@ router.patch("/admin/products/:id", async (req, res) => {
        updated_at = now()
      where id = $1
      returning *`,
-    [req.params.id, sortOrder === undefined ? null : Number(sortOrder), visible === undefined ? null : Boolean(visible),
-     name ?? null, brand ?? null, category ?? null, imageUrl ?? null, publicationUrl ?? null, note ?? null, req.user.id]
+    [req.params.id, sortCheck.value, visible === undefined ? null : Boolean(visible),
+     name ?? null, brand ?? null, category ?? null, imageUrl ?? null, publicationUrl ?? null, note ?? null, req.user.id,
+     newSku, newNormalized]
   );
 
   await recordAudit({
@@ -242,6 +305,10 @@ router.put("/admin/products/:id/prices/:tier", async (req, res) => {
   if (tier === "pvp") return res.status(400).json({ error: "pvp_is_read_only", detail: "PVP se lee en vivo desde Supabase, no se edita desde el portal." });
   if (!["one", "four", "eight"].includes(tier)) return res.status(400).json({ error: "invalid_tier" });
   const { state, amount, currency, label, reason } = req.body || {};
+  if (state != null && !PRICE_STATES.includes(state)) return res.status(400).json({ error: "invalid_price_state" });
+  const amountCheck = asNumber(amount);
+  if (!amountCheck.ok) return res.status(400).json({ error: "invalid_number", field: "amount" });
+  if ((state || "value") === "value" && amountCheck.value == null) return res.status(400).json({ error: "amount_required_for_value" });
 
   try {
     const result = await withTransaction(async (client) => {
@@ -252,7 +319,7 @@ router.put("/admin/products/:id/prices/:tier", async (req, res) => {
          on conflict (product_id, tier) do update
            set state = excluded.state, amount = excluded.amount, currency = excluded.currency,
                custom_label = excluded.custom_label, updated_by = excluded.updated_by, updated_at = now()`,
-        [req.params.id, tier, state || "value", amount ?? null, currency || "ARS", label || null, req.user.id]
+        [req.params.id, tier, state || "value", amountCheck.value, currency || "ARS", label || null, req.user.id]
       );
       const after = await client.query(`select * from portal.product_prices where product_id = $1 and tier = $2`, [req.params.id, tier]);
 
@@ -329,6 +396,10 @@ router.patch("/admin/quotes/:id", async (req, res) => {
   if (discountType !== undefined && !["nominal", "percent"].includes(discountType)) {
     return res.status(400).json({ error: "invalid_discount_type" });
   }
+  if (status != null && !QUOTE_STATUSES.includes(status)) return res.status(400).json({ error: "invalid_status" });
+  for (const [field, v] of Object.entries({ discount, shipping, surcharge, ivaRate })) {
+    if (v !== undefined && !asNumber(v).ok) return res.status(400).json({ error: "invalid_number", field });
+  }
   try {
     const result = await withTransaction(async (client) => {
       const before = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
@@ -376,8 +447,10 @@ router.patch("/admin/quotes/:id", async (req, res) => {
 // current tier price for the given quantity unless the admin overrides it.
 router.post("/admin/quotes/:id/items", async (req, res) => {
   const { productId, quantity, unitPrice } = req.body || {};
-  const qty = Math.max(1, Math.floor(Number(quantity)) || 1);
   if (!productId) return res.status(400).json({ error: "product_required" });
+  if (!UUID_RE.test(String(productId))) return res.status(400).json({ error: "invalid_product_id" });
+  if (!asNumber(unitPrice).ok) return res.status(400).json({ error: "invalid_number", field: "unitPrice" });
+  const qty = Math.max(1, Math.floor(Number(quantity)) || 1);
   try {
     const item = await withTransaction(async (client) => {
       const q = await client.query(`select id from portal.quote_requests where id = $1`, [req.params.id]);
@@ -421,6 +494,8 @@ router.post("/admin/quotes/:id/items", async (req, res) => {
 // core of the admin quoting flow ("a qué precio compraría cada producto").
 router.put("/admin/quotes/:id/items/:itemId", async (req, res) => {
   const { quantity, unitPrice } = req.body || {};
+  if (quantity !== undefined && !asNumber(quantity).ok) return res.status(400).json({ error: "invalid_number", field: "quantity" });
+  if (!asNumber(unitPrice).ok) return res.status(400).json({ error: "invalid_number", field: "unitPrice" });
   try {
     const item = await withTransaction(async (client) => {
       const before = await client.query(`select * from portal.quote_items where id = $1 and quote_request_id = $2`, [req.params.itemId, req.params.id]);

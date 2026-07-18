@@ -14,6 +14,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      # Cierra el bypass /auth/dev-login (gateado por NODE_ENV !== production)
+      # y pone Express en modo producción.
+      - key: NODE_ENV
+        value: production
       - key: APP_BASE_URL
         sync: false
       - key: DATABASE_URL

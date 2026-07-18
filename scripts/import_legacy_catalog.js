@@ -52,6 +52,12 @@ async function main() {
     console.error("DATABASE_URL no configurado.");
     process.exit(1);
   }
+  // Safety gate so an accidental --apply (e.g. in a prod shell) can't rewrite
+  // the catalog unless explicitly enabled. Dry-run is always allowed.
+  if (args.mode === "apply" && process.env.LEGACY_CATALOG_IMPORT_ENABLED !== "true") {
+    console.error("--apply bloqueado: seteá LEGACY_CATALOG_IMPORT_ENABLED=true para confirmar la importación real.");
+    process.exit(1);
+  }
 
   const snapshot = JSON.parse(fs.readFileSync(args.snapshot, "utf8"));
   console.log(`Snapshot: ${args.snapshot}`);
