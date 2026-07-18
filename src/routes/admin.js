@@ -693,7 +693,7 @@ router.put("/admin/company-profile", async (req, res) => {
 // Loads a quote + its client + items + company profile + the signer (the
 // admin who quoted it, falling back to the current admin). Shared by the
 // printable route and the email sender.
-async function loadProformaContext(quoteId, fallbackSigner) {
+export async function loadProformaContext(quoteId, fallbackSigner) {
   const quoteResult = await pool.query(
     `select q.*, u.email, u.display_name, u.company_name,
             u.tax_cuit, u.tax_id_type, u.tax_condition,

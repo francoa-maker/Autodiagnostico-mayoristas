@@ -4,6 +4,10 @@ import { requireApproved } from "../middleware.js";
 import { getStockForSkus } from "../stock/stockRepository.js";
 import { recordAudit } from "../audit.js";
 import { tierForQuantity, resolveWholesaleUnit } from "../pricing.js";
+import { loadProformaContext } from "./admin.js";
+import { renderProformaHtml } from "../proforma.js";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const router = express.Router();
 router.use(requireApproved);
@@ -129,6 +133,20 @@ router.get("/quotes", async (req, res) => {
     [req.user.id]
   );
   res.json({ quotes: result.rows });
+});
+
+// Proforma imprimible para el CLIENTE (dueño de la cotización), disponible una
+// vez que el vendedor la cotizó (quoted_at seteado). Mismo documento que ve el
+// admin. Se abre en pestaña nueva desde "Mis solicitudes".
+router.get("/quotes/:id/proforma", async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).send("Solicitud inválida");
+  const q = await pool.query(`select user_id, quoted_at from portal.quote_requests where id = $1`, [req.params.id]);
+  const row = q.rows[0];
+  if (!row || (row.user_id !== req.user.id && req.user.role !== "admin")) return res.status(404).send("Cotización no encontrada");
+  if (!row.quoted_at) return res.status(409).send("La cotización todavía no está lista. Te avisaremos cuando esté cotizada.");
+  const ctx = await loadProformaContext(req.params.id, null);
+  if (!ctx) return res.status(404).send("Cotización no encontrada");
+  res.set("Content-Type", "text/html; charset=utf-8").send(renderProformaHtml({ ...ctx, forEmail: false }));
 });
 
 router.get("/quotes/:id", async (req, res) => {

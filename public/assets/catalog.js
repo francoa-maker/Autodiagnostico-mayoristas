@@ -465,6 +465,7 @@ async function openRequests() {
         <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Estado</th>
         <th style="text-align:right;padding:8px;border-bottom:2px solid #1a1a1a">Total</th>
         <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Cotizada por</th>
+        <th style="padding:8px;border-bottom:2px solid #1a1a1a"></th>
       </tr></thead>
       <tbody>${quotes
         .map(
@@ -474,9 +475,13 @@ async function openRequests() {
             <td style="padding:8px;border-bottom:1px solid #eee">${REQ_STATUS_LABEL[q.status] || q.status}</td>
             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
             <td style="padding:8px;border-bottom:1px solid #eee">${q.quoted_by_name ? q.quoted_by_name : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee">${q.quoted_at ? `<button class="btn-primary" data-proforma="${q.id}" style="padding:6px 12px;font-size:12px">Ver proforma</button>` : ""}</td>
           </tr>`
         )
         .join("")}</tbody></table></div>`;
+    body.querySelectorAll("[data-proforma]").forEach((btn) => {
+      btn.addEventListener("click", () => window.open(`/api/quotes/${btn.dataset.proforma}/proforma`, "_blank"));
+    });
   } catch (error) {
     body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${error.message}</div>`;
   }
