@@ -746,12 +746,12 @@ async function sendProforma(id, clientEmail) {
   btn.textContent = "Enviando...";
   try {
     // Persistir precios/ajustes en pantalla (sin re-render) antes de enviar.
+    // (El IVA es por línea; ya no hay selector global de IVA acá.)
     await patchJson(`/api/admin/quotes/${id}`, {
       status: document.getElementById("quoteStatus").value,
       discount: Number(document.getElementById("qDiscount").value || 0),
       discountType: document.getElementById("qDiscountType").value,
       shipping: Number(document.getElementById("qShipping").value || 0),
-      ivaRate: Number(document.getElementById("qIvaRate").value),
       publicNotes: document.getElementById("qPublicNotes").value
     });
     await postJson(`/api/admin/quotes/${id}/send-proforma`, { to });
