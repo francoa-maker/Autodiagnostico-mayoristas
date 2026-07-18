@@ -26,7 +26,7 @@ router.post("/quotes", async (req, res) => {
   // toda proforma sale completa y el depósito nunca recibe un pedido sin
   // dirección de entrega.
   const me = await pool.query(
-    `select company_name, tax_cuit, tax_condition, ship_street, ship_number, ship_postal_code, ship_city, ship_province, ship_phone from portal.users where id = $1`,
+    `select company_name, tax_cuit, tax_id_type, tax_condition, ship_street, ship_number, ship_postal_code, ship_city, ship_province, ship_phone from portal.users where id = $1`,
     [req.user.id]
   );
   if (!profileComplete(me.rows[0])) {

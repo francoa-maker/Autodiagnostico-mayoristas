@@ -72,8 +72,7 @@
         </div>
         <p style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Necesitamos estos datos para poder cotizar y despachar tu pedido. El CUIT se valida sólo por formato.</p>
         <form id="profileForm" class="form-grid">
-          <label class="full">Razón social / Nombre de la empresa *<input name="company_name" required></label>
-          <label>CUIT *<input name="tax_cuit" placeholder="30-71610175-0" required></label>
+          <label class="full">Razón social / Nombre *<input name="company_name" required></label>
           <label>Condición de IVA *
             <select name="tax_condition" required>
               <option value="">Elegir...</option>
@@ -82,6 +81,12 @@
               <option value="exento">Exento</option>
               <option value="consumidor_final">Consumidor Final</option>
             </select>
+          </label>
+          <label><span id="taxIdLabel">Documento *</span>
+            <div style="display:flex;gap:6px">
+              <select name="tax_id_type" style="width:88px"></select>
+              <input name="tax_cuit" placeholder="30-71610175-0" required style="flex:1;min-width:0">
+            </div>
           </label>
           <div class="full" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px">Dirección de entrega (formato Andreani)</div>
           <label>Calle *<input name="ship_street" required></label>

@@ -1,7 +1,8 @@
 import { fetchJson, postJson, putJson, money, STOCK_LABEL } from "/assets/api.js";
 
-// Validación de formato de CUIT en el cliente (UX); el server valida de forma
-// autoritativa en PUT /api/profile.
+// Validación de formato de documento en el cliente (UX); el server valida de
+// forma autoritativa en PUT /api/profile. El tipo depende de la condición:
+// RI/Monotributo/Exento -> CUIT; Consumidor Final -> DNI/CUIL/CUIT.
 function isValidCuit(raw) {
   const d = String(raw ?? "").replace(/\D/g, "");
   if (d.length !== 11) return false;
@@ -12,6 +13,17 @@ function isValidCuit(raw) {
   if (c === 11) c = 0;
   if (c === 10) return false;
   return c === Number(d[10]);
+}
+function isValidTaxId(type, raw) {
+  const d = String(raw ?? "").replace(/\D/g, "");
+  if (type === "DNI") return d.length >= 7 && d.length <= 8;
+  return isValidCuit(d); // CUIT y CUIL comparten algoritmo
+}
+function allowedTaxIdTypes(condition) {
+  return condition === "consumidor_final" ? ["DNI", "CUIL", "CUIT"] : ["CUIT"];
+}
+function defaultTaxIdType(condition) {
+  return condition === "consumidor_final" ? "DNI" : "CUIT";
 }
 
 const BRAND_COLORS = ["#c8102e", "#1f6feb", "#0f766e", "#7c3aed", "#b45309", "#334155", "#0369a1", "#be123c", "#4d7c0f", "#9333ea", "#0891b2", "#444444"];
@@ -348,15 +360,34 @@ async function loadProfile() {
   } catch { /* no bloquear el catálogo si falla */ }
 }
 
+// Ajusta el selector de tipo de documento a la condición de IVA: para
+// RI/Monotributo/Exento queda fijo en CUIT; para Consumidor Final ofrece
+// DNI/CUIL/CUIT. Actualiza también la etiqueta y el placeholder.
+function syncTaxIdType(preferredType) {
+  const condition = profileForm.tax_condition.value;
+  const types = allowedTaxIdTypes(condition);
+  const sel = profileForm.tax_id_type;
+  const keep = types.includes(preferredType) ? preferredType : (types.includes(sel.value) ? sel.value : defaultTaxIdType(condition));
+  sel.innerHTML = types.map((t) => `<option value="${t}"${t === keep ? " selected" : ""}>${t}</option>`).join("");
+  sel.disabled = types.length === 1;
+  const t = sel.value;
+  document.getElementById("taxIdLabel").textContent = `${t} *`;
+  profileForm.tax_cuit.placeholder = t === "DNI" ? "12345678" : "30-71610175-0";
+}
+
 function openProfileModal(message) {
   const p = profileState.profile || {};
   for (const field of ["company_name", "tax_cuit", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
     if (profileForm[field]) profileForm[field].value = p[field] || "";
   }
+  syncTaxIdType(p.tax_id_type);
   document.getElementById("profileMsg").textContent = message || "";
   document.getElementById("profileMsg").style.color = "var(--muted)";
   profileOverlay.hidden = false;
 }
+
+profileForm.tax_condition.addEventListener("change", () => syncTaxIdType());
+profileForm.tax_id_type.addEventListener("change", () => syncTaxIdType(profileForm.tax_id_type.value));
 function closeProfileModal() {
   profileOverlay.hidden = true;
 }
@@ -370,13 +401,14 @@ profileForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = document.getElementById("profileMsg");
   const f = e.target;
-  if (!isValidCuit(f.tax_cuit.value)) {
+  const taxType = f.tax_id_type.value;
+  if (!isValidTaxId(taxType, f.tax_cuit.value)) {
     msg.style.color = "var(--danger, #c8102e)";
-    msg.textContent = "El CUIT no tiene un formato válido.";
+    msg.textContent = taxType === "DNI" ? "El DNI debe tener 7 u 8 dígitos." : `El ${taxType} no tiene un formato válido.`;
     return;
   }
   const profile = {};
-  for (const field of ["company_name", "tax_cuit", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
+  for (const field of ["company_name", "tax_cuit", "tax_id_type", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
     profile[field] = f[field] ? f[field].value.trim() : "";
   }
   try {

@@ -3,7 +3,7 @@
 import express from "express";
 import { pool } from "../db.js";
 import { requireApproved } from "../middleware.js";
-import { isValidCuit, normalizeCuit } from "../cuit.js";
+import { normalizeDigits, isValidTaxId, allowedTaxIdTypes, defaultTaxIdType } from "../cuit.js";
 
 const router = express.Router();
 router.use(requireApproved);
@@ -16,8 +16,9 @@ export function profileComplete(u) {
     u &&
       u.company_name &&
       u.tax_cuit &&
-      isValidCuit(u.tax_cuit) &&
       TAX_CONDITIONS.includes(u.tax_condition) &&
+      allowedTaxIdTypes(u.tax_condition).includes(u.tax_id_type) &&
+      isValidTaxId(u.tax_id_type, u.tax_cuit) &&
       u.ship_street &&
       u.ship_number &&
       u.ship_postal_code &&
@@ -27,7 +28,7 @@ export function profileComplete(u) {
   );
 }
 
-const PROFILE_COLUMNS = `company_name, tax_cuit, tax_condition,
+const PROFILE_COLUMNS = `company_name, tax_cuit, tax_id_type, tax_condition,
   ship_street, ship_number, ship_floor, ship_apartment, ship_postal_code,
   ship_city, ship_province, ship_phone, ship_notes`;
 
@@ -40,12 +41,19 @@ router.get("/profile", async (req, res) => {
 router.put("/profile", async (req, res) => {
   const p = req.body?.profile || {};
   const companyName = String(p.company_name ?? "").trim();
-  const cuit = normalizeCuit(p.tax_cuit);
+  const taxNumber = normalizeDigits(p.tax_cuit);
   const condition = p.tax_condition;
 
   if (!companyName) return res.status(400).json({ error: "company_name_required" });
-  if (!isValidCuit(cuit)) return res.status(400).json({ error: "invalid_cuit", detail: "El CUIT no tiene un formato válido (11 dígitos + verificador)." });
   if (!TAX_CONDITIONS.includes(condition)) return res.status(400).json({ error: "invalid_tax_condition" });
+
+  // El tipo de documento debe ser uno de los permitidos por la condición.
+  const allowed = allowedTaxIdTypes(condition);
+  const taxIdType = allowed.includes(p.tax_id_type) ? p.tax_id_type : defaultTaxIdType(condition);
+  if (!isValidTaxId(taxIdType, taxNumber)) {
+    const label = taxIdType === "DNI" ? "El DNI debe tener 7 u 8 dígitos." : `El ${taxIdType} no tiene un formato válido (11 dígitos + verificador).`;
+    return res.status(400).json({ error: "invalid_tax_id", detail: label });
+  }
 
   const text = (v) => {
     const s = String(v ?? "").trim();
@@ -59,14 +67,14 @@ router.put("/profile", async (req, res) => {
 
   const r = await pool.query(
     `update portal.users set
-       company_name = $2, tax_cuit = $3, tax_condition = $4,
-       ship_street = $5, ship_number = $6, ship_floor = $7, ship_apartment = $8,
-       ship_postal_code = $9, ship_city = $10, ship_province = $11, ship_phone = $12, ship_notes = $13,
+       company_name = $2, tax_cuit = $3, tax_id_type = $4, tax_condition = $5,
+       ship_street = $6, ship_number = $7, ship_floor = $8, ship_apartment = $9,
+       ship_postal_code = $10, ship_city = $11, ship_province = $12, ship_phone = $13, ship_notes = $14,
        updated_at = now()
      where id = $1
      returning ${PROFILE_COLUMNS}`,
     [
-      req.user.id, companyName, cuit, condition,
+      req.user.id, companyName, taxNumber, taxIdType, condition,
       text(p.ship_street), text(p.ship_number), text(p.ship_floor), text(p.ship_apartment),
       text(p.ship_postal_code), text(p.ship_city), text(p.ship_province), text(p.ship_phone), text(p.ship_notes)
     ]

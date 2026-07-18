@@ -3,7 +3,7 @@
 // and by the Gmail sender (forEmail=true: no toolbar). Totals come from the
 // shared computeQuoteTotals so emailed and on-screen documents never disagree.
 import { computeQuoteTotals, resolveItemUnit, resolveItemRate } from "./quoteTotals.js";
-import { formatCuit } from "./cuit.js";
+import { formatTaxId } from "./cuit.js";
 
 export function esc(value) {
   return String(value ?? "")
@@ -174,7 +174,7 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
       <div class="party">
         <div class="lbl">Cliente</div>
         <div class="cname">${esc(quote.company_name || quote.display_name || quote.email)}</div>
-        ${quote.tax_cuit ? `<div>CUIT: ${esc(formatCuit(quote.tax_cuit))}</div>` : ""}
+        ${quote.tax_cuit ? `<div>${esc(quote.tax_id_type || "CUIT")}: ${esc(formatTaxId(quote.tax_id_type || "CUIT", quote.tax_cuit))}</div>` : ""}
         ${quote.tax_condition ? `<div>${esc(TAX_CONDITION_LABEL[quote.tax_condition] || quote.tax_condition)}</div>` : ""}
         <div>${esc(quote.email)}</div>
       </div>

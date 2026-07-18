@@ -673,7 +673,7 @@ router.put("/admin/company-profile", async (req, res) => {
 async function loadProformaContext(quoteId, fallbackSigner) {
   const quoteResult = await pool.query(
     `select q.*, u.email, u.display_name, u.company_name,
-            u.tax_cuit, u.tax_condition,
+            u.tax_cuit, u.tax_id_type, u.tax_condition,
             u.ship_street, u.ship_number, u.ship_floor, u.ship_apartment,
             u.ship_postal_code, u.ship_city, u.ship_province, u.ship_phone, u.ship_notes
      from portal.quote_requests q join portal.users u on u.id = q.user_id
