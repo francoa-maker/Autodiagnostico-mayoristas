@@ -7,6 +7,7 @@ import { normalizeSku } from "../skuNormalize.js";
 import { computeQuoteTotals } from "../quoteTotals.js";
 import { renderProformaHtml, renderWarehouseHtml } from "../proforma.js";
 import { sendGmail } from "../mailer.js";
+import { resolveWholesaleUnit } from "../pricing.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -566,18 +567,23 @@ router.post("/admin/quotes/:id/items", async (req, res) => {
       if (!prod.rows[0]) throw Object.assign(new Error("product_not_found"), { statusCode: 404 });
       const product = prod.rows[0];
       const tier = tierForQuantity(qty);
-      const tierPrice = product.prices?.[tier] || null;
-      const resolvedUnit = unitPrice != null ? Number(unitPrice) : tierPrice?.amount != null ? Number(tierPrice.amount) : null;
       const resolvedRate = ivaRate != null && ivaRate !== "" ? Number(ivaRate) : (product.iva_rate ?? 10.5);
       const stockMap = await getStockForSkus([product.sku_normalized]);
-      const stock = stockMap.get(product.sku_normalized) || { status: "out_of_stock", exactQty: null };
+      const stock = stockMap.get(product.sku_normalized) || { status: "out_of_stock", exactQty: null, pvp: null };
+      // Precio por defecto: resolver mayorista (tier / 15% off PVP / consultar);
+      // el admin puede sobreescribir con unitPrice.
+      const resolved = resolveWholesaleUnit(product.prices, stock.pvp, qty);
+      const snapshot = resolved.state === "value"
+        ? { state: "value", amount: resolved.amount, currency: "ARS" }
+        : { state: "consult", amount: null, currency: "ARS" };
+      const resolvedUnit = unitPrice != null ? Number(unitPrice) : (resolved.state === "value" ? resolved.amount : null);
       const inserted = await client.query(
         `insert into portal.quote_items
            (quote_request_id, product_id, sku_snapshot, product_name_snapshot, brand_snapshot, category_snapshot,
             quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal, iva_rate)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,
         [req.params.id, product.id, product.sku, product.name, product.brand, product.category,
-         qty, tier, JSON.stringify(tierPrice || {}), resolvedUnit, stock.status, stock.exactQty, resolvedRate]
+         qty, tier, JSON.stringify(snapshot), resolvedUnit, stock.status, stock.exactQty, resolvedRate]
       );
       await recomputeQuoteTotals(client, req.params.id);
       return inserted.rows[0];

@@ -3,16 +3,10 @@ import { pool, withTransaction } from "../db.js";
 import { requireApproved } from "../middleware.js";
 import { getStockForSkus } from "../stock/stockRepository.js";
 import { recordAudit } from "../audit.js";
-import { profileComplete } from "./profile.js";
+import { tierForQuantity, resolveWholesaleUnit } from "../pricing.js";
 
 const router = express.Router();
 router.use(requireApproved);
-
-function tierForQuantity(qty) {
-  if (qty >= 8) return "eight";
-  if (qty >= 4) return "four";
-  return "one";
-}
 
 // The client submits only { productId, quantity } - every price, tier, and
 // stock status is recomputed here from the current DB state. A quantity or
@@ -22,17 +16,9 @@ router.post("/quotes", async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
   if (!items.length) return res.status(400).json({ error: "empty_cart" });
 
-  // Exigir datos fiscales + dirección completos antes del primer pedido, así
-  // toda proforma sale completa y el depósito nunca recibe un pedido sin
-  // dirección de entrega.
-  const me = await pool.query(
-    `select company_name, tax_cuit, tax_id_type, tax_condition, ship_street, ship_number, ship_postal_code, ship_city, ship_province, ship_phone from portal.users where id = $1`,
-    [req.user.id]
-  );
-  if (!profileComplete(me.rows[0])) {
-    return res.status(428).json({ error: "profile_incomplete", detail: "Completá tus datos fiscales y de entrega antes de enviar un pedido." });
-  }
-
+  // Con nombre + email (que siempre están por el login de Google) alcanza para
+  // pedir una cotización. Los datos fiscales/entrega son opcionales acá y se
+  // completan en "Mis datos" (necesarios para la proforma/envío al depósito).
   try {
     const quote = await withTransaction(async (client) => {
       const productIds = items.map((item) => item.productId).filter(Boolean);
@@ -75,9 +61,14 @@ router.post("/quotes", async (req, res) => {
 
         const quantity = Math.max(1, Math.floor(Number(item.quantity)) || 1);
         const tier = tierForQuantity(quantity);
-        const priceEntry = product.prices?.[tier] || product.prices?.pvp || null;
-        const unitPrice = priceEntry?.amount != null ? Number(priceEntry.amount) : null;
-        const stock = stockMap.get(product.sku_normalized) || { status: "out_of_stock", exactQty: null };
+        const stock = stockMap.get(product.sku_normalized) || { status: "out_of_stock", exactQty: null, pvp: null };
+        // Precio mayorista: tier directo, o 15% off PVP si no hay mayorista, o
+        // "consultar" si pidió más de lo estipulado / no hay precio.
+        const resolved = resolveWholesaleUnit(product.prices, stock.pvp, quantity);
+        const priceEntry = resolved.state === "value"
+          ? { state: "value", amount: resolved.amount, currency: "ARS" }
+          : { state: "consult", amount: null, currency: "ARS" };
+        const unitPrice = resolved.state === "value" ? resolved.amount : null;
 
         if (unitPrice != null) subtotal += unitPrice * quantity;
         itemCount++;
@@ -126,22 +117,33 @@ router.post("/quotes", async (req, res) => {
   }
 });
 
+// "Mis solicitudes": las cotizaciones del propio cliente, con la fecha y el
+// nombre de quién la cotizó (vendedor).
 router.get("/quotes", async (req, res) => {
   const result = await pool.query(
-    `select id, request_number, status, displayed_subtotal, quoted_total, submitted_at
-     from portal.quote_requests where user_id = $1 order by submitted_at desc`,
+    `select q.id, q.request_number, q.status, q.displayed_subtotal, q.quoted_total,
+            q.submitted_at, q.quoted_at, qb.display_name as quoted_by_name
+     from portal.quote_requests q
+     left join portal.users qb on qb.id = q.quoted_by_user_id
+     where q.user_id = $1 order by q.submitted_at desc`,
     [req.user.id]
   );
   res.json({ quotes: result.rows });
 });
 
 router.get("/quotes/:id", async (req, res) => {
-  const quoteResult = await pool.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
+  const quoteResult = await pool.query(
+    `select q.*, qb.display_name as quoted_by_name
+     from portal.quote_requests q
+     left join portal.users qb on qb.id = q.quoted_by_user_id
+     where q.id = $1`,
+    [req.params.id]
+  );
   const quote = quoteResult.rows[0];
   if (!quote || (quote.user_id !== req.user.id && req.user.role !== "admin")) {
     return res.status(404).json({ error: "not_found" });
   }
-  const itemsResult = await pool.query(`select * from portal.quote_items where quote_request_id = $1`, [req.params.id]);
+  const itemsResult = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by created_at`, [req.params.id]);
   res.json({ quote, items: itemsResult.rows });
 });
 

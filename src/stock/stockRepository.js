@@ -30,7 +30,13 @@ function config() {
     // portal-owned after the one-time legacy import) - read-only pass
     // through for every product, same as stock. See the normalized_sku join
     // logic below: it is never stored in portal.product_prices.
-    pvpColumn: assertIdentifier(process.env.STOCK_COLUMN_PVP || "pvp", "STOCK_COLUMN_PVP")
+    pvpColumn: assertIdentifier(process.env.STOCK_COLUMN_PVP || "pvp", "STOCK_COLUMN_PVP"),
+    // Precio de la página web: si el PVP (precio_efectivo) es 0/NULL, se usa
+    // este como PVP efectivo. Opcional: si no está seteado (p. ej. la tabla
+    // interina de desarrollo no lo tiene), no se aplica el fallback.
+    webPriceColumn: process.env.STOCK_COLUMN_WEB_PRICE
+      ? assertIdentifier(process.env.STOCK_COLUMN_WEB_PRICE, "STOCK_COLUMN_WEB_PRICE")
+      : null
   };
 }
 
@@ -59,8 +65,14 @@ export async function getStockForSkus(skuNormalizedList) {
   }
   if (!skuNormalizedList.length || !stockPool) return map;
 
-  const { table, skuColumn, qtyColumn, updatedAtColumn, pvpColumn } = config();
+  const { table, skuColumn, qtyColumn, updatedAtColumn, pvpColumn, webPriceColumn } = config();
   const threshold = await getLowStockThreshold();
+
+  // PVP efectivo: si precio_efectivo es 0/NULL, cae a precio_web (columna
+  // opcional). nullif(...,0) deja el PVP en NULL cuando ambos son 0.
+  const pvpExpr = webPriceColumn
+    ? `nullif(case when ${pvpColumn} is not null and ${pvpColumn} > 0 then ${pvpColumn} else ${webPriceColumn} end, 0)`
+    : `nullif(${pvpColumn}, 0)`;
 
   // Aggregated by normalized SKU rather than returned row-by-row: if the
   // source table has duplicate normalized SKUs (getStockSourceHealth()
@@ -73,7 +85,7 @@ export async function getStockForSkus(skuNormalizedList) {
       upper(trim(regexp_replace(${skuColumn}::text, '\\s+', '', 'g'))) as sku_normalized,
       sum(${qtyColumn}) as exact_qty,
       max(${updatedAtColumn}) as source_updated_at,
-      max(${pvpColumn}) as pvp
+      max(${pvpExpr}) as pvp
     from ${table}
     where upper(trim(regexp_replace(${skuColumn}::text, '\\s+', '', 'g'))) = any($1)
     group by 1

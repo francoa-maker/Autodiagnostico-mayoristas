@@ -98,6 +98,9 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
       const unit = resolveItemUnit(it);
       const lineTotal = unit != null ? unit * Number(it.quantity) : null;
       const rate = resolveItemRate(it);
+      const isConsult = unit == null && (it.displayed_price_snapshot || {}).state === "consult";
+      const unitCell = unit != null ? fmtMoney(unit, currency) : isConsult ? "Consultar" : "-";
+      const totalCell = lineTotal != null ? fmtMoney(lineTotal, currency) : isConsult ? "Consultar" : "-";
       const thumb = it.image_url
         ? `<img class="thumb" src="${esc(it.image_url)}" alt="">`
         : `<div class="thumb-empty"></div>`;
@@ -106,8 +109,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
         <td class="desc"><span class="sku">[${esc(it.sku_snapshot)}]</span> ${esc(it.product_name_snapshot)}${it.brand_snapshot ? ` <span class="brand">${esc(it.brand_snapshot)}</span>` : ""}</td>
         <td class="num">${Number(it.quantity)}</td>
         <td class="num">${rate}%</td>
-        <td class="num">${unit != null ? fmtMoney(unit, currency) : "-"}</td>
-        <td class="num">${lineTotal != null ? fmtMoney(lineTotal, currency) : "-"}</td>
+        <td class="num">${unitCell}</td>
+        <td class="num">${totalCell}</td>
       </tr>`;
     })
     .join("");

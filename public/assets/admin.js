@@ -572,8 +572,8 @@ async function renderQuoteEditor(id) {
         <td><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted)">${esc(it.sku_snapshot)}</span><br>${esc(it.product_name_snapshot)}</td>
         <td><input class="cell-input" data-f="quantity" type="number" min="1" value="${Number(it.quantity)}" style="width:56px"></td>
         <td>${ivaSelect('data-f="ivaRate"', itemRate(it))}</td>
-        <td><input class="cell-input" data-f="unitPrice" value="${itemUnit(it) ?? ""}" style="width:110px"></td>
-        <td class="num tabular line-total">${itemUnit(it) != null ? money(itemUnit(it) * Number(it.quantity), cur) : "-"}</td>
+        <td><input class="cell-input" data-f="unitPrice" value="${itemUnit(it) ?? ""}" placeholder="${(it.displayed_price_snapshot || {}).state === "consult" ? "consultar" : ""}" style="width:110px"></td>
+        <td class="num tabular line-total">${itemUnit(it) != null ? money(itemUnit(it) * Number(it.quantity), cur) : ((it.displayed_price_snapshot || {}).state === "consult" ? "Consultar" : "-")}</td>
         <td style="display:flex;gap:6px">
           <button class="link-btn" data-action="save-item">Guardar</button>
           <button class="link-btn ghost" data-action="del-item">Quitar</button>

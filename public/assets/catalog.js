@@ -46,6 +46,34 @@ function priceFor(product, tier) {
   return product.prices?.[tier] || product.prices?.pvp || { state: "hidden", amount: null };
 }
 
+// Espeja src/pricing.js para la vista del catálogo: precio del tier, o 15% off
+// PVP si no hay mayorista, o "consultar" si pidió más de lo estipulado.
+function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
+function pvpAmount(product) {
+  const p = product.prices?.pvp;
+  return p && p.state === "value" && p.amount != null ? Number(p.amount) : null;
+}
+function hasAnyWholesale(product) {
+  return ["one", "four", "eight"].some((t) => {
+    const x = product.prices?.[t];
+    return x && x.state === "value" && x.amount != null;
+  });
+}
+function resolveDisplay(product, tier) {
+  const e = product.prices?.[tier];
+  if (e && e.state === "value" && e.amount != null) return { state: "value", amount: Number(e.amount), currency: "ARS" };
+  if (!hasAnyWholesale(product)) {
+    const pvp = pvpAmount(product);
+    if (pvp != null && pvp > 0) return { state: "value", amount: round2(pvp * 0.85), currency: "ARS" };
+    return { state: "consult", amount: null };
+  }
+  return { state: "consult", amount: null };
+}
+function estText(product, qty) {
+  const r = resolveDisplay(product, tierForQuantity(qty));
+  return r.state === "value" ? money(r.amount) : "Consultar";
+}
+
 async function loadMe() {
   const { user } = await fetchJson("/api/me");
   if (!user) return (location.href = "/login");
@@ -104,9 +132,9 @@ async function loadProducts() {
         const cartEntry = cart.get(p.id);
         const qty = cartEntry ? cartEntry.quantity : 1;
         const pvp = priceFor(p, "pvp");
-        const one = priceFor(p, "one");
-        const four = priceFor(p, "four");
-        const eight = priceFor(p, "eight");
+        const one = resolveDisplay(p, "one");
+        const four = resolveDisplay(p, "four");
+        const eight = resolveDisplay(p, "eight");
         return `<div class="pcard" data-id="${p.id}">
           <div class="img-wrap">
             <div class="cat-chip">${p.category}</div>
@@ -125,7 +153,7 @@ async function loadProducts() {
             </div>
             <div class="qty-row">
               <div class="qty-stepper"><button class="qminus" type="button">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*"><button class="qplus" type="button">+</button></div>
-              <div class="est-price">Estimado<b class="tabular estval">${money(priceFor(p, tierForQuantity(qty)).amount)}</b></div>
+              <div class="est-price">Estimado<b class="tabular estval">${estText(p, qty)}</b></div>
             </div>
             <button class="add-btn${cartEntry ? " added" : ""}">${cartEntry ? `Agregado ✓ (${qty})` : "Agregar al pedido"}</button>
           </div>
@@ -159,16 +187,16 @@ function renderCart() {
   let total = 0;
   itemsEl.innerHTML = entries
     .map(({ product, quantity }) => {
-      const tier = tierForQuantity(quantity);
-      const price = priceFor(product, tier);
-      const sub = (price.amount || 0) * quantity;
-      total += sub;
+      const price = resolveDisplay(product, tierForQuantity(quantity));
+      const isValue = price.state === "value";
+      const sub = isValue ? price.amount * quantity : null;
+      if (isValue) total += sub;
       return `<div class="cart-item" data-id="${product.id}">
         <div class="thumb"></div>
         <div class="info">
           <div class="name">${product.name}</div>
-          <div class="tier">${quantity} u · ${money(price.amount, price.currency)} c/u</div>
-          <div class="row"><span class="sub tabular">${money(sub)}</span><button class="remove-link">Quitar</button></div>
+          <div class="tier">${quantity} u · ${isValue ? money(price.amount) + " c/u" : "Consultar"}</div>
+          <div class="row"><span class="sub tabular">${isValue ? money(sub) : "Consultar"}</span><button class="remove-link">Quitar</button></div>
         </div>
       </div>`;
     })
@@ -263,7 +291,7 @@ document.getElementById("productGrid").addEventListener("click", (e) => {
   }
 
   qtyInput.value = qty;
-  card.querySelector(".estval").textContent = money(priceFor(product, tierForQuantity(qty)).amount);
+  card.querySelector(".estval").textContent = estText(product, qty);
 });
 
 document.getElementById("productGrid").addEventListener("input", (e) => {
@@ -275,7 +303,7 @@ document.getElementById("productGrid").addEventListener("input", (e) => {
   const card = qtyInput.closest(".pcard");
   const product = window.__products.get(card.dataset.id);
   const qty = parseInt(digitsOnly, 10) || 1;
-  card.querySelector(".estval").textContent = money(priceFor(product, tierForQuantity(qty)).amount);
+  card.querySelector(".estval").textContent = estText(product, qty);
 });
 
 document.getElementById("productGrid").addEventListener("change", (e) => {
@@ -286,7 +314,7 @@ document.getElementById("productGrid").addEventListener("change", (e) => {
 
   const card = qtyInput.closest(".pcard");
   const product = window.__products.get(card.dataset.id);
-  card.querySelector(".estval").textContent = money(priceFor(product, tierForQuantity(qty)).amount);
+  card.querySelector(".estval").textContent = estText(product, qty);
 });
 
 const cartDrawer = document.getElementById("cartDrawer");
@@ -312,13 +340,8 @@ document.getElementById("cartItems").addEventListener("click", (e) => {
 
 document.getElementById("submitQuoteBtn").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
-  // Exigir datos fiscales completos antes del primer pedido: si faltan, abrir
-  // "Mis datos" en vez de enviar.
-  if (!profileState.complete) {
-    closeCart();
-    openProfileModal("Completá tus datos fiscales y de entrega para poder enviar el pedido.");
-    return;
-  }
+  // Con nombre + email alcanza para solicitar; los datos fiscales quedan
+  // opcionales (se completan en "Mis datos" para la proforma/despacho).
   btn.disabled = true;
   btn.textContent = "Enviando...";
   try {
@@ -330,12 +353,7 @@ document.getElementById("submitQuoteBtn").addEventListener("click", async (e) =>
     document.getElementById("cartItems").innerHTML = `<div class="cart-success"><div class="ok-icon">&#10003;</div>
       <p><strong>Solicitud #${quote.requestNumber} enviada.</strong><br>Te contactaremos para confirmar precios y disponibilidad.</p></div>`;
   } catch (error) {
-    if (error.status === 428) {
-      closeCart();
-      openProfileModal("Completá tus datos fiscales y de entrega para poder enviar el pedido.");
-    } else {
-      alert("No se pudo enviar la solicitud: " + error.message);
-    }
+    alert("No se pudo enviar la solicitud: " + error.message);
   } finally {
     btn.disabled = false;
     btn.textContent = "Enviar solicitud de cotización";
@@ -424,6 +442,55 @@ profileForm.addEventListener("submit", async (e) => {
     msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
   }
 });
+
+// ==================== Mis solicitudes ====================
+
+const requestsOverlay = document.getElementById("requestsOverlay");
+const REQ_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotizada", accepted: "Aceptada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+
+function fmtDate(iso) {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+async function openRequests() {
+  requestsOverlay.hidden = false;
+  const body = document.getElementById("requestsBody");
+  body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>';
+  try {
+    const { quotes } = await fetchJson("/api/quotes");
+    if (!quotes.length) {
+      body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Todavía no hiciste ninguna solicitud.</div>';
+      return;
+    }
+    body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>
+        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">#</th>
+        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Fecha</th>
+        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Estado</th>
+        <th style="text-align:right;padding:8px;border-bottom:2px solid #1a1a1a">Total</th>
+        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Cotizada por</th>
+      </tr></thead>
+      <tbody>${quotes
+        .map(
+          (q) => `<tr>
+            <td style="padding:8px;border-bottom:1px solid #eee"><strong>#${q.request_number}</strong></td>
+            <td style="padding:8px;border-bottom:1px solid #eee">${fmtDate(q.submitted_at)}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee">${REQ_STATUS_LABEL[q.status] || q.status}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee">${q.quoted_by_name ? q.quoted_by_name : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
+          </tr>`
+        )
+        .join("")}</tbody></table></div>`;
+  } catch (error) {
+    body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${error.message}</div>`;
+  }
+}
+function closeRequests() { requestsOverlay.hidden = true; }
+
+document.getElementById("myRequestsBtn").addEventListener("click", openRequests);
+document.getElementById("requestsClose").addEventListener("click", closeRequests);
+requestsOverlay.addEventListener("click", (e) => { if (e.target === requestsOverlay) closeRequests(); });
 
 (async function init() {
   await loadMe();

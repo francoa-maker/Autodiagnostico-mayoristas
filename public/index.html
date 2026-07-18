@@ -14,6 +14,7 @@
         <span class="cat-badge">Lista Distribuidor</span>
         <div class="cat-search"><span class="si">&#128269;</span><input type="text" id="searchInput" placeholder="Buscar producto, SKU..."></div>
         <span class="cat-freshness" id="freshness"><span class="dot"></span>Cargando...</span>
+        <button class="cart-btn" id="myRequestsBtn">&#128203; Mis solicitudes</button>
         <button class="cart-btn" id="myDataBtn">&#128100; Mis datos</button>
         <button class="cart-btn" id="cartBtn">&#128722; Pedido<span class="cart-count" id="cartCount">0</span></button>
         <a class="cat-avatar" id="avatar" href="/auth/logout" title="Cerrar sesión">--</a>
@@ -104,6 +105,19 @@
             <button type="submit" class="btn-primary">Guardar datos</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Modal "Mis solicitudes" -->
+    <div class="modal-overlay" id="requestsOverlay" hidden>
+      <div class="modal" id="requestsModal" style="max-width:720px">
+        <div class="modal-head">
+          <h3>Mis solicitudes</h3>
+          <button class="modal-x" id="requestsClose">&times;</button>
+        </div>
+        <div id="requestsBody">
+          <div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>
+        </div>
       </div>
     </div>
 
