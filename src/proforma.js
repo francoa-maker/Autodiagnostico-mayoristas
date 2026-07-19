@@ -34,7 +34,22 @@ function addressLines(q) {
   return [l1, l2, l3, q.ship_phone ? `Tel: ${q.ship_phone}` : "", q.ship_notes || ""].filter(Boolean);
 }
 
+// Marca de agua por usuario: repite en diagonal la identidad de quien tiene el
+// documento (nombre · código · email · fecha), tenue, para que toda captura o
+// reenvío quede atribuible. Se apoya sobre .sheet (position:relative).
+function watermarkLayer(quote) {
+  const who = quote.company_name || quote.display_name || quote.email || "";
+  const day = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const tag = esc(`CONFIDENCIAL · ${who} · ${quote.client_code || ""} · ${quote.email || ""} · ${day}`);
+  const line = `<div class="wm-line">${(tag + "    ").repeat(3)}</div>`;
+  return `<div class="wm" aria-hidden="true">${line.repeat(14)}</div>`;
+}
+
 const A4_STYLES = `
+  .wm{position:absolute;top:-20%;left:-25%;width:150%;height:150%;transform:rotate(-24deg);pointer-events:none;z-index:0;display:flex;flex-direction:column;gap:30px;overflow:hidden}
+  .wm-line{white-space:nowrap;font-size:13px;letter-spacing:1px;color:#c8102e;opacity:.10;font-weight:600}
+  .sheet-body{position:relative;z-index:1}
+
   :root{--red:#c8102e;--ink:#1a1a1a;--muted:#777;--line:#e2e2e2}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:var(--ink);background:#f3f4f6;padding:18px}
@@ -42,7 +57,7 @@ const A4_STYLES = `
   .toolbar button{background:var(--red);color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:14px;cursor:pointer;font-weight:600}
   .toolbar button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
   /* Hoja A4 real */
-  .sheet{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:16mm 15mm;box-shadow:0 2px 16px rgba(0,0,0,.08)}
+  .sheet{position:relative;overflow:hidden;width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:16mm 15mm;box-shadow:0 2px 16px rgba(0,0,0,.08)}
   .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:18px}
   .logo-img{max-height:60px;max-width:260px}
   .logo-text{font-size:28px;font-weight:800;letter-spacing:-.5px;color:var(--ink)}
@@ -148,6 +163,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 
   const sheet = `
   <div class="sheet">
+    ${watermarkLayer(quote)}
+    <div class="sheet-body">
     <div class="head">
       <div>${logo}</div>
       <div class="company">
@@ -206,7 +223,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 
     ${signatureBlock}
     ${quote.public_notes ? `<div class="notes"><b>Notas:</b> ${esc(quote.public_notes)}</div>` : ""}
-    <div class="footer">${esc(company.proformaFooter || "")}</div>
+    <div class="footer">${esc(company.proformaFooter || "")}${quote.client_code ? ` · Documento para ${esc(quote.company_name || quote.display_name || quote.email)} (${esc(quote.client_code)})` : ""}</div>
+    </div>
   </div>`;
 
   return `<!doctype html>

@@ -70,7 +70,7 @@ export async function attachSession(req, _res, next) {
     // gmail_refresh_token is deliberately NOT selected here: req.user is
     // returned verbatim by /api/me, so only the boolean + address are exposed.
     const result = await pool.query(
-      `select u.id, u.email, u.display_name, u.avatar_url, u.role, u.status, u.company_name,
+      `select u.id, u.email, u.display_name, u.avatar_url, u.role, u.status, u.company_name, u.client_code,
               (u.gmail_refresh_token is not null) as gmail_connected, u.gmail_address
        from portal.sessions s
        join portal.users u on u.id = s.user_id
@@ -95,20 +95,31 @@ export async function revokeSession(req) {
   await pool.query(`update portal.sessions set revoked_at = now() where token_hash = $1`, [hashToken(token)]);
 }
 
+// Código corto de cliente para la marca de agua (ej. CL-7K2Q9). Alfabeto sin
+// caracteres ambiguos (0/O, 1/I). No es secreto: sólo identifica al cliente en
+// el documento filtrado.
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export function generateClientCode() {
+  let s = "";
+  for (let i = 0; i < 5; i++) s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  return `CL-${s}`;
+}
+
 // New users always land as 'pending' - never auto-approved, never auto-admin.
-// Matches by google_sub (stable) and keeps email/display_name in sync.
+// Matches by google_sub (stable) and keeps email/display_name in sync. Se les
+// asigna un client_code al crearse (se conserva en logins posteriores).
 export async function findOrCreateUser({ googleSub, email, displayName, avatarUrl }) {
   const result = await pool.query(
-    `insert into portal.users (google_sub, email, display_name, avatar_url, last_login_at)
-     values ($1, $2, $3, $4, now())
+    `insert into portal.users (google_sub, email, display_name, avatar_url, last_login_at, client_code)
+     values ($1, $2, $3, $4, now(), $5)
      on conflict (google_sub) do update
        set email = excluded.email,
            display_name = excluded.display_name,
            avatar_url = excluded.avatar_url,
            last_login_at = now(),
            updated_at = now()
-     returning id, email, display_name, avatar_url, role, status, company_name`,
-    [googleSub, email, displayName, avatarUrl || null]
+     returning id, email, display_name, avatar_url, role, status, company_name, client_code`,
+    [googleSub, email, displayName, avatarUrl || null, generateClientCode()]
   );
   return result.rows[0];
 }

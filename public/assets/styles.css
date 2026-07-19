@@ -428,3 +428,8 @@ details.collapsible > div{padding:0 18px 18px}
   border-left:3px solid var(--brand-red,#c8102e)}
 .toast.show{opacity:1;transform:translateY(0)}
 @media (max-width:760px){.toast-host{left:12px;right:12px;bottom:12px;max-width:none}}
+
+/* ==================== Marca de agua por usuario (catálogo) ==================== */
+#wmOverlay{position:fixed;top:-25%;left:-25%;width:150%;height:150%;z-index:9998;pointer-events:none;overflow:hidden;transform:rotate(-24deg);display:flex;flex-direction:column;gap:60px;opacity:.055}
+#wmOverlay .wm-line{white-space:nowrap;font-size:14px;letter-spacing:2px;color:#c8102e;font-weight:700}
+@media print{#wmOverlay{opacity:.12}}

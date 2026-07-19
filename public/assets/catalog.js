@@ -74,12 +74,24 @@ function estText(product, qty) {
   return r.state === "value" ? money(r.amount) : "Consultar";
 }
 
+function renderWatermark(user) {
+  const el = document.getElementById("wmOverlay");
+  if (!el) return;
+  const who = user.company_name || user.display_name || user.email || "";
+  const day = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const tag = `CONFIDENCIAL · ${who} · ${user.client_code || ""} · ${user.email || ""} · ${day}`;
+  const safe = tag.replace(/[<>&]/g, "");
+  const line = `<div class="wm-line">${(safe + "    ").repeat(3)}</div>`;
+  el.innerHTML = line.repeat(16);
+}
+
 async function loadMe() {
   const { user } = await fetchJson("/api/me");
   if (!user) return (location.href = "/login");
   const avatar = document.getElementById("avatar");
   avatar.textContent = (user.display_name || user.email).slice(0, 2).toUpperCase();
   document.getElementById("freshness").innerHTML = '<span class="dot"></span>Sesión: ' + user.email;
+  renderWatermark(user);
 }
 
 async function loadBrands() {

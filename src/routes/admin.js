@@ -106,7 +106,7 @@ router.get("/admin/users", async (req, res) => {
   }
   const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await pool.query(
-    `select id, email, display_name, company_name, role, status, created_at, last_login_at
+    `select id, email, display_name, company_name, client_code, role, status, created_at, last_login_at
      from portal.users ${where} order by created_at desc`,
     params
   );
@@ -695,7 +695,7 @@ router.put("/admin/company-profile", async (req, res) => {
 // printable route and the email sender.
 export async function loadProformaContext(quoteId, fallbackSigner) {
   const quoteResult = await pool.query(
-    `select q.*, u.email, u.display_name, u.company_name,
+    `select q.*, u.email, u.display_name, u.company_name, u.client_code,
             u.tax_cuit, u.tax_id_type, u.tax_condition,
             u.ship_street, u.ship_number, u.ship_floor, u.ship_apartment,
             u.ship_postal_code, u.ship_city, u.ship_province, u.ship_phone, u.ship_notes

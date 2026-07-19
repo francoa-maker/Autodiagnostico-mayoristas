@@ -386,6 +386,7 @@ async function loadClients() {
     users
       .map(
         (u) => `<tr data-id="${u.id}" data-email="${esc(u.email)}">
+          <td style="font-family:var(--font-mono);font-size:11.5px">${esc(u.client_code || "-")}</td>
           <td>${esc(u.email)}</td>
           <td>${esc(u.display_name || "-")}</td>
           <td>${esc(u.company_name || "-")}</td>
@@ -402,7 +403,7 @@ async function loadClients() {
           </td>
         </tr>`
       )
-      .join("") || '<tr><td colspan="8" class="empty-row">No hay usuarios con ese filtro.</td></tr>';
+      .join("") || '<tr><td colspan="9" class="empty-row">No hay usuarios con ese filtro.</td></tr>';
 }
 
 document.getElementById("clientStatusFilter").addEventListener("change", loadClients);
