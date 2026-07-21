@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { pool } from "./db.js";
+import { pool, withTransaction } from "./db.js";
 
 const SESSION_COOKIE = "portal_session";
 const OAUTH_STATE_COOKIE = "portal_oauth_state";
@@ -105,21 +105,45 @@ export function generateClientCode() {
   return `CL-${s}`;
 }
 
+const USER_RETURNING = "id, email, display_name, avatar_url, role, status, company_name, client_code";
+
 // New users always land as 'pending' - never auto-approved, never auto-admin.
 // Matches by google_sub (stable) and keeps email/display_name in sync. Se les
 // asigna un client_code al crearse (se conserva en logins posteriores).
+//
+// Excepción: un cliente puede existir de antemano sin google_sub (creado a
+// mano desde el panel admin, ver POST /api/admin/users) - si no hay match por
+// google_sub pero sí una ficha con ese email todavía sin vincular, se la
+// "reclama" en vez de insertar una fila nueva (que además violaría el
+// unique(email)), preservando su código de cliente, estado, datos fiscales y
+// cotizaciones ya cargadas.
 export async function findOrCreateUser({ googleSub, email, displayName, avatarUrl }) {
-  const result = await pool.query(
-    `insert into portal.users (google_sub, email, display_name, avatar_url, last_login_at, client_code)
-     values ($1, $2, $3, $4, now(), $5)
-     on conflict (google_sub) do update
-       set email = excluded.email,
-           display_name = excluded.display_name,
-           avatar_url = excluded.avatar_url,
-           last_login_at = now(),
-           updated_at = now()
-     returning id, email, display_name, avatar_url, role, status, company_name, client_code`,
-    [googleSub, email, displayName, avatarUrl || null, generateClientCode()]
-  );
-  return result.rows[0];
+  return withTransaction(async (client) => {
+    const bySub = await client.query(
+      `update portal.users set email = $2, display_name = $3, avatar_url = $4, last_login_at = now(), updated_at = now()
+       where google_sub = $1
+       returning ${USER_RETURNING}`,
+      [googleSub, email, displayName, avatarUrl || null]
+    );
+    if (bySub.rows[0]) return bySub.rows[0];
+
+    const claimed = await client.query(
+      `update portal.users set google_sub = $1,
+              display_name = coalesce(nullif(display_name, ''), $3),
+              avatar_url = coalesce(avatar_url, $4),
+              last_login_at = now(), updated_at = now()
+       where email = $2 and google_sub is null
+       returning ${USER_RETURNING}`,
+      [googleSub, email, displayName, avatarUrl || null]
+    );
+    if (claimed.rows[0]) return claimed.rows[0];
+
+    const inserted = await client.query(
+      `insert into portal.users (google_sub, email, display_name, avatar_url, last_login_at, client_code)
+       values ($1, $2, $3, $4, now(), $5)
+       returning ${USER_RETURNING}`,
+      [googleSub, email, displayName, avatarUrl || null, generateClientCode()]
+    );
+    return inserted.rows[0];
+  });
 }

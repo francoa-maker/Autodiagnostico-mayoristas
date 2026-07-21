@@ -9,6 +9,7 @@ import { renderProformaHtml, renderWarehouseHtml } from "../proforma.js";
 import { sendGmail } from "../mailer.js";
 import { resolveWholesaleUnit } from "../pricing.js";
 import { saveUserProfile, profileComplete, PROFILE_COLUMNS } from "./profile.js";
+import { generateClientCode } from "../auth.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -104,6 +105,12 @@ router.get("/admin/users", async (req, res) => {
     params.push(req.query.month);
     conditions.push(`to_char(created_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') = $${params.length}`);
   }
+  // Búsqueda libre, usada por el buscador de clientes del modal "nueva
+  // cotización" (además de cualquier filtro futuro en la lista de Clientes).
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    conditions.push(`(email ilike $${params.length} or display_name ilike $${params.length} or company_name ilike $${params.length})`);
+  }
   const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await pool.query(
     `select id, email, display_name, company_name, client_code, role, status, created_at, last_login_at
@@ -111,6 +118,35 @@ router.get("/admin/users", async (req, res) => {
     params
   );
   res.json({ users: result.rows });
+});
+
+// Alta manual de un cliente desde el panel, sin pasar por el login de Google
+// (ej. un mayorista que pide por teléfono). Se crea con google_sub NULL: si
+// ese email inicia sesión con Google más adelante, findOrCreateUser
+// (src/auth.js) vincula esta misma ficha en vez de duplicarla.
+router.post("/admin/users", async (req, res) => {
+  const { email, displayName, companyName, role, status } = req.body || {};
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) return res.status(400).json({ error: "invalid_email" });
+  if (role != null && !USER_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
+  if (status != null && !USER_STATUSES.includes(status)) return res.status(400).json({ error: "invalid_status" });
+
+  const existing = await pool.query(`select id from portal.users where email = $1`, [cleanEmail]);
+  if (existing.rows[0]) return res.status(409).json({ error: "email_already_exists", detail: "Ya existe un cliente con ese email." });
+
+  const finalRole = role || "customer";
+  const finalStatus = status || "approved";
+  const approvedAt = finalStatus === "approved" ? new Date() : null;
+  const approvedBy = finalStatus === "approved" ? req.user.id : null;
+  const result = await pool.query(
+    `insert into portal.users
+       (email, display_name, company_name, role, status, approved_at, approved_by, client_code)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     returning *`,
+    [cleanEmail, displayName?.trim() || cleanEmail, companyName?.trim() || null, finalRole, finalStatus, approvedAt, approvedBy, generateClientCode()]
+  );
+  await recordAudit({ actorUserId: req.user.id, action: "user.create", entityType: "user", entityId: result.rows[0].id, after: result.rows[0] });
+  res.status(201).json({ user: result.rows[0] });
 });
 
 // Datos fiscales + dirección de un cliente, para que el admin los complete
@@ -460,6 +496,28 @@ router.get("/admin/quotes/months", async (req, res) => {
      from portal.quote_requests order by month desc`
   );
   res.json({ months: result.rows.map((r) => r.month) });
+});
+
+// Alta manual de una cotización vacía para un cliente existente (a diferencia
+// de POST /api/quotes, que la arma el propio cliente desde su carrito). Queda
+// en 'reviewing' -no 'submitted'- para marcar que la está armando el admin,
+// no que la pidió el cliente desde el catálogo. Sin items al crearse: el
+// admin los agrega desde el editor de detalle (mismo POST .../items que ya
+// usa para sumar productos a una cotización existente).
+router.post("/admin/quotes", async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId || !UUID_RE.test(String(userId))) return res.status(400).json({ error: "invalid_user_id" });
+  const user = await pool.query(`select id from portal.users where id = $1`, [userId]);
+  if (!user.rows[0]) return res.status(404).json({ error: "user_not_found" });
+
+  const result = await pool.query(
+    `insert into portal.quote_requests (user_id, status, assigned_admin_id)
+     values ($1, 'reviewing', $2)
+     returning *`,
+    [userId, req.user.id]
+  );
+  await recordAudit({ actorUserId: req.user.id, action: "quote.create", entityType: "quote_request", entityId: result.rows[0].id, after: result.rows[0] });
+  res.status(201).json({ quote: result.rows[0] });
 });
 
 // Borrado definitivo de una cotización (cascada a items y revisiones).

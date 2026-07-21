@@ -531,6 +531,55 @@ async function openClientProfileModal(id, email) {
   });
 }
 
+document.getElementById("newClientBtn").addEventListener("click", () => {
+  openModal(`
+    <div class="modal-head"><h3>Nuevo cliente</h3><button class="modal-x" data-close>&times;</button></div>
+    <form id="newClientForm" class="form-grid">
+      <label class="full">Email *<input name="email" type="email" required></label>
+      <label>Nombre<input name="displayName" placeholder="Se usa el email si se deja vacío"></label>
+      <label>Empresa<input name="companyName"></label>
+      <label>Rol
+        <select name="role">
+          <option value="customer" selected>Cliente</option>
+          <option value="admin">Admin</option>
+        </select>
+      </label>
+      <label>Estado
+        <select name="status">
+          <option value="approved" selected>Aprobado</option>
+          <option value="pending">Pendiente</option>
+          <option value="rejected">Rechazado</option>
+          <option value="blocked">Bloqueado</option>
+        </select>
+      </label>
+      <div class="full" style="font-size:11.5px;color:var(--muted)">Si este email inicia sesión con Google más adelante, se vincula automáticamente a esta misma ficha (mismo código de cliente, estado y datos).</div>
+      <div class="full" style="display:flex;gap:10px;justify-content:flex-end">
+        <span id="newClientMsg" style="font-size:12.5px;color:var(--danger,#c8102e);margin-right:auto"></span>
+        <button type="button" class="link-btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn-primary">Crear cliente</button>
+      </div>
+    </form>`);
+  document.getElementById("newClientForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const msg = document.getElementById("newClientMsg");
+    try {
+      await postJson("/api/admin/users", {
+        email: f.email.value.trim(),
+        displayName: f.displayName.value.trim() || undefined,
+        companyName: f.companyName.value.trim() || undefined,
+        role: f.role.value,
+        status: f.status.value
+      });
+      closeModal();
+      await loadClients();
+      await populateMonths("clientMonthFilter", "/api/admin/users/months");
+    } catch (error) {
+      msg.textContent = error.body?.detail || error.message;
+    }
+  });
+});
+
 // ==================== Cotizaciones ====================
 
 const QUOTE_STATUS = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
@@ -917,6 +966,52 @@ function wireAddProduct(id) {
     }
   });
 }
+
+document.getElementById("newQuoteBtn").addEventListener("click", () => {
+  openModal(`
+    <div class="modal-head"><h3>Nueva cotización</h3><button class="modal-x" data-close>&times;</button></div>
+    <div class="form-grid">
+      <label class="full">Buscar cliente por email, nombre o empresa
+        <input type="search" id="newQuoteClientSearch" class="admin-search" style="width:100%">
+      </label>
+      <div id="newQuoteClientResults" class="add-results full"></div>
+    </div>`);
+  const search = document.getElementById("newQuoteClientSearch");
+  const results = document.getElementById("newQuoteClientResults");
+  let timer = null;
+  search.addEventListener("input", () => {
+    clearTimeout(timer);
+    const term = search.value.trim();
+    if (!term) return (results.innerHTML = "");
+    timer = setTimeout(async () => {
+      const { users } = await fetchJson(`/api/admin/users?search=${encodeURIComponent(term)}`);
+      results.innerHTML =
+        users
+          .slice(0, 8)
+          .map(
+            (u) => `<button class="add-result" data-user="${u.id}">${esc(u.display_name || u.email)}${u.company_name ? ` · ${esc(u.company_name)}` : ""} <span style="color:var(--muted)">(${esc(u.email)})</span></button>`
+          )
+          .join("") || '<span style="font-size:12px;color:var(--muted);padding:6px">Sin resultados</span>';
+    }, 300);
+  });
+  results.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-user]");
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      const { quote } = await postJson("/api/admin/quotes", { userId: btn.dataset.user });
+      closeModal();
+      await loadQuotes();
+      await populateMonths("quoteMonthFilter", "/api/admin/quotes/months");
+      currentQuoteId = quote.id;
+      document.querySelectorAll(".quote-row").forEach((r) => r.classList.toggle("active", r.dataset.id === quote.id));
+      renderQuoteEditor(quote.id);
+    } catch (error) {
+      alert("No se pudo crear la cotización: " + (error.body?.detail || error.message));
+      btn.disabled = false;
+    }
+  });
+});
 
 // ==================== Configuración (perfil de empresa) ====================
 

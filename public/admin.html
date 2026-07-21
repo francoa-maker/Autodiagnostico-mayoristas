@@ -110,7 +110,7 @@
               <h1>Clientes</h1>
               <p>Todos los usuarios registrados en el portal</p>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select id="clientMonthFilter" class="admin-search" style="min-width:150px">
                 <option value="">Todos los meses</option>
               </select>
@@ -120,6 +120,7 @@
                 <option value="approved">Aprobados</option>
                 <option value="rejected">Rechazados</option>
               </select>
+              <button class="btn-primary" id="newClientBtn">+ Agregar</button>
             </div>
           </div>
           <div class="panel">
@@ -139,7 +140,7 @@
               <h1>Cotizaciones</h1>
               <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la proforma.</p>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select id="quoteMonthFilter" class="admin-search" style="min-width:150px">
                 <option value="">Todos los meses</option>
               </select>
@@ -152,6 +153,7 @@
                 <option value="rejected">Rechazadas</option>
                 <option value="cancelled">Canceladas</option>
               </select>
+              <button class="btn-primary" id="newQuoteBtn">+ Agregar</button>
             </div>
           </div>
           <div class="quotes-layout">
