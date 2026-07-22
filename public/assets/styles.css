@@ -433,3 +433,9 @@ details.collapsible > div{padding:0 18px 18px}
 #wmOverlay{position:fixed;top:-25%;left:-25%;width:150%;height:150%;z-index:9998;pointer-events:none;overflow:hidden;transform:rotate(-24deg);display:flex;flex-direction:column;gap:60px;opacity:.055}
 #wmOverlay .wm-line{white-space:nowrap;font-size:14px;letter-spacing:2px;color:#c8102e;font-weight:700}
 @media print{#wmOverlay{opacity:.12}}
+
+/* ==================== Links a la publicación (catálogo cliente) ==================== */
+.pcard a.plink{color:inherit;text-decoration:none}
+.pcard a.plink:hover{color:var(--brand-red,#c8102e);text-decoration:underline}
+.pcard a.plink .ext{font-size:11px;color:var(--brand-red,#c8102e);opacity:.75}
+.pcard a.imglink{display:block}

@@ -119,9 +119,12 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
       const thumb = it.image_url
         ? `<img class="thumb" src="${esc(it.image_url)}" alt="">`
         : `<div class="thumb-empty"></div>`;
+      const nameHtml = it.publication_url
+        ? `<a href="${esc(it.publication_url)}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:none;border-bottom:1px dotted #c8102e">${esc(it.product_name_snapshot)}</a>`
+        : esc(it.product_name_snapshot);
       return `<tr>
         <td>${thumb}</td>
-        <td class="desc"><span class="sku">[${esc(it.sku_snapshot)}]</span> ${esc(it.product_name_snapshot)}${it.brand_snapshot ? ` <span class="brand">${esc(it.brand_snapshot)}</span>` : ""}</td>
+        <td class="desc"><span class="sku">[${esc(it.sku_snapshot)}]</span> ${nameHtml}${it.brand_snapshot ? ` <span class="brand">${esc(it.brand_snapshot)}</span>` : ""}</td>
         <td class="num">${Number(it.quantity)}</td>
         <td class="num">${rate}%</td>
         <td class="num">${unitCell}</td>

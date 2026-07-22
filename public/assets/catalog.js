@@ -74,6 +74,14 @@ function estText(product, qty) {
   return r.state === "value" ? money(r.amount) : "Consultar";
 }
 
+// Envuelve contenido en un link a la publicación del producto (autodiagnostico.
+// com.ar) si el producto tiene publicationUrl; si no, lo devuelve tal cual.
+function pubLink(url, inner, cls) {
+  if (!url) return inner;
+  const safe = String(url).replace(/"/g, "%22");
+  return `<a class="${cls}" href="${safe}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+}
+
 function renderWatermark(user) {
   const el = document.getElementById("wmOverlay");
   if (!el) return;
@@ -150,10 +158,10 @@ async function loadProducts() {
         return `<div class="pcard" data-id="${p.id}">
           <div class="img-wrap">
             <div class="cat-chip">${p.category}</div>
-            ${p.imageUrl ? `<img src="${p.imageUrl}" alt="${p.name}" loading="lazy">` : '<div class="img-ph"></div>'}
+            ${p.imageUrl ? pubLink(p.publicationUrl, `<img src="${p.imageUrl}" alt="${p.name}" loading="lazy">`, "imglink") : '<div class="img-ph"></div>'}
           </div>
           <div class="body">
-            <div class="pname">${p.name}</div>
+            <div class="pname">${pubLink(p.publicationUrl, `${p.name}${p.publicationUrl ? ' <span class="ext" aria-hidden="true">↗</span>' : ""}`, "plink")}</div>
             <div class="psku">${p.sku}</div>
             <span class="stock-pill ${p.stockStatus}">${STOCK_LABEL[p.stockStatus]}</span>
             ${p.note ? `<div class="pnote">${p.note}</div>` : ""}

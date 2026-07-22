@@ -766,7 +766,7 @@ export async function loadProformaContext(quoteId, fallbackSigner) {
   // La miniatura sale de la foto actual del producto (join por product_id);
   // los items snapshotean identidad y precio pero no la imagen.
   const items = await pool.query(
-    `select qi.*, p.image_url
+    `select qi.*, p.image_url, p.publication_url
      from portal.quote_items qi
      left join portal.products p on p.id = qi.product_id
      where qi.quote_request_id = $1 order by qi.created_at`,
