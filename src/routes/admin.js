@@ -252,8 +252,17 @@ router.get("/admin/products", async (req, res) => {
     params.push(`%${req.query.search}%`);
     where += ` and (p.sku ilike $${params.length} or p.name ilike $${params.length} or p.brand ilike $${params.length})`;
   }
+  if (req.query.brand) {
+    params.push(req.query.brand);
+    where += ` and p.brand = $${params.length}`;
+  }
+  if (req.query.category) {
+    params.push(req.query.category);
+    where += ` and p.category = $${params.length}`;
+  }
   const result = await pool.query(
     `select p.id, p.sku, p.name, p.brand, p.category, p.visible, p.sort_order, p.iva_rate,
+            p.image_url, p.publication_url, p.note,
             coalesce(
               jsonb_object_agg(pp.tier, jsonb_build_object('state', pp.state, 'amount', pp.amount, 'currency', pp.currency, 'label', pp.custom_label))
                 filter (where pp.tier is not null),
@@ -267,6 +276,49 @@ router.get("/admin/products", async (req, res) => {
     params
   );
   res.json({ products: result.rows });
+});
+
+// Marcas y categorías existentes (de productos activos), para poblar filtros y
+// comboboxes del editor de catálogo.
+router.get("/admin/catalog/meta", async (req, res) => {
+  const [brands, categories] = await Promise.all([
+    pool.query(`select brand, count(*)::int as n from portal.products where active group by brand order by brand`),
+    pool.query(`select category, count(*)::int as n from portal.products where active group by category order by category`)
+  ]);
+  res.json({ brands: brands.rows, categories: categories.rows });
+});
+
+// Reordenamiento por drag-and-drop. Recibe el nuevo orden (de arriba a abajo)
+// del subconjunto que se está viendo; se intercala en el orden global (por
+// sort_order, name) reemplazando las posiciones que ocupaban esos productos, y
+// se renumera todo densamente. Así el orden arrastrado persiste sin colisiones
+// y los productos fuera del filtro conservan su posición relativa.
+router.put("/admin/products/order", async (req, res) => {
+  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : [];
+  if (!orderedIds.length) return res.status(400).json({ error: "empty" });
+  if (!orderedIds.every((id) => UUID_RE.test(String(id)))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    await withTransaction(async (client) => {
+      const all = await client.query(`select id from portal.products where active order by sort_order nulls last, name`);
+      const globalIds = all.rows.map((r) => r.id);
+      const subset = orderedIds.filter((id) => globalIds.includes(id));
+      const subsetSet = new Set(subset);
+      let k = 0;
+      const newOrder = globalIds.map((id) => (subsetSet.has(id) ? subset[k++] : id));
+      await client.query(
+        `update portal.products as p
+         set sort_order = v.ord, updated_at = now()
+         from unnest($1::uuid[]) with ordinality as v(id, ord)
+         where p.id = v.id`,
+        [newOrder]
+      );
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "product.reorder", entityType: "product", metadata: { count: orderedIds.length } });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "reorder_failed" });
+  }
 });
 
 // Create a product from the admin catalog editor. Prices (one/four/eight)

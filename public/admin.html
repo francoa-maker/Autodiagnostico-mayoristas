@@ -16,6 +16,7 @@
         <div class="admin-section-label">General</div>
         <nav class="admin-nav" id="adminNav">
           <a class="active" data-section="dashboard"><span class="ic">&#9635;</span>Dashboard</a>
+          <a data-section="catalog"><span class="ic">&#9776;</span>Catálogo</a>
           <a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a>
           <a data-section="clients"><span class="ic">&#128100;</span>Clientes</a>
           <a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a>
@@ -78,6 +79,25 @@
               <summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary>
               <div id="auditFeed" style="margin-top:12px">Cargando...</div>
             </details>
+          </div>
+        </div>
+
+        <!-- ==================== CATÁLOGO (editor visual) ==================== -->
+        <div class="admin-section" id="section-catalog" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Catálogo</h1>
+              <p>Arrastrá las tarjetas para reordenar (dentro del filtro actual). Editá o borrá cada producto. El orden se refleja en el catálogo del cliente.</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="catBrandFilter" class="admin-search" style="min-width:150px"><option value="">Todas las marcas</option></select>
+              <select id="catCategoryFilter" class="admin-search" style="min-width:160px"><option value="">Todas las categorías</option></select>
+              <input type="search" id="catSearch" class="admin-search" placeholder="Buscar...">
+              <button class="btn-primary" id="catNewBtn">+ Nuevo producto</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div id="catalogEditorGrid" class="cat-editor-grid"><div class="empty-row">Cargando...</div></div>
           </div>
         </div>
 

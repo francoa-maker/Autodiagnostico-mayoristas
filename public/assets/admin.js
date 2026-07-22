@@ -187,6 +187,7 @@ overlay.addEventListener("click", (e) => {
 // ==================== Navegación entre secciones ====================
 
 const sectionLoaders = {
+  catalog: openCatalogEditor,
   products: loadProducts,
   clients: async () => { await populateMonths("clientMonthFilter", "/api/admin/users/months"); await loadClients(); },
   quotes: async () => { await populateMonths("quoteMonthFilter", "/api/admin/quotes/months"); await loadQuotes(); },
@@ -367,6 +368,213 @@ document.getElementById("newProductBtn").addEventListener("click", () => {
     }
   });
 });
+
+// ==================== Catálogo (editor visual + drag-and-drop) ====================
+
+let catalogMeta = { brands: [], categories: [] };
+let catalogSearchTimer = null;
+let catalogWired = false;
+let catalogLoadSeq = 0;
+
+async function openCatalogEditor() {
+  await loadCatalogMeta();
+  await loadCatalogCards();
+  if (!catalogWired) {
+    catalogWired = true;
+    document.getElementById("catBrandFilter").addEventListener("change", loadCatalogCards);
+    document.getElementById("catCategoryFilter").addEventListener("change", loadCatalogCards);
+    document.getElementById("catSearch").addEventListener("input", () => {
+      clearTimeout(catalogSearchTimer);
+      catalogSearchTimer = setTimeout(loadCatalogCards, 350);
+    });
+    document.getElementById("catNewBtn").addEventListener("click", () => openProductModal(null));
+    wireCatalogGridClicks();
+    wireCatalogDnD();
+  }
+}
+
+async function loadCatalogMeta() {
+  const meta = await fetchJson("/api/admin/catalog/meta");
+  catalogMeta = meta;
+  const bf = document.getElementById("catBrandFilter");
+  const bv = bf.value;
+  bf.innerHTML = '<option value="">Todas las marcas</option>' + meta.brands.map((b) => `<option value="${esc(b.brand)}">${esc(b.brand)} (${b.n})</option>`).join("");
+  if (bv) bf.value = bv;
+  const cf = document.getElementById("catCategoryFilter");
+  const cv = cf.value;
+  cf.innerHTML = '<option value="">Todas las categorías</option>' + meta.categories.map((c) => `<option value="${esc(c.category)}">${esc(c.category)} (${c.n})</option>`).join("");
+  if (cv) cf.value = cv;
+}
+
+function catPriceTxt(p, t) {
+  const e = p.prices ? p.prices[t] : null;
+  if (e && e.state === "value" && e.amount != null) return money(e.amount);
+  if (e && e.state === "consult") return "Consultar";
+  return "—";
+}
+
+function catalogCardHtml(p) {
+  return `<div class="cat-card${p.visible ? "" : " hidden-prod"}" draggable="true" data-id="${p.id}">
+    <span class="cc-handle" aria-hidden="true">⠿</span>
+    <div class="cc-thumb">${p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy">` : '<div class="cc-noimg"></div>'}</div>
+    <div class="cc-info">
+      <div class="cc-name">${esc(p.name)}</div>
+      <div class="cc-meta"><span class="cc-sku">${esc(p.sku)}</span> · ${esc(p.brand)} · ${esc(p.category)}</div>
+      <div class="cc-prices">1u ${catPriceTxt(p, "one")} · 4u ${catPriceTxt(p, "four")} · 8u ${catPriceTxt(p, "eight")} · IVA ${Number(p.iva_rate)}%</div>
+    </div>
+    <div class="cc-side">
+      <span class="cc-order">#${p.sort_order ?? ""}</span>
+      <button class="eye-btn ${p.visible ? "on" : "off"}" data-action="toggle-visible" title="${p.visible ? "Visible" : "Oculto"}">${p.visible ? "&#128065;" : "&#128584;"}</button>
+      <button class="link-btn" data-action="edit">Editar</button>
+      <button class="link-btn ghost" data-action="del">Borrar</button>
+    </div>
+  </div>`;
+}
+
+async function loadCatalogCards() {
+  const qs = new URLSearchParams();
+  const brand = document.getElementById("catBrandFilter").value;
+  const category = document.getElementById("catCategoryFilter").value;
+  const search = document.getElementById("catSearch").value.trim();
+  if (brand) qs.set("brand", brand);
+  if (category) qs.set("category", category);
+  if (search) qs.set("search", search);
+  const seq = ++catalogLoadSeq;
+  const { products } = await fetchJson(`/api/admin/products${qs.toString() ? `?${qs}` : ""}`);
+  if (seq !== catalogLoadSeq) return; // llegó una carga más nueva; descartar esta
+  window.__catalogProducts = new Map(products.map((p) => [p.id, p]));
+  const grid = document.getElementById("catalogEditorGrid");
+  grid.innerHTML = products.map(catalogCardHtml).join("") || '<div class="empty-row">Sin productos con ese filtro.</div>';
+}
+
+// Drag-and-drop vertical (lista de tarjetas horizontales): fiable y simple.
+let catDragEl = null;
+function catDragAfter(container, y) {
+  const els = [...container.querySelectorAll(".cat-card:not(.dragging)")];
+  let closest = { offset: -Infinity, el: null };
+  for (const child of els) {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) closest = { offset, el: child };
+  }
+  return closest.el;
+}
+function wireCatalogDnD() {
+  const grid = document.getElementById("catalogEditorGrid");
+  grid.addEventListener("dragstart", (e) => {
+    const card = e.target.closest(".cat-card");
+    if (!card) return;
+    catDragEl = card;
+    card.classList.add("dragging");
+  });
+  grid.addEventListener("dragend", async (e) => {
+    const card = e.target.closest(".cat-card");
+    if (!card) return;
+    card.classList.remove("dragging");
+    catDragEl = null;
+    await persistCatalogOrder();
+  });
+  grid.addEventListener("dragover", (e) => {
+    if (!catDragEl) return;
+    e.preventDefault();
+    const after = catDragAfter(grid, e.clientY);
+    if (after == null) grid.appendChild(catDragEl);
+    else grid.insertBefore(catDragEl, after);
+  });
+}
+async function persistCatalogOrder() {
+  const orderedIds = [...document.querySelectorAll("#catalogEditorGrid .cat-card")].map((c) => c.dataset.id);
+  if (!orderedIds.length) return;
+  try {
+    await putJson("/api/admin/products/order", { orderedIds });
+    await loadCatalogCards();
+  } catch (error) {
+    alert("No se pudo guardar el orden: " + error.message);
+    await loadCatalogCards();
+  }
+}
+
+function wireCatalogGridClicks() {
+  document.getElementById("catalogEditorGrid").addEventListener("click", async (e) => {
+    const card = e.target.closest(".cat-card");
+    if (!card) return;
+    const id = card.dataset.id;
+    if (e.target.closest('[data-action="edit"]')) {
+      openProductModal(window.__catalogProducts?.get(id));
+    } else if (e.target.closest('[data-action="del"]')) {
+      if (!confirm(`¿Borrar "${card.querySelector(".cc-name").textContent}" del catálogo? (se puede recuperar re-creando el SKU)`)) return;
+      try { await deleteJson(`/api/admin/products/${id}`); await loadCatalogCards(); }
+      catch (error) { alert("No se pudo borrar: " + error.message); }
+    } else if (e.target.closest('[data-action="toggle-visible"]')) {
+      const p = window.__catalogProducts?.get(id);
+      try { await patchJson(`/api/admin/products/${id}`, { visible: !(p && p.visible) }); await loadCatalogCards(); }
+      catch (error) { alert("No se pudo cambiar la visibilidad: " + error.message); }
+    }
+  });
+}
+
+// Modal de alta/edición completa de producto (compartido entre "Nuevo" y "Editar").
+function openProductModal(product) {
+  const isNew = !product;
+  const p = product || {};
+  const pv = (t) => esc(priceInputValue(p.prices ? p.prices[t] : null));
+  openModal(`
+    <div class="modal-head"><h3>${isNew ? "Nuevo producto" : "Editar producto"}</h3><button class="modal-x" data-close>&times;</button></div>
+    <form id="prodForm" class="form-grid">
+      <label>SKU *<input name="sku" value="${esc(p.sku || "")}" required></label>
+      <label>Nombre *<input name="name" value="${esc(p.name || "")}" required></label>
+      <label>Marca<input name="brand" list="prodBrands" value="${esc(p.brand || "")}"></label>
+      <label>Categoría<input name="category" list="prodCats" value="${esc(p.category || "")}"></label>
+      <datalist id="prodBrands">${catalogMeta.brands.map((b) => `<option value="${esc(b.brand)}"></option>`).join("")}</datalist>
+      <datalist id="prodCats">${catalogMeta.categories.map((c) => `<option value="${esc(c.category)}"></option>`).join("")}</datalist>
+      <label>IVA<select name="ivaRate">${IVA_OPTIONS.map((r) => `<option value="${r}"${Number(p.iva_rate ?? 10.5) === r ? " selected" : ""}>${r}%</option>`).join("")}</select></label>
+      <label>Visible<select name="visible"><option value="true"${p.visible !== false ? " selected" : ""}>Sí</option><option value="false"${p.visible === false ? " selected" : ""}>No</option></select></label>
+      <label>Precio 1u<input name="one" value="${pv("one")}" placeholder="vacío = oculto"></label>
+      <label>Precio 4u<input name="four" value="${pv("four")}"></label>
+      <label>Precio 8u<input name="eight" value="${pv("eight")}"></label>
+      <label class="full">URL de la foto<input name="imageUrl" value="${esc(p.image_url || "")}"></label>
+      <label class="full">URL de publicación (autodiagnostico.com.ar)<input name="publicationUrl" value="${esc(p.publication_url || "")}"></label>
+      <label class="full">Nota<input name="note" value="${esc(p.note || "")}"></label>
+      <div class="full" style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+        <span id="prodMsg" style="font-size:12.5px;margin-right:auto"></span>
+        <button type="button" class="link-btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn-primary">${isNew ? "Crear producto" : "Guardar cambios"}</button>
+      </div>
+    </form>`);
+
+  document.getElementById("prodForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const payload = {
+      sku: f.sku.value.trim(),
+      name: f.name.value.trim(),
+      brand: f.brand.value.trim() || undefined,
+      category: f.category.value.trim() || undefined,
+      ivaRate: Number(f.ivaRate.value),
+      visible: f.visible.value === "true",
+      imageUrl: f.imageUrl.value.trim(),
+      publicationUrl: f.publicationUrl.value.trim(),
+      note: f.note.value.trim()
+    };
+    const msg = document.getElementById("prodMsg");
+    try {
+      if (isNew) {
+        const prices = {};
+        for (const t of ["one", "four", "eight"]) if (f[t].value.trim()) prices[t] = priceBodyFromInput(f[t].value);
+        await postJson("/api/admin/products", { ...payload, prices });
+      } else {
+        await patchJson(`/api/admin/products/${p.id}`, payload);
+        for (const t of ["one", "four", "eight"]) await putJson(`/api/admin/products/${p.id}/prices/${t}`, priceBodyFromInput(f[t].value));
+      }
+      closeModal();
+      await loadCatalogMeta();
+      await loadCatalogCards();
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)";
+      msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
+    }
+  });
+}
 
 // ==================== Clientes ====================
 
