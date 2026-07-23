@@ -442,9 +442,10 @@ details.collapsible > div{padding:0 18px 18px}
 
 /* ==================== Editor visual de catálogo (admin) ==================== */
 .cat-editor-grid{display:flex;flex-direction:column;gap:8px}
-.cat-card{display:grid;grid-template-columns:auto 52px 1fr auto;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--border,#e0e0e0);border-radius:10px;background:#fff}
+.cat-card{display:grid;grid-template-columns:auto auto 52px 1fr auto;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--border,#e0e0e0);border-radius:10px;background:#fff}
 .cat-card.dragging{opacity:.45;border-style:dashed;border-color:var(--brand-red,#c8102e)}
 .cat-card.hidden-prod{opacity:.55}
+.cc-check{width:16px;height:16px;cursor:pointer;flex:none}
 .cc-handle{cursor:grab;color:var(--muted,#888);font-size:18px;user-select:none;line-height:1}
 .cc-thumb img{width:48px;height:48px;object-fit:contain;background:#f6f6f6;border:1px solid var(--border,#e0e0e0);border-radius:6px;display:block}
 .cc-noimg{width:48px;height:48px;background:#f6f6f6;border:1px solid var(--border,#e0e0e0);border-radius:6px}
@@ -455,9 +456,21 @@ details.collapsible > div{padding:0 18px 18px}
 .cc-side{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .cc-order{font-size:11px;color:var(--muted,#888);font-family:var(--font-mono,monospace)}
 @media (max-width:760px){
-  .cat-card{grid-template-columns:auto 44px 1fr;grid-auto-rows:auto}
+  .cat-card{grid-template-columns:auto auto 44px 1fr;grid-auto-rows:auto}
   .cc-side{grid-column:1 / -1;justify-content:flex-start}
 }
+
+/* Barra de acción masiva (reasignar marca/categoría) */
+.cat-bulk-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin-bottom:12px;background:var(--brand-red-soft,#fdeaec);border:1px solid var(--border,#e0e0e0);border-radius:10px}
+.cat-bulk-bar #catBulkCount{font-weight:600;font-size:13px}
+
+/* Modal de gestión de marcas y categorías */
+.tax-cols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.tax-cols h4{margin:0 0 8px;font-size:13px}
+.tax-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;margin-bottom:6px}
+.tax-input{width:100%;padding:5px 8px;border:1px solid var(--border,#e0e0e0);border-radius:6px;font-size:12.5px}
+.tax-count{font-size:11.5px;color:var(--muted,#888);font-family:var(--font-mono,monospace);min-width:26px;text-align:right}
+@media (max-width:680px){.tax-cols{grid-template-columns:1fr}}
 
 /* ==================== Logo de marca en tarjetas del catálogo ==================== */
 .bc-icon.logo{background:#fff;border:1px solid var(--border,#e0e0e0);overflow:hidden;padding:3px}

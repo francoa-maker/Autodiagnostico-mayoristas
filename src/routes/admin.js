@@ -346,6 +346,89 @@ router.put("/admin/products/order", async (req, res) => {
   }
 });
 
+// --- D2: gestión de marcas y categorías -----------------------------------
+// Renombrar/fusionar una marca: pasa todos los productos de `from` a `to`. Si
+// `to` ya existe, es una fusión. Migra también el logo de marca (si el destino
+// no tenía uno propio) y elimina la clave vieja del mapa de logos.
+router.post("/admin/catalog/rename-brand", async (req, res) => {
+  const from = String(req.body?.from ?? "").trim();
+  const to = String(req.body?.to ?? "").trim();
+  if (!from || !to) return res.status(400).json({ error: "from_and_to_required" });
+  if (from === to) return res.json({ updated: 0 });
+  try {
+    const result = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `update portal.products set brand = $2, updated_by = $3, updated_at = now() where brand = $1`,
+        [from, to, req.user.id]
+      );
+      const lg = await client.query(`select value from portal.app_settings where key = 'brand_logos'`);
+      const logos = lg.rows[0]?.value || {};
+      if (logos[from] !== undefined) {
+        if (!logos[to]) logos[to] = logos[from];
+        delete logos[from];
+        await client.query(
+          `insert into portal.app_settings (key, value, description, updated_by, updated_at)
+           values ('brand_logos', $1, 'Logos de marca para el catálogo', $2, now())
+           on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()`,
+          [JSON.stringify(logos), req.user.id]
+        );
+      }
+      return { updated: upd.rowCount };
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "brand.rename", entityType: "product", metadata: { from, to, count: result.updated } });
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "rename_brand_failed", detail: error.message });
+  }
+});
+
+// Renombrar/fusionar una categoría (mismo criterio que la marca).
+router.post("/admin/catalog/rename-category", async (req, res) => {
+  const from = String(req.body?.from ?? "").trim();
+  const to = String(req.body?.to ?? "").trim();
+  if (!from || !to) return res.status(400).json({ error: "from_and_to_required" });
+  if (from === to) return res.json({ updated: 0 });
+  try {
+    const upd = await pool.query(
+      `update portal.products set category = $2, updated_by = $3, updated_at = now() where category = $1`,
+      [from, to, req.user.id]
+    );
+    await recordAudit({ actorUserId: req.user.id, action: "category.rename", entityType: "product", metadata: { from, to, count: upd.rowCount } });
+    res.json({ updated: upd.rowCount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "rename_category_failed", detail: error.message });
+  }
+});
+
+// Reasignación masiva: cambia marca y/o categoría de un conjunto de productos
+// (selección múltiple en el editor). Sólo se aplican los campos provistos.
+router.post("/admin/products/bulk-assign", async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length) return res.status(400).json({ error: "empty" });
+  if (!ids.every((id) => UUID_RE.test(id))) return res.status(400).json({ error: "invalid_id" });
+  const brand = req.body?.brand === undefined ? "" : String(req.body.brand).trim();
+  const category = req.body?.category === undefined ? "" : String(req.body.category).trim();
+  if (!brand && !category) return res.status(400).json({ error: "nothing_to_assign" });
+  try {
+    const sets = [];
+    const params = [ids];
+    if (brand) { params.push(brand); sets.push(`brand = $${params.length}`); }
+    if (category) { params.push(category); sets.push(`category = $${params.length}`); }
+    params.push(req.user.id);
+    const upd = await pool.query(
+      `update portal.products set ${sets.join(", ")}, updated_by = $${params.length}, updated_at = now() where id = any($1::uuid[])`,
+      params
+    );
+    await recordAudit({ actorUserId: req.user.id, action: "product.bulk_assign", entityType: "product", metadata: { count: upd.rowCount, brand: brand || null, category: category || null, ids } });
+    res.json({ updated: upd.rowCount });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "bulk_assign_failed", detail: error.message });
+  }
+});
+
 // Create a product from the admin catalog editor. Prices (one/four/eight)
 // are optional; each provided tier is written to portal.product_prices in
 // the same transaction. SKU is normalized the same way the legacy importer

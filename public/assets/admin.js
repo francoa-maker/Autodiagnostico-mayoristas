@@ -375,6 +375,7 @@ let catalogMeta = { brands: [], categories: [] };
 let catalogSearchTimer = null;
 let catalogWired = false;
 let catalogLoadSeq = 0;
+const catSelected = new Set(); // ids de productos tildados para reasignación masiva
 
 async function openCatalogEditor() {
   await loadCatalogMeta();
@@ -389,6 +390,22 @@ async function openCatalogEditor() {
     });
     document.getElementById("catNewBtn").addEventListener("click", () => openProductModal(null));
     document.getElementById("brandLogosBtn").addEventListener("click", openBrandLogosModal);
+    document.getElementById("catManageBtn").addEventListener("click", openTaxonomyModal);
+    document.getElementById("catalogEditorGrid").addEventListener("change", (e) => {
+      const chk = e.target.closest(".cc-check");
+      if (!chk) return;
+      const id = chk.closest(".cat-card")?.dataset.id;
+      if (!id) return;
+      if (chk.checked) catSelected.add(id);
+      else catSelected.delete(id);
+      updateCatBulkBar();
+    });
+    document.getElementById("catBulkApply").addEventListener("click", applyCatBulk);
+    document.getElementById("catBulkClear").addEventListener("click", () => {
+      catSelected.clear();
+      document.querySelectorAll("#catalogEditorGrid .cc-check").forEach((c) => (c.checked = false));
+      updateCatBulkBar();
+    });
     wireCatalogGridClicks();
     wireCatalogDnD();
   }
@@ -405,6 +422,118 @@ async function loadCatalogMeta() {
   const cv = cf.value;
   cf.innerHTML = '<option value="">Todas las categorías</option>' + meta.categories.map((c) => `<option value="${esc(c.category)}">${esc(c.category)} (${c.n})</option>`).join("");
   if (cv) cf.value = cv;
+  fillCatBulkSelects();
+}
+
+// Selectores de la barra de acción masiva (marca/categoría destino).
+function fillCatBulkSelects() {
+  const bs = document.getElementById("catBulkBrand");
+  if (bs) {
+    const v = bs.value;
+    bs.innerHTML =
+      '<option value="">Marca (sin cambios)</option>' +
+      catalogMeta.brands.map((b) => `<option value="${esc(b.brand)}">${esc(b.brand)}</option>`).join("") +
+      '<option value="__new__">+ Nueva marca…</option>';
+    bs.value = v;
+  }
+  const cs = document.getElementById("catBulkCategory");
+  if (cs) {
+    const v = cs.value;
+    cs.innerHTML =
+      '<option value="">Categoría (sin cambios)</option>' +
+      catalogMeta.categories.map((c) => `<option value="${esc(c.category)}">${esc(c.category)}</option>`).join("") +
+      '<option value="__new__">+ Nueva categoría…</option>';
+    cs.value = v;
+  }
+}
+
+function updateCatBulkBar() {
+  const bar = document.getElementById("catBulkBar");
+  const n = catSelected.size;
+  if (!n) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  document.getElementById("catBulkCount").textContent = `${n} seleccionado${n > 1 ? "s" : ""}`;
+}
+
+async function applyCatBulk() {
+  if (!catSelected.size) return;
+  let brand = document.getElementById("catBulkBrand").value;
+  let category = document.getElementById("catBulkCategory").value;
+  if (brand === "__new__") {
+    brand = (prompt("Nombre de la nueva marca:") || "").trim();
+    if (!brand) return;
+  }
+  if (category === "__new__") {
+    category = (prompt("Nombre de la nueva categoría:") || "").trim();
+    if (!category) return;
+  }
+  if (!brand && !category) return alert("Elegí una marca o categoría destino.");
+  const n = catSelected.size;
+  const parts = [];
+  if (brand) parts.push(`marca "${brand}"`);
+  if (category) parts.push(`categoría "${category}"`);
+  if (!confirm(`Reasignar ${n} producto(s) a ${parts.join(" y ")}?`)) return;
+  const payload = { ids: [...catSelected] };
+  if (brand) payload.brand = brand;
+  if (category) payload.category = category;
+  try {
+    await postJson("/api/admin/products/bulk-assign", payload);
+    await loadCatalogMeta();
+    await loadCatalogCards();
+  } catch (error) {
+    alert("No se pudo reasignar: " + (error.body?.detail || error.message));
+  }
+}
+
+// Modal de gestión de marcas y categorías: renombrar en línea; si el nombre
+// nuevo ya existe, se fusiona (todos los productos pasan a ese nombre).
+async function openTaxonomyModal() {
+  await loadCatalogMeta();
+  const row = (kind, name, n) => `<div class="tax-row" data-kind="${kind}" data-name="${esc(name)}">
+      <input class="tax-input" value="${esc(name)}">
+      <span class="tax-count">${n}</span>
+      <button class="link-btn tax-save" type="button">Guardar</button>
+    </div>`;
+  openModal(`
+    <div class="modal-head"><h3>Marcas y categorías</h3><button class="modal-x" data-close>&times;</button></div>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Editá el nombre y tocá Guardar para renombrar. Si el nombre nuevo ya existe, se <b>fusionan</b>: todos los productos pasan a esa marca/categoría. No se deshace automáticamente.</p>
+    <div class="tax-cols">
+      <div><h4>Marcas</h4>${catalogMeta.brands.map((b) => row("brand", b.brand, b.n)).join("") || '<p class="muted-note">Sin marcas.</p>'}</div>
+      <div><h4>Categorías</h4>${catalogMeta.categories.map((c) => row("category", c.category, c.n)).join("") || '<p class="muted-note">Sin categorías.</p>'}</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center;margin-top:14px">
+      <span id="taxMsg" style="font-size:12.5px;margin-right:auto"></span>
+      <button type="button" class="link-btn ghost" data-close>Cerrar</button>
+    </div>`);
+  document.querySelector("#modalBox .tax-cols").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".tax-save");
+    if (!btn) return;
+    const rowEl = btn.closest(".tax-row");
+    const kind = rowEl.dataset.kind;
+    const from = rowEl.dataset.name;
+    const to = rowEl.querySelector(".tax-input").value.trim();
+    if (!to || to === from) return;
+    const label = kind === "brand" ? "marca" : "categoría";
+    const existing = kind === "brand" ? catalogMeta.brands.map((b) => b.brand) : catalogMeta.categories.map((c) => c.category);
+    if (existing.includes(to)) {
+      if (!confirm(`Ya existe la ${label} "${to}". Se fusionarán: todos los productos de "${from}" pasarán a "${to}". ¿Continuar?`)) return;
+    } else if (!confirm(`Renombrar la ${label} "${from}" → "${to}"?`)) return;
+    const msg = document.getElementById("taxMsg");
+    try {
+      const url = kind === "brand" ? "/api/admin/catalog/rename-brand" : "/api/admin/catalog/rename-category";
+      await postJson(url, { from, to });
+      await loadCatalogMeta();
+      await loadCatalogCards();
+      closeModal();
+      openTaxonomyModal();
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)";
+      msg.textContent = "Error: " + (error.body?.detail || error.message);
+    }
+  });
 }
 
 function catPriceTxt(p, t) {
@@ -416,6 +545,7 @@ function catPriceTxt(p, t) {
 
 function catalogCardHtml(p) {
   return `<div class="cat-card${p.visible ? "" : " hidden-prod"}" draggable="true" data-id="${p.id}">
+    <input type="checkbox" class="cc-check" title="Seleccionar" aria-label="Seleccionar producto"${catSelected.has(p.id) ? " checked" : ""}>
     <span class="cc-handle" aria-hidden="true">⠿</span>
     <div class="cc-thumb">${p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy">` : '<div class="cc-noimg"></div>'}</div>
     <div class="cc-info">
@@ -444,8 +574,10 @@ async function loadCatalogCards() {
   const { products } = await fetchJson(`/api/admin/products${qs.toString() ? `?${qs}` : ""}`);
   if (seq !== catalogLoadSeq) return; // llegó una carga más nueva; descartar esta
   window.__catalogProducts = new Map(products.map((p) => [p.id, p]));
+  catSelected.clear();
   const grid = document.getElementById("catalogEditorGrid");
   grid.innerHTML = products.map(catalogCardHtml).join("") || '<div class="empty-row">Sin productos con ese filtro.</div>';
+  updateCatBulkBar();
 }
 
 // Drag-and-drop vertical (lista de tarjetas horizontales): fiable y simple.

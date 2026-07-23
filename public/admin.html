@@ -93,11 +93,19 @@
               <select id="catBrandFilter" class="admin-search" style="min-width:150px"><option value="">Todas las marcas</option></select>
               <select id="catCategoryFilter" class="admin-search" style="min-width:160px"><option value="">Todas las categorías</option></select>
               <input type="search" id="catSearch" class="admin-search" placeholder="Buscar...">
+              <button class="link-btn" id="catManageBtn">Marcas y categorías</button>
               <button class="link-btn" id="brandLogosBtn">Logos de marca</button>
               <button class="btn-primary" id="catNewBtn">+ Nuevo producto</button>
             </div>
           </div>
           <div class="panel">
+            <div id="catBulkBar" class="cat-bulk-bar" hidden>
+              <span id="catBulkCount">0 seleccionados</span>
+              <select id="catBulkBrand" class="admin-search"><option value="">Marca (sin cambios)</option></select>
+              <select id="catBulkCategory" class="admin-search"><option value="">Categoría (sin cambios)</option></select>
+              <button class="btn-primary" id="catBulkApply">Aplicar</button>
+              <button class="link-btn ghost" id="catBulkClear">Limpiar selección</button>
+            </div>
             <div id="catalogEditorGrid" class="cat-editor-grid"><div class="empty-row">Cargando...</div></div>
           </div>
         </div>
