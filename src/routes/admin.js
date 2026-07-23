@@ -305,12 +305,49 @@ router.put("/admin/brand-logos", async (req, res) => {
 
 // Marcas y categorías existentes (de productos activos), para poblar filtros y
 // comboboxes del editor de catálogo.
+// Ordena rows por un orden manual guardado (array de nombres); el resto va al
+// final con fallbackCmp. Compartido con el orden que ve el cliente.
+function orderByManual(rows, key, orderArr, fallbackCmp) {
+  const pos = new Map((orderArr || []).map((name, i) => [name, i]));
+  return rows.slice().sort((a, b) => {
+    const pa = pos.has(a[key]) ? pos.get(a[key]) : Infinity;
+    const pb = pos.has(b[key]) ? pos.get(b[key]) : Infinity;
+    if (pa !== pb) return pa - pb;
+    return fallbackCmp(a, b);
+  });
+}
+
 router.get("/admin/catalog/meta", async (req, res) => {
-  const [brands, categories] = await Promise.all([
-    pool.query(`select brand, count(*)::int as n from portal.products where active group by brand order by brand`),
-    pool.query(`select category, count(*)::int as n from portal.products where active group by category order by category`)
+  const [brands, categories, bOrder, cOrder] = await Promise.all([
+    pool.query(`select brand, count(*)::int as n from portal.products where active group by brand`),
+    pool.query(`select category, count(*)::int as n from portal.products where active group by category`),
+    pool.query(`select value from portal.app_settings where key = 'brand_order'`),
+    pool.query(`select value from portal.app_settings where key = 'category_order'`)
   ]);
-  res.json({ brands: brands.rows, categories: categories.rows });
+  res.json({
+    brands: orderByManual(brands.rows, "brand", bOrder.rows[0]?.value, (a, b) => a.brand.localeCompare(b.brand, "es")),
+    categories: orderByManual(categories.rows, "category", cOrder.rows[0]?.value, (a, b) => b.n - a.n || a.category.localeCompare(b.category, "es"))
+  });
+});
+
+// Guarda el orden manual de marcas y/o categorías (arrays de nombres) en
+// app_settings. Aditivo, sin migración; se refleja en el catálogo del cliente.
+router.put("/admin/catalog/order", async (req, res) => {
+  const brands = Array.isArray(req.body?.brands) ? req.body.brands.map((x) => String(x).trim()).filter(Boolean) : null;
+  const categories = Array.isArray(req.body?.categories) ? req.body.categories.map((x) => String(x).trim()).filter(Boolean) : null;
+  if (!brands && !categories) return res.status(400).json({ error: "nothing_to_save" });
+  const save = async (key, arr, description) => {
+    await pool.query(
+      `insert into portal.app_settings (key, value, description, updated_by, updated_at)
+       values ($1, $2, $3, $4, now())
+       on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()`,
+      [key, JSON.stringify(arr), description, req.user.id]
+    );
+  };
+  if (brands) await save("brand_order", brands, "Orden manual de marcas en el catálogo");
+  if (categories) await save("category_order", categories, "Orden manual de categorías en el catálogo");
+  await recordAudit({ actorUserId: req.user.id, action: "catalog.order.update", entityType: "app_settings", entityId: "catalog_order", after: { brands: !!brands, categories: !!categories } });
+  res.json({ ok: true });
 });
 
 // Reordenamiento por drag-and-drop. Recibe el nuevo orden (de arriba a abajo)

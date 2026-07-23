@@ -8,13 +8,29 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const router = express.Router();
 router.use(requireApproved);
 
+// Ordena una lista de {brand|category,...} según un orden manual guardado en
+// app_settings (array de nombres). Los que están en el orden van primero en ese
+// orden; el resto queda al final con el criterio de respaldo (fallbackCmp).
+function applyManualOrder(rows, key, orderArr, fallbackCmp) {
+  const pos = new Map((orderArr || []).map((name, i) => [name, i]));
+  return rows.slice().sort((a, b) => {
+    const pa = pos.has(a[key]) ? pos.get(a[key]) : Infinity;
+    const pb = pos.has(b[key]) ? pos.get(b[key]) : Infinity;
+    if (pa !== pb) return pa - pb;
+    return fallbackCmp(a, b);
+  });
+}
+
 router.get("/catalog/brands", async (req, res) => {
-  const [result, logos] = await Promise.all([
-    pool.query(`select brand, count(*) as count from portal.products where active and visible group by brand order by brand`),
-    pool.query(`select value from portal.app_settings where key = 'brand_logos'`)
+  const [result, logos, order] = await Promise.all([
+    pool.query(`select brand, count(*) as count from portal.products where active and visible group by brand`),
+    pool.query(`select value from portal.app_settings where key = 'brand_logos'`),
+    pool.query(`select value from portal.app_settings where key = 'brand_order'`)
   ]);
   const logoMap = logos.rows[0]?.value || {};
-  const brands = result.rows.map((b) => ({ ...b, logoUrl: logoMap[b.brand] || null }));
+  const withLogo = result.rows.map((b) => ({ ...b, logoUrl: logoMap[b.brand] || null }));
+  // Orden manual del admin; por defecto (sin orden guardado), alfabético.
+  const brands = applyManualOrder(withLogo, "brand", order.rows[0]?.value, (a, b) => a.brand.localeCompare(b.brand, "es"));
   res.json({ brands });
 });
 
@@ -25,11 +41,16 @@ router.get("/catalog/categories", async (req, res) => {
     params.push(req.query.brand);
     conditions.push(`brand = $${params.length}`);
   }
-  const result = await pool.query(
-    `select category, count(*) as count from portal.products where ${conditions.join(" and ")} group by category order by category`,
-    params
-  );
-  res.json({ categories: result.rows });
+  const [result, order] = await Promise.all([
+    pool.query(
+      `select category, count(*)::int as count from portal.products where ${conditions.join(" and ")} group by category`,
+      params
+    ),
+    pool.query(`select value from portal.app_settings where key = 'category_order'`)
+  ]);
+  // Orden manual del admin; por defecto, las de más productos primero.
+  const categories = applyManualOrder(result.rows, "category", order.rows[0]?.value, (a, b) => b.count - a.count || a.category.localeCompare(b.category, "es"));
+  res.json({ categories });
 });
 
 router.get("/catalog/products", async (req, res) => {

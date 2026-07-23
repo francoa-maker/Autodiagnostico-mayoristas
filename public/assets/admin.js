@@ -492,22 +492,24 @@ async function applyCatBulk() {
 // nuevo ya existe, se fusiona (todos los productos pasan a ese nombre).
 async function openTaxonomyModal() {
   await loadCatalogMeta();
-  const row = (kind, name, n) => `<div class="tax-row" data-kind="${kind}" data-name="${esc(name)}">
-      <input class="tax-input" value="${esc(name)}">
+  const row = (kind, name, n) => `<div class="tax-row" data-kind="${kind}" data-name="${esc(name)}" draggable="true">
+      <span class="tax-handle" aria-hidden="true" title="Arrastrar para reordenar">⠿</span>
+      <input class="tax-input" value="${esc(name)}" aria-label="Nombre">
       <span class="tax-count">${n}</span>
       <button class="link-btn tax-save" type="button">Guardar</button>
     </div>`;
   openModal(`
     <div class="modal-head"><h3>Marcas y categorías</h3><button class="modal-x" data-close>&times;</button></div>
-    <p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Editá el nombre y tocá Guardar para renombrar. Si el nombre nuevo ya existe, se <b>fusionan</b>: todos los productos pasan a esa marca/categoría. No se deshace automáticamente.</p>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Arrastrá con ⠿ para cambiar el <b>orden</b> en que aparecen en el catálogo del cliente (se guarda solo al soltar). Editá el nombre y tocá Guardar para <b>renombrar</b>; si el nombre ya existe, se <b>fusionan</b>.</p>
     <div class="tax-cols">
-      <div><h4>Marcas</h4>${catalogMeta.brands.map((b) => row("brand", b.brand, b.n)).join("") || '<p class="muted-note">Sin marcas.</p>'}</div>
-      <div><h4>Categorías</h4>${catalogMeta.categories.map((c) => row("category", c.category, c.n)).join("") || '<p class="muted-note">Sin categorías.</p>'}</div>
+      <div class="tax-col" data-kind="brand"><h4>Marcas</h4>${catalogMeta.brands.map((b) => row("brand", b.brand, b.n)).join("") || '<p class="muted-note">Sin marcas.</p>'}</div>
+      <div class="tax-col" data-kind="category"><h4>Categorías</h4>${catalogMeta.categories.map((c) => row("category", c.category, c.n)).join("") || '<p class="muted-note">Sin categorías.</p>'}</div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center;margin-top:14px">
       <span id="taxMsg" style="font-size:12.5px;margin-right:auto"></span>
       <button type="button" class="link-btn ghost" data-close>Cerrar</button>
     </div>`);
+  // Renombrar / fusionar (click en "Guardar" de cada fila)
   document.querySelector("#modalBox .tax-cols").addEventListener("click", async (e) => {
     const btn = e.target.closest(".tax-save");
     if (!btn) return;
@@ -534,6 +536,56 @@ async function openTaxonomyModal() {
       msg.textContent = "Error: " + (error.body?.detail || error.message);
     }
   });
+  // Drag-and-drop para reordenar (dentro de cada columna; persiste al soltar)
+  document.querySelectorAll("#modalBox .tax-col").forEach((col) => wireTaxDnD(col));
+}
+
+let taxDragEl = null;
+function taxDragAfter(col, y) {
+  const els = [...col.querySelectorAll(".tax-row:not(.dragging)")];
+  let closest = { offset: -Infinity, el: null };
+  for (const child of els) {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) closest = { offset, el: child };
+  }
+  return closest.el;
+}
+function wireTaxDnD(col) {
+  col.addEventListener("dragstart", (e) => {
+    const r = e.target.closest(".tax-row");
+    if (!r) return;
+    taxDragEl = r;
+    r.classList.add("dragging");
+  });
+  col.addEventListener("dragover", (e) => {
+    if (!taxDragEl || !col.contains(taxDragEl)) return; // solo dentro de la misma columna
+    e.preventDefault();
+    const after = taxDragAfter(col, e.clientY);
+    if (after == null) col.appendChild(taxDragEl);
+    else col.insertBefore(taxDragEl, after);
+  });
+  col.addEventListener("dragend", async (e) => {
+    const r = e.target.closest(".tax-row");
+    if (!r) return;
+    r.classList.remove("dragging");
+    taxDragEl = null;
+    await persistTaxOrder(col);
+  });
+}
+async function persistTaxOrder(col) {
+  const kind = col.dataset.kind;
+  const names = [...col.querySelectorAll(".tax-row")].map((r) => r.dataset.name);
+  const body = kind === "brand" ? { brands: names } : { categories: names };
+  const msg = document.getElementById("taxMsg");
+  try {
+    await putJson("/api/admin/catalog/order", body);
+    if (msg) { msg.style.color = "var(--success,#137333)"; msg.textContent = `Orden de ${kind === "brand" ? "marcas" : "categorías"} guardado ✓`; }
+    await loadCatalogMeta();
+    await loadCatalogCards();
+  } catch (error) {
+    if (msg) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo guardar el orden: " + (error.body?.detail || error.message); }
+  }
 }
 
 function catPriceTxt(p, t) {

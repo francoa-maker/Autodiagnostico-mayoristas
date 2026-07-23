@@ -222,7 +222,9 @@ function renderBrandFilter() {
 }
 function renderCategoryFilter() {
   const q = norm(document.getElementById("catSearchInput").value);
-  let cats = state.categories.slice().sort((a, b) => b.count - a.count);
+  // Respeta el orden que viene del servidor (orden manual del admin, o por
+  // cantidad de productos por defecto). No re-ordenar acá.
+  let cats = state.categories.slice();
   if (q) cats = cats.filter((c) => norm(c.category).includes(q));
   const showAll = state.catExpanded || !!q;
   const shown = showAll ? cats : cats.slice(0, CAT_INITIAL);
