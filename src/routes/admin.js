@@ -278,6 +278,31 @@ router.get("/admin/products", async (req, res) => {
   res.json({ products: result.rows });
 });
 
+// Logos de marca: mapa { marca: url } guardado en app_settings, mostrado en
+// las tarjetas del catálogo del cliente.
+router.get("/admin/brand-logos", async (req, res) => {
+  const r = await pool.query(`select value from portal.app_settings where key = 'brand_logos'`);
+  res.json({ logos: r.rows[0]?.value || {} });
+});
+
+router.put("/admin/brand-logos", async (req, res) => {
+  const incoming = req.body?.logos && typeof req.body.logos === "object" ? req.body.logos : {};
+  // Normaliza: sólo entradas con URL no vacía.
+  const logos = {};
+  for (const [brand, url] of Object.entries(incoming)) {
+    const u = String(url ?? "").trim();
+    if (u) logos[String(brand).trim()] = u;
+  }
+  await pool.query(
+    `insert into portal.app_settings (key, value, description, updated_by, updated_at)
+     values ('brand_logos', $1, 'Logos de marca para el catálogo', $2, now())
+     on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()`,
+    [JSON.stringify(logos), req.user.id]
+  );
+  await recordAudit({ actorUserId: req.user.id, action: "brand_logos.update", entityType: "app_settings", entityId: "brand_logos", after: logos });
+  res.json({ logos });
+});
+
 // Marcas y categorías existentes (de productos activos), para poblar filtros y
 // comboboxes del editor de catálogo.
 router.get("/admin/catalog/meta", async (req, res) => {

@@ -7,10 +7,13 @@ const router = express.Router();
 router.use(requireApproved);
 
 router.get("/catalog/brands", async (req, res) => {
-  const result = await pool.query(
-    `select brand, count(*) as count from portal.products where active and visible group by brand order by brand`
-  );
-  res.json({ brands: result.rows });
+  const [result, logos] = await Promise.all([
+    pool.query(`select brand, count(*) as count from portal.products where active and visible group by brand order by brand`),
+    pool.query(`select value from portal.app_settings where key = 'brand_logos'`)
+  ]);
+  const logoMap = logos.rows[0]?.value || {};
+  const brands = result.rows.map((b) => ({ ...b, logoUrl: logoMap[b.brand] || null }));
+  res.json({ brands });
 });
 
 router.get("/catalog/categories", async (req, res) => {

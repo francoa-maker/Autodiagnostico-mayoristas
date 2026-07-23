@@ -388,6 +388,7 @@ async function openCatalogEditor() {
       catalogSearchTimer = setTimeout(loadCatalogCards, 350);
     });
     document.getElementById("catNewBtn").addEventListener("click", () => openProductModal(null));
+    document.getElementById("brandLogosBtn").addEventListener("click", openBrandLogosModal);
     wireCatalogGridClicks();
     wireCatalogDnD();
   }
@@ -509,6 +510,47 @@ function wireCatalogGridClicks() {
       const p = window.__catalogProducts?.get(id);
       try { await patchJson(`/api/admin/products/${id}`, { visible: !(p && p.visible) }); await loadCatalogCards(); }
       catch (error) { alert("No se pudo cambiar la visibilidad: " + error.message); }
+    }
+  });
+}
+
+// Editor de logos de marca: una URL por marca; se muestran en las tarjetas del
+// catálogo del cliente (con fallback a las letras si el logo no carga).
+async function openBrandLogosModal() {
+  let logos = {};
+  try {
+    ({ logos } = await fetchJson("/api/admin/brand-logos"));
+  } catch (error) {
+    alert("No se pudieron cargar los logos: " + error.message);
+    return;
+  }
+  const brands = catalogMeta.brands.map((b) => b.brand);
+  openModal(`
+    <div class="modal-head"><h3>Logos de marca</h3><button class="modal-x" data-close>&times;</button></div>
+    <p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Pegá la URL de la imagen del logo de cada marca (idealmente alojada en autodiagnostico.com.ar). Si se deja vacío, la tarjeta muestra las iniciales.</p>
+    <form id="brandLogosForm" class="form-grid">
+      ${brands.map((b) => `<label class="full">${esc(b)}<input name="logo::${esc(b)}" value="${esc(logos[b] || "")}" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label>`).join("")}
+      <div class="full" style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+        <span id="blMsg" style="font-size:12.5px;margin-right:auto"></span>
+        <button type="button" class="link-btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar logos</button>
+      </div>
+    </form>`);
+  document.getElementById("brandLogosForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const out = {};
+    for (const el of ev.target.querySelectorAll("input[name^='logo::']")) {
+      out[el.name.slice("logo::".length)] = el.value.trim();
+    }
+    const msg = document.getElementById("blMsg");
+    try {
+      await putJson("/api/admin/brand-logos", { logos: out });
+      msg.style.color = "var(--success,#137333)";
+      msg.textContent = "Guardado ✓";
+      setTimeout(closeModal, 800);
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)";
+      msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
     }
   });
 }

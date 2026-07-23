@@ -110,12 +110,27 @@ async function loadBrands() {
 
   document.getElementById("hubGrid").innerHTML = brands
     .map(
-      (b) => `<div class="brand-card" data-brand="${b.brand}">
-        <div class="bc-top"><div class="bc-icon" style="background:${brandColor(b.brand)}">${b.brand.slice(0, 4)}</div><div class="bc-name">${b.brand}</div></div>
+      (b) => {
+        const icon = b.logoUrl
+          ? `<div class="bc-icon logo"><img src="${String(b.logoUrl).replace(/"/g, "%22")}" alt="${b.brand}"></div>`
+          : `<div class="bc-icon" style="background:${brandColor(b.brand)}">${b.brand.slice(0, 4)}</div>`;
+        return `<div class="brand-card" data-brand="${b.brand}">
+        <div class="bc-top">${icon}<div class="bc-name">${b.brand}</div></div>
         <div class="bc-cnt">${b.count}<span>productos</span></div>
-      </div>`
+      </div>`;
+      }
     )
     .join("");
+  // Si un logo no carga, caer a las letras/color de la marca.
+  document.querySelectorAll("#hubGrid .bc-icon.logo img").forEach((img) => {
+    img.addEventListener("error", () => {
+      const icon = img.parentElement;
+      const brand = icon.closest(".brand-card")?.dataset.brand || "";
+      icon.classList.remove("logo");
+      icon.style.background = brandColor(brand);
+      icon.textContent = brand.slice(0, 4);
+    });
+  });
 
   document.getElementById("brandList").innerHTML =
     `<button class="cs-item${!state.brand ? " active" : ""}" data-brand="">Todas <span class="n">${total}</span></button>` +
