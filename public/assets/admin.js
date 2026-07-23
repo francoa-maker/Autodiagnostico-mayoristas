@@ -24,7 +24,8 @@ let currentUser = null;
 async function loadMe() {
   const { user } = await fetchJson("/api/me");
   if (!user) return (location.href = "/login");
-  if (user.role !== "admin") return (location.href = "/");
+  // Acceso al panel: personal admin (superadmin/sales_billing/administration; 'admin' es legacy).
+  if (!["superadmin", "sales_billing", "administration", "admin"].includes(user.role)) return (location.href = "/");
   currentUser = user;
   document.getElementById("adminName").textContent = user.display_name || user.email;
   document.getElementById("adminEmail").textContent = user.email;
@@ -804,7 +805,16 @@ function openProductModal(product) {
 
 // ==================== Clientes ====================
 
-const ROLE_LABEL = { admin: "Admin", customer: "Cliente" };
+const ROLE_LABEL = {
+  superadmin: "Superadmin", sales_billing: "Ventas/Fact.", administration: "Administración",
+  logistics: "Logística", client: "Cliente", admin: "Admin (legacy)", customer: "Cliente (legacy)"
+};
+const ASSIGNABLE_ROLES = ["superadmin", "sales_billing", "administration", "logistics", "client"];
+function canonRole(r) { return ({ admin: "superadmin", customer: "client" })[r] || r; }
+function roleSelectHtml(current) {
+  const cur = canonRole(current);
+  return `<select class="role-select">${ASSIGNABLE_ROLES.map((r) => `<option value="${r}"${r === cur ? " selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
+}
 const STATUS_LABEL = { pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado", blocked: "Bloqueado" };
 const STATUS_PILL = { pending: "pending", approved: "approved", rejected: "rejected", blocked: "blocked" };
 
@@ -824,7 +834,7 @@ async function loadClients() {
           <td>${esc(u.email)}</td>
           <td>${esc(u.display_name || "-")}</td>
           <td>${esc(u.company_name || "-")}</td>
-          <td>${ROLE_LABEL[u.role] || u.role}</td>
+          <td>${roleSelectHtml(u.role)}</td>
           <td><span class="status-pill ${STATUS_PILL[u.status] || "pending"}">${STATUS_LABEL[u.status] || u.status}</span></td>
           <td>${timeAgo(u.created_at)}</td>
           <td>${timeAgo(u.last_login_at)}</td>
@@ -832,7 +842,6 @@ async function loadClients() {
             <button class="link-btn" data-action="edit-profile">Datos</button>
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
-            ${u.role === "customer" ? '<button class="link-btn ghost" data-action="make-admin">Hacer admin</button>' : '<button class="link-btn ghost" data-action="make-customer">Quitar admin</button>'}
             <button class="link-btn ghost" data-action="delete-user" title="Eliminar cliente">🗑</button>
           </td>
         </tr>`
@@ -871,10 +880,9 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
 
   const payload = {
     approve: { status: "approved" },
-    reject: { status: "rejected" },
-    "make-admin": { role: "admin" },
-    "make-customer": { role: "customer" }
+    reject: { status: "rejected" }
   }[btn.dataset.action];
+  if (!payload) return;
   btn.disabled = true;
   try {
     await patchJson(`/api/admin/users/${id}`, payload);
@@ -882,6 +890,19 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
   } catch (error) {
     alert("No se pudo actualizar el usuario: " + (error.body?.detail || error.message));
     btn.disabled = false;
+  }
+});
+
+// Cambio de rol inline (selector en la columna Rol).
+document.getElementById("clientsBody").addEventListener("change", async (e) => {
+  const sel = e.target.closest(".role-select");
+  if (!sel) return;
+  const id = sel.closest("tr").dataset.id;
+  try {
+    await patchJson(`/api/admin/users/${id}`, { role: sel.value });
+  } catch (error) {
+    alert("No se pudo cambiar el rol: " + (error.body?.detail || error.message));
+    await loadClients();
   }
 });
 
@@ -974,8 +995,11 @@ document.getElementById("newClientBtn").addEventListener("click", () => {
       <label>Empresa<input name="companyName"></label>
       <label>Rol
         <select name="role">
-          <option value="customer" selected>Cliente</option>
-          <option value="admin">Admin</option>
+          <option value="client" selected>Cliente</option>
+          <option value="sales_billing">Ventas/Facturación</option>
+          <option value="administration">Administración</option>
+          <option value="logistics">Logística</option>
+          <option value="superadmin">Superadmin</option>
         </select>
       </label>
       <label>Estado

@@ -10,6 +10,7 @@ import { sendGmail } from "../mailer.js";
 import { resolveWholesaleUnit } from "../pricing.js";
 import { saveUserProfile, profileComplete, PROFILE_COLUMNS } from "./profile.js";
 import { generateClientCode } from "../auth.js";
+import { ROLES, normalizeRole, isSuperadmin, isAdminStaff } from "../permissions.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -18,7 +19,7 @@ router.use(requireAdmin);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const USER_STATUSES = ["pending", "approved", "rejected", "blocked"];
-const USER_ROLES = ["customer", "admin"];
+const USER_ROLES = ROLES; // superadmin/sales_billing/administration/logistics/client
 const QUOTE_STATUSES = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
 const PRICE_STATES = ["value", "consult", "hidden", "unavailable", "custom"];
 
@@ -134,7 +135,7 @@ router.post("/admin/users", async (req, res) => {
   const existing = await pool.query(`select id from portal.users where email = $1`, [cleanEmail]);
   if (existing.rows[0]) return res.status(409).json({ error: "email_already_exists", detail: "Ya existe un cliente con ese email." });
 
-  const finalRole = role || "customer";
+  const finalRole = role || "client";
   const finalStatus = status || "approved";
   const approvedAt = finalStatus === "approved" ? new Date() : null;
   const approvedBy = finalStatus === "approved" ? req.user.id : null;
@@ -182,9 +183,9 @@ router.delete("/admin/users/:id", async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: "cannot_delete_self", detail: "No podés borrar tu propia cuenta." });
   const target = await pool.query(`select id, role, status, email from portal.users where id = $1`, [req.params.id]);
   if (!target.rows[0]) return res.status(404).json({ error: "not_found" });
-  if (target.rows[0].role === "admin" && target.rows[0].status === "approved") {
-    const admins = await pool.query(`select count(*)::int as n from portal.users where role = 'admin' and status = 'approved'`);
-    if (admins.rows[0].n <= 1) return res.status(400).json({ error: "last_admin", detail: "No se puede borrar al único administrador." });
+  if (isSuperadmin(target.rows[0].role) && target.rows[0].status === "approved") {
+    const supers = await pool.query(`select count(*)::int as n from portal.users where status = 'approved' and role in ('superadmin','admin')`);
+    if (supers.rows[0].n <= 1) return res.status(400).json({ error: "last_superadmin", detail: "No se puede borrar al único superadmin." });
   }
   try {
     const counts = await withTransaction(async (client) => {
@@ -209,14 +210,16 @@ router.patch("/admin/users/:id", async (req, res) => {
   if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
   const target = before.rows[0];
 
-  // Lockout protection: the change must not remove the last remaining admin,
-  // and an admin cannot demote or un-approve themselves (which would kick
-  // them out of the panel mid-session).
-  const losesAdmin = (role != null && role !== "admin") || (status != null && status !== "approved");
-  if (losesAdmin && target.role === "admin" && target.status === "approved") {
-    if (target.id === req.user.id) return res.status(400).json({ error: "cannot_demote_self", detail: "No podés quitarte tu propio acceso de admin." });
-    const admins = await pool.query(`select count(*)::int as n from portal.users where role = 'admin' and status = 'approved'`);
-    if (admins.rows[0].n <= 1) return res.status(400).json({ error: "last_admin", detail: "No se puede dejar el portal sin ningún administrador." });
+  // Lockout protection: nadie puede quitarse a sí mismo el acceso al panel, y no
+  // se puede dejar el portal sin ningún superadmin. Normaliza roles legacy.
+  const newRole = role != null ? role : target.role;
+  const newStatus = status != null ? status : target.status;
+  const selfLosesPanel = target.id === req.user.id && isAdminStaff(target.role) && target.status === "approved" && (!isAdminStaff(newRole) || newStatus !== "approved");
+  if (selfLosesPanel) return res.status(400).json({ error: "cannot_demote_self", detail: "No podés quitarte tu propio acceso al panel." });
+  const losesSuper = isSuperadmin(target.role) && target.status === "approved" && (!isSuperadmin(newRole) || newStatus !== "approved");
+  if (losesSuper) {
+    const supers = await pool.query(`select count(*)::int as n from portal.users where status = 'approved' and role in ('superadmin','admin')`);
+    if (supers.rows[0].n <= 1) return res.status(400).json({ error: "last_superadmin", detail: "No se puede dejar el portal sin ningún superadmin." });
   }
 
   const result = await pool.query(

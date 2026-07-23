@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { attachSession } from "./src/auth.js";
+import { isAdminStaff } from "./src/permissions.js";
 import authRouter from "./src/routes/auth.js";
 import catalogRouter from "./src/routes/catalog.js";
 import quotesRouter from "./src/routes/quotes.js";
@@ -74,7 +75,7 @@ app.get("/pending", (req, res) => {
 app.get("/", (req, res) => {
   if (!req.user) return res.redirect("/login");
   if (req.user.status !== "approved") return res.redirect("/pending");
-  res.sendFile(path.join(publicDir, req.user.role === "admin" ? "admin.html" : "index.html"));
+  res.sendFile(path.join(publicDir, isAdminStaff(req.user.role) ? "admin.html" : "index.html"));
 });
 
 app.use((req, res) => {
