@@ -1,8 +1,21 @@
 import { fetchJson, postJson, putJson, money, STOCK_LABEL } from "/assets/api.js";
 
-// Validación de formato de documento en el cliente (UX); el server valida de
-// forma autoritativa en PUT /api/profile. El tipo depende de la condición:
-// RI/Monotributo/Exento -> CUIT; Consumidor Final -> DNI/CUIL/CUIT.
+// ============================================================================
+// Catálogo Distribuidor (cliente). Rediseño: carga todos los productos una vez
+// y filtra/ordena en el cliente (marcas, categorías, disponibilidad, precio,
+// búsqueda), con favoritos persistentes, productos frecuentes y vistas
+// grilla/lista. El flujo de solicitud (pre-cotización -> revisión admin) NO
+// cambia: se sigue enviando { productId, quantity } a POST /api/quotes.
+// ============================================================================
+
+function esc(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function norm(s) {
+  return String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// --- Validación de documento (UX; el server valida de forma autoritativa) ---
 function isValidCuit(raw) {
   const d = String(raw ?? "").replace(/\D/g, "");
   if (d.length !== 11) return false;
@@ -17,7 +30,7 @@ function isValidCuit(raw) {
 function isValidTaxId(type, raw) {
   const d = String(raw ?? "").replace(/\D/g, "");
   if (type === "DNI") return d.length >= 7 && d.length <= 8;
-  return isValidCuit(d); // CUIT y CUIL comparten algoritmo
+  return isValidCuit(d);
 }
 function allowedTaxIdTypes(condition) {
   return condition === "consumidor_final" ? ["DNI", "CUIL", "CUIT"] : ["CUIT"];
@@ -33,21 +46,32 @@ function brandColor(name) {
   return BRAND_COLORS[hash % BRAND_COLORS.length];
 }
 
-const state = { brand: null, category: "ALL", search: "", brands: [], categories: [] };
+// ---------------------------------------------------------------- estado ----
+const state = {
+  products: [],
+  brands: [],
+  categories: [],
+  favorites: new Set(),
+  frequentIds: [],
+  filters: { brands: new Set(), categories: new Set(), availability: new Set(), priceMin: null, priceMax: null },
+  quick: "all",
+  search: "",
+  sort: "default",
+  view: "grid",
+  catExpanded: false
+};
 const cart = new Map(); // productId -> { product, quantity }
+const CAT_INITIAL = 8;
 
+// ------------------------------------------------------------- precios ------
 function tierForQuantity(qty) {
   if (qty >= 8) return "eight";
   if (qty >= 4) return "four";
   return "one";
 }
-
 function priceFor(product, tier) {
   return product.prices?.[tier] || product.prices?.pvp || { state: "hidden", amount: null };
 }
-
-// Espeja src/pricing.js para la vista del catálogo: precio del tier, o 15% off
-// PVP si no hay mayorista, o "consultar" si pidió más de lo estipulado.
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function pvpAmount(product) {
   const p = product.prices?.pvp;
@@ -59,6 +83,8 @@ function hasAnyWholesale(product) {
     return x && x.state === "value" && x.amount != null;
   });
 }
+// Espeja src/pricing.js: precio del tier, o 15% off PVP si no hay mayorista, o
+// "consultar" si pidió más de lo estipulado / no hay precio.
 function resolveDisplay(product, tier) {
   const e = product.prices?.[tier];
   if (e && e.state === "value" && e.amount != null) return { state: "value", amount: Number(e.amount), currency: "ARS" };
@@ -73,15 +99,25 @@ function estText(product, qty) {
   const r = resolveDisplay(product, tierForQuantity(qty));
   return r.state === "value" ? money(r.amount) : "Consultar";
 }
-
-// Envuelve contenido en un link a la publicación del producto (autodiagnostico.
-// com.ar) si el producto tiene publicationUrl; si no, lo devuelve tal cual.
+// Precio "de referencia" (1u) para filtrar/ordenar por precio.
+function refPrice(product) {
+  const r = resolveDisplay(product, "one");
+  return r.state === "value" ? r.amount : null;
+}
+function priceCell(price) {
+  if (!price || price.state === "hidden") return '<span style="color:#ccc;font-weight:400">-</span>';
+  if (price.state === "consult") return '<span style="color:#888;font-weight:400">Consultar</span>';
+  if (price.state === "custom") return price.label || "-";
+  if (price.state === "unavailable") return '<span style="color:#ccc;font-weight:400">N/D</span>';
+  return money(price.amount, price.currency);
+}
 function pubLink(url, inner, cls) {
   if (!url) return inner;
   const safe = String(url).replace(/"/g, "%22");
   return `<a class="${cls}" href="${safe}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
 }
 
+// ------------------------------------------------------------ watermark -----
 function renderWatermark(user) {
   const el = document.getElementById("wmOverlay");
   if (!el) return;
@@ -89,40 +125,83 @@ function renderWatermark(user) {
   const day = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const tag = `CONFIDENCIAL · ${who} · ${user.client_code || ""} · ${user.email || ""} · ${day}`;
   const safe = tag.replace(/[<>&]/g, "");
-  const line = `<div class="wm-line">${(safe + "    ").repeat(3)}</div>`;
+  const line = `<div class="wm-line">${(safe + "    ").repeat(3)}</div>`;
   el.innerHTML = line.repeat(16);
 }
 
+// ------------------------------------------------------------- toast --------
+let toastTimer;
+function toast(msg, isError) {
+  let el = document.getElementById("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = "show" + (isError ? " error" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.className = ""), 2200);
+}
+
+// -------------------------------------------------------------- carga -------
+let currentUser = null;
 async function loadMe() {
   const { user } = await fetchJson("/api/me");
   if (!user) return (location.href = "/login");
-  const avatar = document.getElementById("avatar");
-  avatar.textContent = (user.display_name || user.email).slice(0, 2).toUpperCase();
-  document.getElementById("freshness").innerHTML = '<span class="dot"></span>Sesión: ' + user.email;
+  currentUser = user;
+  const initials = (user.display_name || user.email).slice(0, 2).toUpperCase();
+  document.getElementById("avatar").textContent = initials;
+  document.getElementById("ppName").textContent = user.display_name || user.email;
+  document.getElementById("ppEmail").textContent = user.email;
   renderWatermark(user);
 }
 
-async function loadBrands() {
-  const { brands } = await fetchJson("/api/catalog/brands");
+async function loadCatalogData() {
+  const [{ brands }, { categories }, { products }, favRes, freqRes] = await Promise.all([
+    fetchJson("/api/catalog/brands"),
+    fetchJson("/api/catalog/categories"),
+    fetchJson("/api/catalog/products"),
+    fetchJson("/api/catalog/favorites").catch(() => ({ productIds: [] })),
+    fetchJson("/api/catalog/frequent").catch(() => ({ productIds: [] }))
+  ]);
   state.brands = brands;
-  const total = brands.reduce((sum, b) => sum + Number(b.count), 0);
-  document.getElementById("hubDesc").textContent = `${total} productos activos · ${brands.length} marcas`;
+  state.categories = categories;
+  state.products = products;
+  state.favorites = new Set(favRes.productIds || []);
+  state.frequentIds = freqRes.productIds || [];
+}
 
-  document.getElementById("hubGrid").innerHTML = brands
-    .map(
-      (b) => {
-        const icon = b.logoUrl
-          ? `<div class="bc-icon logo"><img src="${String(b.logoUrl).replace(/"/g, "%22")}" alt="${b.brand}"></div>`
-          : `<div class="bc-icon" style="background:${brandColor(b.brand)}">${b.brand.slice(0, 4)}</div>`;
-        return `<div class="brand-card" data-brand="${b.brand}">
-        <div class="bc-top">${icon}<div class="bc-name">${b.brand}</div></div>
+// ----------------------------------------------------------- estadísticas ---
+function availCount() {
+  return state.products.filter((p) => p.stockStatus !== "out_of_stock").length;
+}
+function renderStats() {
+  document.getElementById("statProducts").textContent = state.products.length;
+  document.getElementById("statBrands").textContent = state.brands.length;
+  document.getElementById("statAvail").textContent = availCount();
+  document.getElementById("qaAll").textContent = state.products.length;
+  document.getElementById("qaAvail").textContent = availCount();
+  document.getElementById("qaFav").textContent = state.favorites.size;
+  document.getElementById("qaFreq").textContent = state.frequentIds.length || "—";
+}
+
+// ------------------------------------------------------- tarjetas de marca --
+function renderBrandCards() {
+  const el = document.getElementById("brandCards");
+  el.innerHTML = state.brands
+    .map((b) => {
+      const icon = b.logoUrl
+        ? `<div class="bc-icon logo"><img src="${String(b.logoUrl).replace(/"/g, "%22")}" alt="${esc(b.brand)}"></div>`
+        : `<div class="bc-icon" style="background:${brandColor(b.brand)}">${esc(b.brand.slice(0, 4))}</div>`;
+      return `<div class="brand-card" data-brand="${esc(b.brand)}">
+        <div class="bc-top">${icon}<div class="bc-name">${esc(b.brand)}</div></div>
         <div class="bc-cnt">${b.count}<span>productos</span></div>
+        <button class="bc-btn" data-brand="${esc(b.brand)}">Ver productos</button>
       </div>`;
-      }
-    )
+    })
     .join("");
-  // Si un logo no carga, caer a las letras/color de la marca.
-  document.querySelectorAll("#hubGrid .bc-icon.logo img").forEach((img) => {
+  el.querySelectorAll(".bc-icon.logo img").forEach((img) => {
     img.addEventListener("error", () => {
       const icon = img.parentElement;
       const brand = icon.closest(".brand-card")?.dataset.brand || "";
@@ -131,85 +210,202 @@ async function loadBrands() {
       icon.textContent = brand.slice(0, 4);
     });
   });
-
-  document.getElementById("brandList").innerHTML =
-    `<button class="cs-item${!state.brand ? " active" : ""}" data-brand="">Todas <span class="n">${total}</span></button>` +
-    brands.map((b) => `<button class="cs-item${state.brand === b.brand ? " active" : ""}" data-brand="${b.brand}">${b.brand} <span class="n">${b.count}</span></button>`).join("");
 }
 
-async function loadCategories() {
-  const qs = state.brand ? `?brand=${encodeURIComponent(state.brand)}` : "";
-  const { categories } = await fetchJson(`/api/catalog/categories${qs}`);
-  state.categories = categories;
-
-  document.getElementById("catFilterList").innerHTML = categories
-    .map((c) => `<button class="cs-item${state.category === c.category ? " active" : ""}" data-cat="${c.category}">${c.category} <span class="n">${c.count}</span></button>`)
+// ---------------------------------------------------------------- filtros ---
+function renderBrandFilter() {
+  document.getElementById("brandFilterList").innerHTML = state.brands
+    .map(
+      (b) => `<label class="fg-check"><input type="checkbox" data-brand="${esc(b.brand)}"${state.filters.brands.has(b.brand) ? " checked" : ""}> <span>${esc(b.brand)}</span> <span class="n">${b.count}</span></label>`
+    )
     .join("");
-  document.getElementById("catTabs").innerHTML =
-    `<button class="tab-chip${state.category === "ALL" ? " active" : ""}" data-cat="ALL">Todas</button>` +
-    categories.map((c) => `<button class="tab-chip${state.category === c.category ? " active" : ""}" data-cat="${c.category}">${c.category}</button>`).join("");
+}
+function renderCategoryFilter() {
+  const q = norm(document.getElementById("catSearchInput").value);
+  let cats = state.categories.slice().sort((a, b) => b.count - a.count);
+  if (q) cats = cats.filter((c) => norm(c.category).includes(q));
+  const showAll = state.catExpanded || !!q;
+  const shown = showAll ? cats : cats.slice(0, CAT_INITIAL);
+  document.getElementById("catFilterList").innerHTML =
+    shown
+      .map(
+        (c) => `<label class="fg-check"><input type="checkbox" data-cat="${esc(c.category)}"${state.filters.categories.has(c.category) ? " checked" : ""}> <span>${esc(c.category)}</span> <span class="n">${c.count}</span></label>`
+      )
+      .join("") || '<div class="fg-empty">Sin categorías.</div>';
+  const moreBtn = document.getElementById("catMoreBtn");
+  if (!q && cats.length > CAT_INITIAL) {
+    moreBtn.hidden = false;
+    moreBtn.textContent = state.catExpanded ? "Ver menos" : `Ver más (${cats.length - CAT_INITIAL})`;
+  } else {
+    moreBtn.hidden = true;
+  }
+}
+function renderAvailCounts() {
+  const c = { in_stock: 0, low_stock: 0, out_of_stock: 0 };
+  for (const p of state.products) c[p.stockStatus] = (c[p.stockStatus] || 0) + 1;
+  document.getElementById("cnt_in_stock").textContent = c.in_stock;
+  document.getElementById("cnt_low_stock").textContent = c.low_stock;
+  document.getElementById("cnt_out_of_stock").textContent = c.out_of_stock;
+  document.querySelectorAll('#availFilterList input[type=checkbox]').forEach((chk) => {
+    chk.checked = state.filters.availability.has(chk.value);
+  });
 }
 
-async function loadProducts() {
-  const params = new URLSearchParams();
-  if (state.brand) params.set("brand", state.brand);
-  if (state.category && state.category !== "ALL") params.set("category", state.category);
-  if (state.search) params.set("q", state.search);
+const QUICK_LABEL = { avail: "Con disponibilidad", novedades: "Novedades", favoritos: "Favoritos", frecuentes: "Pedidos frecuentes" };
+function renderActiveChips() {
+  const chips = [];
+  if (state.quick && state.quick !== "all") chips.push({ type: "quick", label: QUICK_LABEL[state.quick] || state.quick });
+  for (const b of state.filters.brands) chips.push({ type: "brand", value: b, label: b });
+  for (const c of state.filters.categories) chips.push({ type: "category", value: c, label: c });
+  for (const a of state.filters.availability) chips.push({ type: "availability", value: a, label: STOCK_LABEL[a] || a });
+  if (state.filters.priceMin != null) chips.push({ type: "priceMin", label: `Desde ${money(state.filters.priceMin)}` });
+  if (state.filters.priceMax != null) chips.push({ type: "priceMax", label: `Hasta ${money(state.filters.priceMax)}` });
+  if (state.search) chips.push({ type: "search", label: `“${state.search}”` });
+  const el = document.getElementById("activeChips");
+  el.innerHTML = chips
+    .map((c) => `<button class="chip" data-chip="${c.type}" data-val="${esc(c.value || "")}">${esc(c.label)} <span aria-hidden="true">×</span></button>`)
+    .join("");
+}
 
-  const { products } = await fetchJson(`/api/catalog/products?${params}`);
-  document.getElementById("catalogTitle").textContent = state.brand || (state.search ? `Resultados para "${state.search}"` : "Todos");
-  document.getElementById("resultCount").textContent = `${products.length} producto${products.length === 1 ? "" : "s"}`;
+// --------------------------------------------------------- filtrar/ordenar --
+function computeFiltered() {
+  let list = state.products;
+  if (state.quick === "favoritos") list = list.filter((p) => state.favorites.has(p.id));
+  else if (state.quick === "frecuentes") list = list.filter((p) => state.frequentIds.includes(p.id));
+  else if (state.quick === "avail") list = list.filter((p) => p.stockStatus !== "out_of_stock");
 
+  const f = state.filters;
+  if (f.brands.size) list = list.filter((p) => f.brands.has(p.brand));
+  if (f.categories.size) list = list.filter((p) => f.categories.has(p.category));
+  if (f.availability.size) list = list.filter((p) => f.availability.has(p.stockStatus));
+  if (f.priceMin != null) list = list.filter((p) => { const v = refPrice(p); return v != null && v >= f.priceMin; });
+  if (f.priceMax != null) list = list.filter((p) => { const v = refPrice(p); return v != null && v <= f.priceMax; });
+  if (state.search) {
+    const q = norm(state.search);
+    list = list.filter((p) => norm(p.name).includes(q) || norm(p.sku).includes(q) || norm(p.brand).includes(q) || norm(p.category).includes(q));
+  }
+
+  let sort = state.sort;
+  if (state.quick === "novedades" && sort === "default") sort = "new";
+  list = list.slice();
+  if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  else if (sort === "new") list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  else if (sort === "price_asc" || sort === "price_desc") {
+    list.sort((a, b) => {
+      const pa = refPrice(a), pb = refPrice(b);
+      if (pa == null && pb == null) return 0;
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return sort === "price_asc" ? pa - pb : pb - pa;
+    });
+  } else if (state.quick === "frecuentes") {
+    const order = new Map(state.frequentIds.map((id, i) => [id, i]));
+    list.sort((a, b) => (order.get(a.id) ?? 999) - (order.get(b.id) ?? 999));
+  }
+  return list;
+}
+
+// ------------------------------------------------------------- productos ----
+function heartIco(on) { return on ? "&#9829;" : "&#9825;"; }
+
+function productCardHtml(p) {
+  const cartEntry = cart.get(p.id);
+  const qty = cartEntry ? cartEntry.quantity : 1;
+  const isFav = state.favorites.has(p.id);
+  const pvp = priceFor(p, "pvp");
+  const one = resolveDisplay(p, "one");
+  const four = resolveDisplay(p, "four");
+  const eight = resolveDisplay(p, "eight");
+  return `<div class="pcard" data-id="${p.id}">
+    <div class="img-wrap">
+      <div class="cat-chip">${esc(p.category)}</div>
+      <button class="fav-btn${isFav ? " on" : ""}" data-fav aria-label="${isFav ? "Quitar de favoritos" : "Agregar a favoritos"}" aria-pressed="${isFav}">${heartIco(isFav)}</button>
+      ${p.imageUrl ? pubLink(p.publicationUrl, `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy">`, "imglink") : '<div class="img-ph"></div>'}
+    </div>
+    <div class="body">
+      <div class="pbrand">${esc(p.brand)}</div>
+      <div class="pname">${pubLink(p.publicationUrl, `${esc(p.name)}${p.publicationUrl ? ' <span class="ext" aria-hidden="true">↗</span>' : ""}`, "plink")}</div>
+      <div class="psku">${esc(p.sku)}</div>
+      <span class="stock-pill ${p.stockStatus}"><span class="sp-dot" aria-hidden="true"></span>${STOCK_LABEL[p.stockStatus]}</span>
+      ${p.note ? `<div class="pnote">${esc(p.note)}</div>` : ""}
+      <div class="price-table">
+        <div class="price-row pvp"><span class="pl">PVP</span><span class="pv tabular">${priceCell(pvp)}</span></div>
+        <div class="price-row"><span class="pl">1u</span><span class="pv tabular">${priceCell(one)}</span></div>
+        <div class="price-row"><span class="pl">4u</span><span class="pv tabular">${priceCell(four)}</span></div>
+        <div class="price-row"><span class="pl">8u</span><span class="pv tabular">${priceCell(eight)}</span></div>
+      </div>
+      <div class="price-disclaimer">Precio y cantidad sujetos a confirmación.</div>
+      <div class="qty-row">
+        <div class="qty-stepper"><button class="qminus" type="button" aria-label="Menos">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*" aria-label="Cantidad"><button class="qplus" type="button" aria-label="Más">+</button></div>
+        <div class="est-price">Estimado<b class="tabular estval">${estText(p, qty)}</b></div>
+      </div>
+      <button class="add-btn${cartEntry ? " added" : ""}">${cartEntry ? `Agregado ✓ (${qty})` : "Agregar a solicitud"}</button>
+    </div>
+  </div>`;
+}
+
+function renderProducts() {
+  const list = computeFiltered();
+  window.__products = new Map(state.products.map((p) => [p.id, p]));
   const grid = document.getElementById("productGrid");
-  grid.innerHTML =
-    products
-      .map((p) => {
-        const cartEntry = cart.get(p.id);
-        const qty = cartEntry ? cartEntry.quantity : 1;
-        const pvp = priceFor(p, "pvp");
-        const one = resolveDisplay(p, "one");
-        const four = resolveDisplay(p, "four");
-        const eight = resolveDisplay(p, "eight");
-        return `<div class="pcard" data-id="${p.id}">
-          <div class="img-wrap">
-            <div class="cat-chip">${p.category}</div>
-            ${p.imageUrl ? pubLink(p.publicationUrl, `<img src="${p.imageUrl}" alt="${p.name}" loading="lazy">`, "imglink") : '<div class="img-ph"></div>'}
-          </div>
-          <div class="body">
-            <div class="pname">${pubLink(p.publicationUrl, `${p.name}${p.publicationUrl ? ' <span class="ext" aria-hidden="true">↗</span>' : ""}`, "plink")}</div>
-            <div class="psku">${p.sku}</div>
-            <span class="stock-pill ${p.stockStatus}">${STOCK_LABEL[p.stockStatus]}</span>
-            ${p.note ? `<div class="pnote">${p.note}</div>` : ""}
-            <div class="price-table">
-              <div class="price-row pvp"><span class="pl">PVP</span><span class="pv tabular">${priceCell(pvp)}</span></div>
-              <div class="price-row"><span class="pl">1u</span><span class="pv tabular">${priceCell(one)}</span></div>
-              <div class="price-row"><span class="pl">4u</span><span class="pv tabular">${priceCell(four)}</span></div>
-              <div class="price-row"><span class="pl">8u</span><span class="pv tabular">${priceCell(eight)}</span></div>
-            </div>
-            <div class="qty-row">
-              <div class="qty-stepper"><button class="qminus" type="button">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*"><button class="qplus" type="button">+</button></div>
-              <div class="est-price">Estimado<b class="tabular estval">${estText(p, qty)}</b></div>
-            </div>
-            <button class="add-btn${cartEntry ? " added" : ""}">${cartEntry ? `Agregado ✓ (${qty})` : "Agregar al pedido"}</button>
-          </div>
-        </div>`;
-      })
-      .join("") || '<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted)">Sin resultados para este filtro.</div>';
+  grid.className = "grid" + (state.view === "list" ? " list" : "");
+  document.getElementById("resultCount").textContent = `${list.length} producto${list.length === 1 ? "" : "s"}`;
+  document.getElementById("resultsTitle").textContent =
+    state.quick && state.quick !== "all" ? (QUICK_LABEL[state.quick] || "Productos") : (state.filters.brands.size === 1 ? [...state.filters.brands][0] : "Todos los productos");
 
-  window.__products = new Map(products.map((p) => [p.id, p]));
+  if (!list.length) {
+    let msg = "Sin resultados para este filtro.";
+    if (state.quick === "favoritos" && !state.favorites.size) msg = "Todavía no marcaste favoritos. Tocá el corazón ♡ en cualquier producto para guardarlo acá.";
+    else if (state.quick === "frecuentes" && !state.frequentIds.length) msg = "Todavía no tenés productos frecuentes. Marcá productos como favoritos o hacé tu primera solicitud para encontrarlos rápido.";
+    grid.innerHTML = `<div class="grid-empty">${msg}</div>`;
+    return;
+  }
+  grid.innerHTML = list.map(productCardHtml).join("");
 }
 
-function priceCell(price) {
-  if (!price || price.state === "hidden") return '<span style="color:#ccc;font-weight:400">-</span>';
-  if (price.state === "consult") return '<span style="color:#888;font-weight:400">Consultar</span>';
-  if (price.state === "custom") return price.label || "-";
-  if (price.state === "unavailable") return '<span style="color:#ccc;font-weight:400">N/D</span>';
-  return money(price.amount, price.currency);
+// --------------------------------------------------------------- favoritos --
+function updateFavBtn(btn, on) {
+  btn.classList.toggle("on", on);
+  btn.setAttribute("aria-pressed", String(on));
+  btn.setAttribute("aria-label", on ? "Quitar de favoritos" : "Agregar a favoritos");
+  btn.innerHTML = heartIco(on);
+}
+async function toggleFavorite(id, btn) {
+  const wasFav = state.favorites.has(id);
+  if (wasFav) state.favorites.delete(id);
+  else state.favorites.add(id);
+  updateFavBtn(btn, !wasFav);
+  document.getElementById("qaFav").textContent = state.favorites.size;
+  try {
+    if (wasFav) await fetchJson(`/api/catalog/favorites/${id}`, { method: "DELETE" });
+    else await postJson("/api/catalog/favorites", { productId: id });
+    toast(wasFav ? "Producto eliminado de favoritos." : "Producto agregado a favoritos.");
+    if (state.quick === "favoritos") renderProducts();
+  } catch (error) {
+    // revertir en caso de error (actualización optimista)
+    if (wasFav) state.favorites.add(id);
+    else state.favorites.delete(id);
+    updateFavBtn(btn, wasFav);
+    document.getElementById("qaFav").textContent = state.favorites.size;
+    toast("No se pudo actualizar favoritos.", true);
+  }
 }
 
+// ------------------------------------------------------------- solicitud ----
+function cartEstimateTotal() {
+  let total = 0;
+  for (const { product, quantity } of cart.values()) {
+    const price = resolveDisplay(product, tierForQuantity(quantity));
+    if (price.state === "value") total += price.amount * quantity;
+  }
+  return total;
+}
 function renderCart() {
   const entries = [...cart.values()];
-  document.getElementById("cartCount").textContent = entries.reduce((sum, e) => sum + e.quantity, 0);
+  const count = entries.reduce((sum, e) => sum + e.quantity, 0);
+  document.getElementById("cartCount").textContent = count;
+  const total = cartEstimateTotal();
+  document.getElementById("cartEstLine").textContent = "Total estimado: " + money(total);
   const itemsEl = document.getElementById("cartItems");
   const footEl = document.getElementById("cartFoot");
 
@@ -218,100 +414,239 @@ function renderCart() {
     footEl.style.display = "none";
     return;
   }
-
-  let total = 0;
   itemsEl.innerHTML = entries
     .map(({ product, quantity }) => {
       const price = resolveDisplay(product, tierForQuantity(quantity));
       const isValue = price.state === "value";
       const sub = isValue ? price.amount * quantity : null;
-      if (isValue) total += sub;
       return `<div class="cart-item" data-id="${product.id}">
-        <div class="thumb"></div>
+        <div class="ci-thumb">${product.imageUrl ? `<img src="${esc(product.imageUrl)}" alt="">` : ""}</div>
         <div class="info">
-          <div class="name">${product.name}</div>
-          <div class="tier">${quantity} u · ${isValue ? money(price.amount) + " c/u" : "Consultar"}</div>
+          <div class="name">${esc(product.name)}</div>
+          <div class="ci-qty">
+            <div class="qty-stepper mini"><button class="ci-minus" type="button" aria-label="Menos">&minus;</button><input class="ci-qval" value="${quantity}" inputmode="numeric" aria-label="Cantidad"><button class="ci-plus" type="button" aria-label="Más">+</button></div>
+            <span class="ci-unit">${isValue ? money(price.amount) + " c/u" : "Consultar"}</span>
+          </div>
           <div class="row"><span class="sub tabular">${isValue ? money(sub) : "Consultar"}</span><button class="remove-link">Quitar</button></div>
         </div>
       </div>`;
     })
     .join("");
-  footEl.style.display = "flex";
   document.getElementById("cartTotal").textContent = money(total);
+  footEl.style.display = "flex";
 }
-
-function openCatalog() {
-  document.getElementById("hubView").style.display = "none";
-  document.getElementById("catalogView").style.display = "block";
-}
-function openHub() {
-  document.getElementById("hubView").style.display = "block";
-  document.getElementById("catalogView").style.display = "none";
-}
-
-async function selectBrand(brand) {
-  state.brand = brand || null;
-  state.category = "ALL";
-  await loadCategories();
-  await loadBrands(); // re-render active state in sidebar
-  if (state.brand) {
-    openCatalog();
-    await loadProducts();
-  } else {
-    openHub();
+function setCartQty(id, qty) {
+  const entry = cart.get(id);
+  if (!entry) return;
+  entry.quantity = Math.max(1, qty || 1);
+  renderCart();
+  // reflejar en la tarjeta si está visible
+  const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
+  if (card) {
+    card.querySelector(".qval").value = entry.quantity;
+    card.querySelector(".estval").textContent = estText(entry.product, entry.quantity);
+    const btn = card.querySelector(".add-btn");
+    btn.textContent = `Agregado ✓ (${entry.quantity})`;
   }
 }
 
-document.getElementById("logoBtn").addEventListener("click", () => selectBrand(null));
-document.getElementById("hubGrid").addEventListener("click", (e) => {
-  const card = e.target.closest(".brand-card");
-  if (card) selectBrand(card.dataset.brand);
-});
-document.getElementById("brandList").addEventListener("click", (e) => {
-  const btn = e.target.closest("button");
-  if (btn) selectBrand(btn.dataset.brand || null);
-});
-document.getElementById("catFilterList").addEventListener("click", async (e) => {
-  const btn = e.target.closest("button");
-  if (!btn) return;
-  state.category = btn.dataset.cat;
-  await loadCategories();
-  openCatalog();
-  await loadProducts();
-});
-document.getElementById("catTabs").addEventListener("click", async (e) => {
-  const btn = e.target.closest(".tab-chip");
-  if (!btn) return;
-  state.category = btn.dataset.cat;
-  await loadCategories();
-  await loadProducts();
-});
-document.getElementById("backBtn").addEventListener("click", () => selectBrand(null));
+// --------------------------------------------------------- scroll a catálogo
+function scrollToCatalog() {
+  document.getElementById("catalogSection").scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
+// ============================ RENDER GENERAL ================================
+function renderFiltersUI() {
+  renderBrandFilter();
+  renderCategoryFilter();
+  renderAvailCounts();
+}
+function renderAll() {
+  renderStats();
+  renderBrandCards();
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+}
+
+// =============================== EVENTOS ===================================
+function setQuick(q, scroll) {
+  state.quick = q;
+  renderActiveChips();
+  renderProducts();
+  if (scroll) scrollToCatalog();
+}
+
+// Accesos rápidos
+document.getElementById("quickAccess").addEventListener("click", (e) => {
+  const card = e.target.closest(".qa-card");
+  if (!card) return;
+  setQuick(card.dataset.quick === "all" ? "all" : card.dataset.quick, true);
+});
+
+// Tarjetas de marca
+document.getElementById("brandCards").addEventListener("click", (e) => {
+  const card = e.target.closest(".brand-card");
+  if (!card) return;
+  const brand = card.dataset.brand;
+  state.quick = "all";
+  state.filters.brands = new Set([brand]);
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+  scrollToCatalog();
+});
+
+// Filtros: marca (live)
+document.getElementById("brandFilterList").addEventListener("change", (e) => {
+  const chk = e.target.closest("input[data-brand]");
+  if (!chk) return;
+  if (chk.checked) state.filters.brands.add(chk.dataset.brand);
+  else state.filters.brands.delete(chk.dataset.brand);
+  renderActiveChips();
+  renderProducts();
+});
+// Filtros: categoría (live)
+document.getElementById("catFilterList").addEventListener("change", (e) => {
+  const chk = e.target.closest("input[data-cat]");
+  if (!chk) return;
+  if (chk.checked) state.filters.categories.add(chk.dataset.cat);
+  else state.filters.categories.delete(chk.dataset.cat);
+  renderActiveChips();
+  renderProducts();
+});
+let catSearchTimer;
+document.getElementById("catSearchInput").addEventListener("input", () => {
+  clearTimeout(catSearchTimer);
+  catSearchTimer = setTimeout(renderCategoryFilter, 150);
+});
+document.getElementById("catMoreBtn").addEventListener("click", () => {
+  state.catExpanded = !state.catExpanded;
+  renderCategoryFilter();
+});
+// Filtros: disponibilidad (live)
+document.getElementById("availFilterList").addEventListener("change", (e) => {
+  const chk = e.target.closest("input[type=checkbox]");
+  if (!chk) return;
+  if (chk.checked) state.filters.availability.add(chk.value);
+  else state.filters.availability.delete(chk.value);
+  renderActiveChips();
+  renderProducts();
+});
+// Precio: se aplica con el botón (o Enter)
+function applyPriceInputs() {
+  const min = document.getElementById("priceMin").value.trim();
+  const max = document.getElementById("priceMax").value.trim();
+  state.filters.priceMin = min === "" ? null : Number(min);
+  state.filters.priceMax = max === "" ? null : Number(max);
+  if (state.filters.priceMin != null && !Number.isFinite(state.filters.priceMin)) state.filters.priceMin = null;
+  if (state.filters.priceMax != null && !Number.isFinite(state.filters.priceMax)) state.filters.priceMax = null;
+}
+document.getElementById("applyFilters").addEventListener("click", () => {
+  applyPriceInputs();
+  renderActiveChips();
+  renderProducts();
+  closeFilters();
+});
+document.querySelectorAll("#priceMin, #priceMax").forEach((inp) =>
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("applyFilters").click(); })
+);
+document.getElementById("clearFilters").addEventListener("click", () => {
+  state.filters = { brands: new Set(), categories: new Set(), availability: new Set(), priceMin: null, priceMax: null };
+  state.quick = "all";
+  state.search = "";
+  document.getElementById("searchInput").value = "";
+  document.getElementById("priceMin").value = "";
+  document.getElementById("priceMax").value = "";
+  document.getElementById("catSearchInput").value = "";
+  state.catExpanded = false;
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+});
+
+// Chips de filtros activos: quitar individual
+document.getElementById("activeChips").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  const type = chip.dataset.chip;
+  const val = chip.dataset.val;
+  if (type === "quick") state.quick = "all";
+  else if (type === "brand") state.filters.brands.delete(val);
+  else if (type === "category") state.filters.categories.delete(val);
+  else if (type === "availability") state.filters.availability.delete(val);
+  else if (type === "priceMin") { state.filters.priceMin = null; document.getElementById("priceMin").value = ""; }
+  else if (type === "priceMax") { state.filters.priceMax = null; document.getElementById("priceMax").value = ""; }
+  else if (type === "search") { state.search = ""; document.getElementById("searchInput").value = ""; }
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+});
+
+// Orden
+document.getElementById("sortSelect").addEventListener("change", (e) => {
+  state.sort = e.target.value;
+  renderProducts();
+});
+// Vista grilla/lista
+function setView(v) {
+  state.view = v;
+  document.getElementById("viewGrid").classList.toggle("active", v === "grid");
+  document.getElementById("viewGrid").setAttribute("aria-pressed", String(v === "grid"));
+  document.getElementById("viewList").classList.toggle("active", v === "list");
+  document.getElementById("viewList").setAttribute("aria-pressed", String(v === "list"));
+  renderProducts();
+}
+document.getElementById("viewGrid").addEventListener("click", () => setView("grid"));
+document.getElementById("viewList").addEventListener("click", () => setView("list"));
+
+// Panel de filtros en móvil
+function openFilters() {
+  document.getElementById("filtersPanel").classList.add("open");
+  document.getElementById("filtersOverlay").classList.add("open");
+}
+function closeFilters() {
+  document.getElementById("filtersPanel").classList.remove("open");
+  document.getElementById("filtersOverlay").classList.remove("open");
+}
+document.getElementById("filtersToggle").addEventListener("click", openFilters);
+document.getElementById("filtersClose").addEventListener("click", closeFilters);
+document.getElementById("filtersOverlay").addEventListener("click", closeFilters);
+
+// Búsqueda principal
 let searchTimer;
 document.getElementById("searchInput").addEventListener("input", (e) => {
   state.search = e.target.value;
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(async () => {
-    if (state.search) {
-      openCatalog();
-      await loadProducts();
-    } else if (state.brand) {
-      await loadProducts();
-    } else {
-      openHub();
-    }
-  }, 250);
+  searchTimer = setTimeout(() => {
+    renderActiveChips();
+    renderProducts();
+  }, 220);
 });
 
+// Navegación
+document.getElementById("logoBtn").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+document.querySelector(".cat-nav").addEventListener("click", (e) => {
+  const btn = e.target.closest(".cn-link");
+  if (!btn) return;
+  document.querySelectorAll(".cn-link").forEach((b) => b.classList.remove("active"));
+  const nav = btn.dataset.nav;
+  if (nav === "catalogo") { btn.classList.add("active"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  else if (nav === "favoritos") { btn.classList.add("active"); setQuick("favoritos", true); }
+  else if (nav === "solicitudes") openRequests("all");
+  else if (nav === "cotizaciones") openRequests("quoted");
+});
+
+// Interacción con las tarjetas de producto
 document.getElementById("productGrid").addEventListener("click", (e) => {
   const card = e.target.closest(".pcard");
   if (!card) return;
   const id = card.dataset.id;
+  const favBtn = e.target.closest(".fav-btn");
+  if (favBtn) { toggleFavorite(id, favBtn); return; }
   const product = window.__products.get(id);
   const qtyInput = card.querySelector(".qval");
   let qty = parseInt(qtyInput.value, 10) || 1;
-
   if (e.target.closest(".qminus")) qty = Math.max(1, qty - 1);
   else if (e.target.closest(".qplus")) qty = qty + 1;
   else if (e.target.closest(".add-btn")) {
@@ -320,38 +655,35 @@ document.getElementById("productGrid").addEventListener("click", (e) => {
     const btn = card.querySelector(".add-btn");
     btn.textContent = `Agregado ✓ (${qty})`;
     btn.classList.add("added");
+    toast("Producto agregado a tu solicitud.");
     return;
-  } else {
-    return;
-  }
-
+  } else return;
   qtyInput.value = qty;
   card.querySelector(".estval").textContent = estText(product, qty);
+  if (cart.has(id)) setCartQty(id, qty);
 });
-
 document.getElementById("productGrid").addEventListener("input", (e) => {
   const qtyInput = e.target.closest(".qval");
   if (!qtyInput) return;
   const digitsOnly = qtyInput.value.replace(/[^0-9]/g, "");
   if (digitsOnly !== qtyInput.value) qtyInput.value = digitsOnly;
-
   const card = qtyInput.closest(".pcard");
   const product = window.__products.get(card.dataset.id);
   const qty = parseInt(digitsOnly, 10) || 1;
   card.querySelector(".estval").textContent = estText(product, qty);
 });
-
 document.getElementById("productGrid").addEventListener("change", (e) => {
   const qtyInput = e.target.closest(".qval");
   if (!qtyInput) return;
   const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
   qtyInput.value = qty;
-
   const card = qtyInput.closest(".pcard");
   const product = window.__products.get(card.dataset.id);
   card.querySelector(".estval").textContent = estText(product, qty);
+  if (cart.has(card.dataset.id)) setCartQty(card.dataset.id, qty);
 });
 
+// Drawer "Solicitud actual"
 const cartDrawer = document.getElementById("cartDrawer");
 const cartOverlay = document.getElementById("cartOverlay");
 document.getElementById("cartBtn").addEventListener("click", () => {
@@ -364,29 +696,44 @@ function closeCart() {
 }
 document.getElementById("cartClose").addEventListener("click", closeCart);
 cartOverlay.addEventListener("click", closeCart);
-
 document.getElementById("cartItems").addEventListener("click", (e) => {
-  const btn = e.target.closest(".remove-link");
-  if (!btn) return;
+  const item = e.target.closest(".cart-item");
+  if (!item) return;
+  const id = item.dataset.id;
+  const entry = cart.get(id);
+  if (e.target.closest(".remove-link")) {
+    cart.delete(id);
+    renderCart();
+    const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
+    if (card) { const b = card.querySelector(".add-btn"); b.textContent = "Agregar a solicitud"; b.classList.remove("added"); }
+    return;
+  }
+  if (!entry) return;
+  if (e.target.closest(".ci-minus")) setCartQty(id, entry.quantity - 1);
+  else if (e.target.closest(".ci-plus")) setCartQty(id, entry.quantity + 1);
+});
+document.getElementById("cartItems").addEventListener("change", (e) => {
+  const inp = e.target.closest(".ci-qval");
+  if (!inp) return;
   const id = e.target.closest(".cart-item").dataset.id;
-  cart.delete(id);
-  renderCart();
+  setCartQty(id, Math.max(1, parseInt(inp.value, 10) || 1));
 });
 
 document.getElementById("submitQuoteBtn").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
-  // Con nombre + email alcanza para solicitar; los datos fiscales quedan
-  // opcionales (se completan en "Mis datos" para la proforma/despacho).
   btn.disabled = true;
   btn.textContent = "Enviando...";
   try {
     const items = [...cart.entries()].map(([productId, entry]) => ({ productId, quantity: entry.quantity }));
-    const { quote } = await postJson("/api/quotes", { items });
+    const customerNotes = document.getElementById("cartNotes").value.trim() || undefined;
+    const { quote } = await postJson("/api/quotes", { items, customerNotes });
     cart.clear();
     document.getElementById("cartCount").textContent = "0";
+    document.getElementById("cartEstLine").textContent = "Total estimado: $ 0";
     document.getElementById("cartFoot").style.display = "none";
     document.getElementById("cartItems").innerHTML = `<div class="cart-success"><div class="ok-icon">&#10003;</div>
-      <p><strong>Solicitud #${quote.requestNumber} enviada.</strong><br>Te contactaremos para confirmar precios y disponibilidad.</p></div>`;
+      <p><strong>Solicitud #${quote.requestNumber} enviada.</strong><br>Un administrador la va a revisar y te confirmará precios y disponibilidad.</p></div>`;
+    renderProducts(); // limpia los "Agregado ✓" de las tarjetas
   } catch (error) {
     alert("No se pudo enviar la solicitud: " + error.message);
   } finally {
@@ -395,8 +742,60 @@ document.getElementById("submitQuoteBtn").addEventListener("click", async (e) =>
   }
 });
 
-// ==================== Mis datos (perfil fiscal + entrega) ====================
+// ==================== Notificaciones ====================
+const notifPanel = document.getElementById("notifPanel");
+function fmtDate(iso) {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+async function loadNotifications() {
+  try {
+    const { quotes } = await fetchJson("/api/quotes");
+    const ready = quotes.filter((q) => q.quoted_at);
+    const badge = document.getElementById("notifBadge");
+    if (ready.length) { badge.hidden = false; badge.textContent = ready.length > 9 ? "9+" : String(ready.length); }
+    else badge.hidden = true;
+    if (!ready.length) {
+      notifPanel.innerHTML = '<div class="np-empty">Sin novedades por ahora.<br>Te avisamos cuando tengas una cotización lista.</div>';
+      return;
+    }
+    notifPanel.innerHTML =
+      '<div class="np-head">Cotizaciones listas</div>' +
+      ready
+        .slice(0, 8)
+        .map(
+          (q) => `<button class="np-item" data-proforma="${q.id}">
+            <span>Solicitud <b>#${q.request_number}</b> cotizada</span>
+            <span class="np-date">${fmtDate(q.quoted_at)}${q.quoted_total != null ? " · " + money(q.quoted_total) : ""}</span>
+          </button>`
+        )
+        .join("");
+    notifPanel.querySelectorAll("[data-proforma]").forEach((b) =>
+      b.addEventListener("click", () => window.open(`/api/quotes/${b.dataset.proforma}/proforma`, "_blank"))
+    );
+  } catch { /* no bloquear el catálogo */ }
+}
+function toggleNotif(open) {
+  const willOpen = open ?? notifPanel.hidden;
+  notifPanel.hidden = !willOpen;
+  document.getElementById("notifBtn").setAttribute("aria-expanded", String(willOpen));
+}
+document.getElementById("notifBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleNotif(); toggleProfile(false); });
 
+// ==================== Menú de perfil ====================
+const profilePanel = document.getElementById("profilePanel");
+function toggleProfile(open) {
+  const willOpen = open ?? profilePanel.hidden;
+  profilePanel.hidden = !willOpen;
+  document.getElementById("avatar").setAttribute("aria-expanded", String(willOpen));
+}
+document.getElementById("avatar").addEventListener("click", (e) => { e.stopPropagation(); toggleProfile(); toggleNotif(false); });
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".notif-wrap")) toggleNotif(false);
+  if (!e.target.closest(".profile-wrap")) toggleProfile(false);
+});
+
+// ==================== Mis datos (perfil fiscal + entrega) ====================
 const profileState = { complete: false, profile: {} };
 const profileOverlay = document.getElementById("profileOverlay");
 const profileForm = document.getElementById("profileForm");
@@ -406,16 +805,11 @@ async function loadProfile() {
     const { profile, complete } = await fetchJson("/api/profile");
     profileState.profile = profile || {};
     profileState.complete = complete;
-    // Aviso sutil en el botón si faltan datos.
-    const btn = document.getElementById("myDataBtn");
-    if (!complete) btn.textContent = "\u{1F464} Completá tus datos";
-    else btn.innerHTML = "\u{1F464} Mis datos";
+    const item = document.getElementById("myDataBtn");
+    if (!complete) item.innerHTML = "&#128100; Completá tus datos";
+    else item.innerHTML = "&#128100; Mis datos";
   } catch { /* no bloquear el catálogo si falla */ }
 }
-
-// Ajusta el selector de tipo de documento a la condición de IVA: para
-// RI/Monotributo/Exento queda fijo en CUIT; para Consumidor Final ofrece
-// DNI/CUIL/CUIT. Actualiza también la etiqueta y el placeholder.
 function syncTaxIdType(preferredType) {
   const condition = profileForm.tax_condition.value;
   const types = allowedTaxIdTypes(condition);
@@ -427,7 +821,6 @@ function syncTaxIdType(preferredType) {
   document.getElementById("taxIdLabel").textContent = `${t} *`;
   profileForm.tax_cuit.placeholder = t === "DNI" ? "12345678" : "30-71610175-0";
 }
-
 function openProfileModal(message) {
   const p = profileState.profile || {};
   for (const field of ["company_name", "tax_cuit", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
@@ -438,23 +831,17 @@ function openProfileModal(message) {
   document.getElementById("profileMsg").style.color = "var(--muted)";
   profileOverlay.hidden = false;
 }
-
 profileForm.tax_condition.addEventListener("change", () => syncTaxIdType());
 profileForm.tax_id_type.addEventListener("change", () => syncTaxIdType(profileForm.tax_id_type.value));
-function closeProfileModal() {
-  profileOverlay.hidden = true;
-}
-
-document.getElementById("myDataBtn").addEventListener("click", () => openProfileModal(""));
+function closeProfileModal() { profileOverlay.hidden = true; }
+document.getElementById("myDataBtn").addEventListener("click", () => { toggleProfile(false); openProfileModal(""); });
 document.getElementById("profileClose").addEventListener("click", closeProfileModal);
 document.getElementById("profileCancel").addEventListener("click", closeProfileModal);
 profileOverlay.addEventListener("click", (e) => { if (e.target === profileOverlay) closeProfileModal(); });
-
 profileForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = document.getElementById("profileMsg");
   const f = e.target;
-  // Sin chequeo de formato del documento: se guarda tal cual.
   const profile = {};
   for (const field of ["company_name", "tax_cuit", "tax_id_type", "tax_condition", "ship_street", "ship_number", "ship_floor", "ship_apartment", "ship_postal_code", "ship_city", "ship_province", "ship_phone", "ship_notes"]) {
     profile[field] = f[field] ? f[field].value.trim() : "";
@@ -473,44 +860,35 @@ profileForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ==================== Mis solicitudes ====================
-
+// ==================== Mis solicitudes / Mis cotizaciones ====================
 const requestsOverlay = document.getElementById("requestsOverlay");
-const REQ_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotizada", accepted: "Aceptada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+const REQ_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotización emitida", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+const REQ_STATUS_HINT = { submitted: "Esperando revisión de un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización lista para ver", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
 
-function fmtDate(iso) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-async function openRequests() {
+async function openRequests(mode) {
   requestsOverlay.hidden = false;
+  const onlyQuoted = mode === "quoted";
+  document.getElementById("requestsTitle").textContent = onlyQuoted ? "Mis cotizaciones" : "Mis solicitudes";
   const body = document.getElementById("requestsBody");
   body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>';
   try {
-    const { quotes } = await fetchJson("/api/quotes");
+    const { quotes: all } = await fetchJson("/api/quotes");
+    const quotes = onlyQuoted ? all.filter((q) => q.quoted_at) : all;
     if (!quotes.length) {
-      body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Todavía no hiciste ninguna solicitud.</div>';
+      body.innerHTML = `<div style="text-align:center;color:var(--muted);padding:30px">${onlyQuoted ? "Todavía no tenés cotizaciones emitidas." : "Todavía no hiciste ninguna solicitud."}</div>`;
       return;
     }
-    body.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr>
-        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">#</th>
-        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Fecha</th>
-        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Estado</th>
-        <th style="text-align:right;padding:8px;border-bottom:2px solid #1a1a1a">Total</th>
-        <th style="text-align:left;padding:8px;border-bottom:2px solid #1a1a1a">Cotizada por</th>
-        <th style="padding:8px;border-bottom:2px solid #1a1a1a"></th>
-      </tr></thead>
+    body.innerHTML = `<div style="overflow-x:auto"><table class="req-table">
+      <thead><tr><th>#</th><th>Fecha</th><th>Estado</th><th style="text-align:right">Total</th><th>Cotizada por</th><th></th></tr></thead>
       <tbody>${quotes
         .map(
           (q) => `<tr>
-            <td style="padding:8px;border-bottom:1px solid #eee"><strong>#${q.request_number}</strong></td>
-            <td style="padding:8px;border-bottom:1px solid #eee">${fmtDate(q.submitted_at)}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee">${REQ_STATUS_LABEL[q.status] || q.status}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee">${q.quoted_by_name ? q.quoted_by_name : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-            <td style="padding:8px;border-bottom:1px solid #eee">${q.quoted_at ? `<button class="btn-primary" data-proforma="${q.id}" style="padding:6px 12px;font-size:12px">Ver proforma</button>` : ""}</td>
+            <td><strong>#${q.request_number}</strong></td>
+            <td>${fmtDate(q.submitted_at)}</td>
+            <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
+            <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
+            <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
+            <td>${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">Ver proforma</button>` : ""}</td>
           </tr>`
         )
         .join("")}</tbody></table></div>`;
@@ -518,18 +896,19 @@ async function openRequests() {
       btn.addEventListener("click", () => window.open(`/api/quotes/${btn.dataset.proforma}/proforma`, "_blank"));
     });
   } catch (error) {
-    body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${error.message}</div>`;
+    body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${esc(error.message)}</div>`;
   }
 }
 function closeRequests() { requestsOverlay.hidden = true; }
-
-document.getElementById("myRequestsBtn").addEventListener("click", openRequests);
 document.getElementById("requestsClose").addEventListener("click", closeRequests);
 requestsOverlay.addEventListener("click", (e) => { if (e.target === requestsOverlay) closeRequests(); });
 
+// =============================== INIT ======================================
 (async function init() {
   await loadMe();
-  await loadProfile();
-  await loadBrands();
-  await loadCategories();
+  await loadCatalogData();
+  renderAll();
+  renderCart();
+  loadProfile();
+  loadNotifications();
 })();
