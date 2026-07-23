@@ -759,8 +759,31 @@ router.get("/admin/quotes/:id", async (req, res) => {
   );
   const quote = quoteResult.rows[0];
   if (!quote) return res.status(404).json({ error: "not_found" });
-  const items = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by created_at`, [req.params.id]);
+  const items = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by sort_order nulls last, created_at`, [req.params.id]);
   res.json({ quote, items: items.rows });
+});
+
+// Reordenar las líneas de una cotización (drag-and-drop en el editor). Recibe
+// el nuevo orden completo de ids; escribe sort_order = posición. Acotado al
+// quote para que no se puedan tocar items de otra cotización.
+router.put("/admin/quotes/:id/items/order", async (req, res) => {
+  const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map(String) : [];
+  if (!orderedIds.length) return res.status(400).json({ error: "empty" });
+  if (!orderedIds.every((x) => UUID_RE.test(x))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    await pool.query(
+      `update portal.quote_items as qi
+       set sort_order = v.ord
+       from unnest($1::uuid[]) with ordinality as v(id, ord)
+       where qi.id = v.id and qi.quote_request_id = $2`,
+      [orderedIds, req.params.id]
+    );
+    await recordAudit({ actorUserId: req.user.id, action: "quote.items.reorder", entityType: "quote_request", entityId: req.params.id, metadata: { count: orderedIds.length } });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "reorder_failed" });
+  }
 });
 
 // Header-level edits: status, adjustments (discount/shipping/surcharge/tax),
@@ -852,8 +875,9 @@ router.post("/admin/quotes/:id/items", async (req, res) => {
       const inserted = await client.query(
         `insert into portal.quote_items
            (quote_request_id, product_id, sku_snapshot, product_name_snapshot, brand_snapshot, category_snapshot,
-            quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal, iva_rate)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,
+            quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal, iva_rate, sort_order)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+            (select coalesce(max(sort_order), -1) + 1 from portal.quote_items where quote_request_id = $1)) returning *`,
         [req.params.id, product.id, product.sku, product.name, product.brand, product.category,
          qty, tier, JSON.stringify(snapshot), resolvedUnit, stock.status, stock.exactQty, resolvedRate]
       );
@@ -966,7 +990,7 @@ export async function loadProformaContext(quoteId, fallbackSigner) {
     `select qi.*, p.image_url, p.publication_url
      from portal.quote_items qi
      left join portal.products p on p.id = qi.product_id
-     where qi.quote_request_id = $1 order by qi.created_at`,
+     where qi.quote_request_id = $1 order by qi.sort_order nulls last, qi.created_at`,
     [quoteId]
   );
   const company = await getCompanyProfile();

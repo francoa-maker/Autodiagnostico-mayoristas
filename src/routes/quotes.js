@@ -80,8 +80,8 @@ router.post("/quotes", async (req, res) => {
         await client.query(
           `insert into portal.quote_items
              (quote_request_id, product_id, sku_snapshot, product_name_snapshot, brand_snapshot, category_snapshot,
-              quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal, iva_rate)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+              quantity, pricing_tier, displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, exact_stock_internal, iva_rate, sort_order)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
           [
             quoteId,
             product.id,
@@ -95,7 +95,8 @@ router.post("/quotes", async (req, res) => {
             unitPrice,
             stock.status,
             stock.exactQty,
-            product.iva_rate ?? 10.5
+            product.iva_rate ?? 10.5,
+            itemCount // orden = posición en la que el cliente agregó los productos
           ]
         );
       }
@@ -161,7 +162,7 @@ router.get("/quotes/:id", async (req, res) => {
   if (!quote || (quote.user_id !== req.user.id && req.user.role !== "admin")) {
     return res.status(404).json({ error: "not_found" });
   }
-  const itemsResult = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by created_at`, [req.params.id]);
+  const itemsResult = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by sort_order nulls last, created_at`, [req.params.id]);
   res.json({ quote, items: itemsResult.rows });
 });
 

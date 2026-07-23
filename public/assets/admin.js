@@ -1139,6 +1139,7 @@ async function renderQuoteEditor(id) {
   const itemRows = items
     .map(
       (it) => `<tr data-item="${it.id}">
+        <td class="q-handle-cell"><span class="q-handle" title="Arrastrar para reordenar" aria-hidden="true">⠿</span></td>
         <td><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted)">${esc(it.sku_snapshot)}</span><br>${esc(it.product_name_snapshot)}</td>
         <td><input class="cell-input" data-f="quantity" type="number" min="1" value="${Number(it.quantity)}" style="width:56px"></td>
         <td>${ivaSelect('data-f="ivaRate"', itemRate(it))}</td>
@@ -1172,8 +1173,8 @@ async function renderQuoteEditor(id) {
 
     <div style="overflow-x:auto;margin-top:14px">
       <table>
-        <thead><tr><th>Producto</th><th>Cant.</th><th>IVA</th><th>Precio unit.</th><th class="num">Importe</th><th></th></tr></thead>
-        <tbody id="quoteItemsBody">${itemRows || '<tr><td colspan="6" class="empty-row">Sin items. Agregá productos abajo.</td></tr>'}</tbody>
+        <thead><tr><th style="width:22px"></th><th>Producto</th><th>Cant.</th><th>IVA</th><th>Precio unit.</th><th class="num">Importe</th><th></th></tr></thead>
+        <tbody id="quoteItemsBody">${itemRows || '<tr><td colspan="7" class="empty-row">Sin items. Agregá productos abajo.</td></tr>'}</tbody>
       </table>
     </div>
 
@@ -1259,7 +1260,58 @@ async function renderQuoteEditor(id) {
   document.getElementById("sendProformaBtn").addEventListener("click", () => sendProforma(id, quote.email));
   document.getElementById("sendWarehouseBtn").addEventListener("click", () => sendWarehouse(id));
   wireQuoteItemActions(id);
+  wireQuoteItemsDnD(id);
   wireAddProduct(id);
+}
+
+// Drag-and-drop para reordenar las líneas de la cotización. El arrastre sólo
+// arranca desde el handle (⠿) para no interferir con los inputs de la fila.
+// Persiste al soltar SIN re-renderizar, así no se pierden ediciones sin guardar.
+let qItemDragEl = null;
+function rowDragAfter(tbody, y) {
+  const els = [...tbody.querySelectorAll("tr[data-item]:not(.dragging)")];
+  let closest = { offset: -Infinity, el: null };
+  for (const child of els) {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) closest = { offset, el: child };
+  }
+  return closest.el;
+}
+function wireQuoteItemsDnD(id) {
+  const body = document.getElementById("quoteItemsBody");
+  if (!body) return;
+  body.addEventListener("mousedown", (e) => {
+    const row = e.target.closest("tr[data-item]");
+    if (row && e.target.closest(".q-handle")) row.setAttribute("draggable", "true");
+  });
+  body.addEventListener("dragstart", (e) => {
+    const row = e.target.closest("tr[data-item]");
+    if (!row || row.getAttribute("draggable") !== "true") return;
+    qItemDragEl = row;
+    row.classList.add("dragging");
+  });
+  body.addEventListener("dragover", (e) => {
+    if (!qItemDragEl) return;
+    e.preventDefault();
+    const after = rowDragAfter(body, e.clientY);
+    if (after == null) body.appendChild(qItemDragEl);
+    else body.insertBefore(qItemDragEl, after);
+  });
+  body.addEventListener("dragend", async () => {
+    if (!qItemDragEl) return;
+    qItemDragEl.classList.remove("dragging");
+    qItemDragEl.removeAttribute("draggable");
+    qItemDragEl = null;
+    const orderedIds = [...body.querySelectorAll("tr[data-item]")].map((r) => r.dataset.item);
+    const msg = document.getElementById("quoteSaveMsg");
+    try {
+      await putJson(`/api/admin/quotes/${id}/items/order`, { orderedIds });
+      if (msg) { msg.style.color = "var(--success,#137333)"; msg.textContent = "Orden de líneas guardado ✓"; }
+    } catch (error) {
+      if (msg) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo guardar el orden: " + (error.body?.detail || error.message); }
+    }
+  });
 }
 
 async function saveQuoteHeader(id) {
