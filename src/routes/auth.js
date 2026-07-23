@@ -160,6 +160,76 @@ router.get("/auth/google/gmail/callback", async (req, res) => {
   }
 });
 
+// --- Autorización de Google Drive (solo admin) ----------------------------
+// Pide el scope drive.file (la app SOLO ve/crea sus propios archivos) con
+// access_type=offline para obtener un refresh_token. El token NO se guarda en
+// la base: se muestra una única vez para que se pegue en la variable de entorno
+// GOOGLE_DRIVE_REFRESH_TOKEN de Render (las credenciales van solo en el entorno).
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_STATE_COOKIE = "portal_drive_state";
+
+router.get("/auth/google/drive", (req, res) => {
+  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  if (!googleConfigured()) return res.redirect("/?drive=not_configured");
+  const state = crypto.randomBytes(24).toString("base64url");
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", process.env.GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", `${appBaseUrl()}/auth/google/drive/callback`);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", DRIVE_SCOPE);
+  authUrl.searchParams.set("access_type", "offline");
+  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("include_granted_scopes", "true");
+  authUrl.searchParams.set("login_hint", req.user.email);
+  authUrl.searchParams.set("state", state);
+  const secure = appBaseUrl().startsWith("https://") ? "; Secure" : "";
+  res.setHeader("set-cookie", `${DRIVE_STATE_COOKIE}=${state}; HttpOnly; Path=/; SameSite=Lax; Max-Age=600${secure}`);
+  res.redirect(authUrl.toString());
+});
+
+router.get("/auth/google/drive/callback", async (req, res) => {
+  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  const { code, state } = req.query;
+  const cookieState = parseCookies(req.headers.cookie)[DRIVE_STATE_COOKIE];
+  const secure = appBaseUrl().startsWith("https://") ? "; Secure" : "";
+  const clear = `${DRIVE_STATE_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secure}`;
+  if (!state || state !== cookieState) return res.redirect("/?drive=invalid_state");
+  if (!code) return res.redirect("/?drive=missing_code");
+  try {
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: `${appBaseUrl()}/auth/google/drive/callback`,
+        grant_type: "authorization_code"
+      })
+    });
+    if (!tokenResponse.ok) return res.redirect("/?drive=token_failed");
+    const token = await tokenResponse.json();
+    if (!token.refresh_token) return res.redirect("/?drive=no_refresh_token");
+
+    // Se muestra una sola vez para copiarlo a la env var. No se persiste.
+    const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+    res.setHeader("set-cookie", clear);
+    res.set("Content-Type", "text/html; charset=utf-8").send(`<!doctype html><meta charset="utf-8">
+      <body style="font-family:system-ui;max-width:720px;margin:40px auto;padding:0 16px;color:#1a1a1a">
+      <h2>Google Drive conectado ✓</h2>
+      <p>Copiá este <b>refresh token</b> y pegalo en Render como la variable de entorno
+      <code>GOOGLE_DRIVE_REFRESH_TOKEN</code>. También seteá <code>STORAGE_PROVIDER=google</code>
+      (y opcionalmente <code>GOOGLE_DRIVE_ROOT_FOLDER_NAME=AUTODIAGNOSTICO ERP</code>). Después, redeploy.</p>
+      <textarea readonly style="width:100%;height:90px;font-family:monospace;font-size:13px;padding:10px;border:1px solid #ccc;border-radius:8px">${esc(token.refresh_token)}</textarea>
+      <p style="color:#c8102e;font-size:13px">⚠ Este valor es secreto y se muestra una sola vez. No lo compartas. Cerrá esta pestaña cuando lo hayas guardado.</p>
+      <p><a href="/">Volver al panel</a></p></body>`);
+  } catch (error) {
+    console.error(error);
+    res.setHeader("set-cookie", clear);
+    res.redirect("/?drive=token_failed");
+  }
+});
+
 router.get("/auth/logout", async (req, res) => {
   await revokeSession(req);
   res.setHeader("set-cookie", clearSessionCookieHeader(appBaseUrl()));

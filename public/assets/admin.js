@@ -1228,6 +1228,29 @@ async function renderQuoteEditor(id) {
         ? `Los envíos salen desde tu casilla (${esc(currentUser.gmail_address || currentUser.email)}).`
         : `Para enviar desde tu casilla necesitás <a href="/auth/google/gmail">conectar tu Gmail</a> una vez.`}
     </div>
+
+    <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">Documentos del pedido</h4>
+      <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <select id="docType" class="admin-search" style="min-width:180px">
+          <option value="proforma">Proforma</option>
+          <option value="factura">Factura</option>
+          <option value="nota_credito">Nota de crédito</option>
+          <option value="comprobante_transferencia">Comprobante de transferencia</option>
+          <option value="comprobante_echeq">Comprobante de eCheq</option>
+          <option value="remito">Remito</option>
+          <option value="etiqueta_envio">Etiqueta de envío</option>
+          <option value="constancia_entrega">Constancia de entrega</option>
+          <option value="otro">Otro</option>
+        </select>
+        <input type="file" id="docFile" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="docVisible"> Visible al cliente</label>
+        <button class="btn-primary" id="docUploadBtn">Subir</button>
+        <span id="docMsg" style="font-size:12px"></span>
+      </div>
+      <div id="docsList" style="font-size:12.5px;color:var(--muted)">Cargando documentos...</div>
+    </div>
   `;
 
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -1262,6 +1285,76 @@ async function renderQuoteEditor(id) {
   wireQuoteItemActions(id);
   wireQuoteItemsDnD(id);
   wireAddProduct(id);
+  wireDocuments(id);
+}
+
+// ==================== Documentos del pedido (Google Drive) ====================
+const DOC_TYPE_LABEL = {
+  proforma: "Proforma", factura: "Factura", nota_credito: "Nota de crédito",
+  comprobante_transferencia: "Transferencia", comprobante_echeq: "eCheq",
+  remito: "Remito", etiqueta_envio: "Etiqueta de envío", constancia_entrega: "Constancia de entrega", otro: "Otro"
+};
+async function loadDocs(id) {
+  const list = document.getElementById("docsList");
+  if (!list) return;
+  try {
+    const { documents } = await fetchJson(`/api/admin/documents?orderId=${id}`);
+    if (!documents.length) { list.textContent = "Sin documentos todavía."; return; }
+    list.innerHTML = documents.map((d) => `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0">
+      <span style="flex:1;min-width:0">${esc(d.original_filename)} <span style="color:#999">· ${DOC_TYPE_LABEL[d.document_type] || d.document_type} · ${(Number(d.file_size) / 1024).toFixed(0)} KB${d.visible_to_customer ? " · 👁 cliente" : ""}</span></span>
+      <button class="link-btn" data-dl="${d.id}">Ver</button>
+      <button class="link-btn ghost" data-del="${d.id}">Borrar</button>
+    </div>`).join("");
+  } catch (error) {
+    list.textContent = "No se pudieron cargar los documentos: " + error.message;
+  }
+}
+function wireDocuments(id) {
+  fetchJson("/api/admin/documents/status").then((s) => {
+    const note = document.getElementById("docsStatusNote");
+    if (!note) return;
+    if (s.provider !== "google" || !s.configured) {
+      note.innerHTML = `⚠ Almacenamiento actual: <b>${esc(s.provider)}</b>${s.configured ? "" : " (sin configurar)"}. Para guardar en Google Drive hay que conectar Drive y setear las variables de entorno. Máx ${s.maxMb} MB.`;
+      note.style.color = "var(--danger,#c8102e)";
+    } else {
+      note.textContent = `Almacenamiento: Google Drive · máx ${s.maxMb} MB por archivo.`;
+      note.style.color = "var(--muted)";
+    }
+  }).catch(() => {});
+  loadDocs(id);
+  document.getElementById("docUploadBtn").addEventListener("click", async () => {
+    const f = document.getElementById("docFile").files[0];
+    const msg = document.getElementById("docMsg");
+    if (!f) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Elegí un archivo."; return; }
+    const qs = new URLSearchParams({
+      documentType: document.getElementById("docType").value,
+      orderId: id,
+      filename: f.name,
+      visibleToCustomer: String(document.getElementById("docVisible").checked)
+    });
+    msg.style.color = "var(--muted)"; msg.textContent = "Subiendo...";
+    try {
+      const r = await fetch(`/api/admin/documents?${qs}`, { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.detail || body.error || "error");
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "Subido ✓";
+      document.getElementById("docFile").value = "";
+      document.getElementById("docVisible").checked = false;
+      loadDocs(id);
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo subir: " + error.message;
+    }
+  });
+  document.getElementById("docsList").addEventListener("click", async (e) => {
+    const dl = e.target.closest("[data-dl]");
+    const del = e.target.closest("[data-del]");
+    if (dl) { window.open(`/api/documents/${dl.dataset.dl}/download`, "_blank"); return; }
+    if (del) {
+      if (!confirm("¿Borrar este documento? Se marca como eliminado (el archivo en Drive no se borra por ahora).")) return;
+      try { await deleteJson(`/api/admin/documents/${del.dataset.del}`); loadDocs(id); }
+      catch (error) { alert("No se pudo borrar: " + error.message); }
+    }
+  });
 }
 
 // Drag-and-drop para reordenar las líneas de la cotización. El arrastre sólo

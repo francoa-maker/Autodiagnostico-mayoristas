@@ -7,6 +7,7 @@ import catalogRouter from "./src/routes/catalog.js";
 import quotesRouter from "./src/routes/quotes.js";
 import adminRouter from "./src/routes/admin.js";
 import profileRouter from "./src/routes/profile.js";
+import documentsRouter from "./src/routes/documents.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -57,6 +58,7 @@ app.use("/api", wrapRouterErrors(profileRouter));
 app.use("/api", wrapRouterErrors(catalogRouter));
 app.use("/api", wrapRouterErrors(quotesRouter));
 app.use("/api", wrapRouterErrors(adminRouter));
+app.use("/api", wrapRouterErrors(documentsRouter));
 
 app.use("/assets", express.static(path.join(publicDir, "assets")));
 
