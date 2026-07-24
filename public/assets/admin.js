@@ -1287,6 +1287,21 @@ async function renderQuoteEditor(id) {
       </details>
     </div>
 
+    <div id="accountSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">Cuenta corriente del cliente</h4>
+      <div id="accountBalance" style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-bottom:10px"></div>
+      <div id="accountMovements" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+      <details>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--brand-red,#c8102e)">+ Ajuste manual</summary>
+        <div class="form-grid" style="margin-top:10px">
+          <label>Tipo<select id="adjType"><option value="debit_adjustment">Débito (aumenta deuda)</option><option value="credit_adjustment">Crédito (baja deuda / a favor)</option></select></label>
+          <label>Monto<input id="adjAmount" type="number" step="0.01"></label>
+          <label class="full">Descripción<input id="adjDesc" placeholder="Motivo del ajuste"></label>
+          <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn-primary" id="adjBtn" type="button">Registrar ajuste</button><span id="adjMsg" style="font-size:12px"></span></div>
+        </div>
+      </details>
+    </div>
+
     <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Documentos del pedido</h4>
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
@@ -1460,6 +1475,68 @@ async function wireFinance(id, quote) {
   });
 
   loadInvoices(id);
+
+  // Cuenta corriente (Tanda 2), si el módulo está prendido.
+  if (status.currentAccount) {
+    document.getElementById("accountSection").hidden = false;
+    await loadAccount(id);
+    document.getElementById("adjBtn").addEventListener("click", async () => {
+      const msg = document.getElementById("adjMsg");
+      const amount = Number(document.getElementById("adjAmount").value);
+      if (!Number.isFinite(amount) || amount <= 0) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Monto inválido."; return; }
+      if (!window.__accountClientId) { msg.textContent = "Sin cliente."; return; }
+      try {
+        await postJson(`/api/admin/clients/${window.__accountClientId}/adjustments`, {
+          type: document.getElementById("adjType").value, amount, description: document.getElementById("adjDesc").value.trim() || null, orderId: id
+        });
+        msg.style.color = "var(--success,#137333)"; msg.textContent = "Ajuste registrado ✓";
+        document.getElementById("adjAmount").value = ""; document.getElementById("adjDesc").value = "";
+        loadAccount(id);
+      } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
+    });
+  }
+}
+
+const MOVEMENT_LABEL = {
+  invoice_debit: "Factura (débito)", payment_credit: "Pago (crédito)", credit_note: "Nota de crédito",
+  debit_adjustment: "Ajuste débito", credit_adjustment: "Ajuste crédito", balance_applied: "Saldo aplicado",
+  refund: "Reintegro", payment_reversal: "Reversa"
+};
+function balChip(label, value, color) {
+  return `<span style="background:#f6f6f6;border:1px solid var(--border,#e0e0e0);border-radius:8px;padding:6px 10px"><span style="color:var(--muted,#888)">${label}</span> <b style="color:${color || "var(--catalog-dark,#111)"}">${money(value)}</b></span>`;
+}
+async function loadAccount(id) {
+  const balBox = document.getElementById("accountBalance");
+  const movBox = document.getElementById("accountMovements");
+  if (!balBox) return;
+  try {
+    const { clientId, balance, movements } = await fetchJson(`/api/admin/orders/${id}/account`);
+    window.__accountClientId = clientId;
+    balBox.innerHTML =
+      balChip("Deuda total", balance.debt, balance.debt > 0 ? "var(--brand-red,#c8102e)" : undefined) +
+      balChip("Vencido", balance.overdue, balance.overdue > 0 ? "var(--brand-red,#c8102e)" : undefined) +
+      balChip("A vencer", balance.toDue) +
+      balChip("A favor", balance.inFavor, balance.inFavor > 0 ? "var(--success,#137333)" : undefined) +
+      balChip("Pend. acreditación", balance.pendingAccreditation);
+    if (!movements.length) { movBox.textContent = "Sin movimientos."; return; }
+    movBox.innerHTML = movements.map((m) => {
+      const amt = Number(m.debit_amount) > 0 ? `<span style="color:var(--brand-red,#c8102e)">+${money(m.debit_amount)} deuda</span>` : `<span style="color:var(--success,#137333)">-${money(m.credit_amount)}</span>`;
+      const rev = m.is_reversed ? " · <span style='color:#999'>REVERSADO</span>" : "";
+      const canRev = !m.is_reversed && !m.reversed_movement_id;
+      return `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #f0f0f0${m.is_reversed ? ";opacity:.55" : ""}">
+        <span style="flex:1">${m.effective_date} · ${MOVEMENT_LABEL[m.movement_type] || m.movement_type} · ${esc(m.description || "")} ${amt}${rev}</span>
+        ${canRev ? `<button class="link-btn ghost" data-revmov="${m.id}">Reversar</button>` : ""}
+      </div>`;
+    }).join("");
+    movBox.querySelectorAll("[data-revmov]").forEach((b) => b.addEventListener("click", async () => {
+      const reason = prompt("Motivo de la reversa:");
+      if (reason === null) return;
+      try { await postJson(`/api/admin/movements/${b.dataset.revmov}/reverse`, { reason }); loadAccount(id); }
+      catch (e) { alert("No se pudo reversar: " + (e.body?.detail || e.message)); }
+    }));
+  } catch (error) {
+    movBox.textContent = "No se pudo cargar la cuenta corriente: " + error.message;
+  }
 }
 
 // ==================== Documentos del pedido (Google Drive) ====================

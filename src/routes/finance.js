@@ -4,6 +4,7 @@ import { requireApproved, requireAdmin, requireCapability } from "../middleware.
 import { requireFlag, flags } from "../featureFlags.js";
 import { recordAudit } from "../audit.js";
 import { createInvoice, listInvoices, voidInvoice, setOrderPaymentCondition, PAYMENT_CONDITIONS, INVOICE_TYPES } from "../finance/invoices.js";
+import { computeClientBalance, listMovements, createAdjustment, reverseMovement } from "../finance/ledger.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const router = express.Router();
@@ -81,6 +82,57 @@ router.patch("/admin/orders/:orderId/payment-condition", requireFlag("financial"
     console.error(error);
     res.status(500).json({ error: "payment_condition_failed" });
   }
+});
+
+// --- Cuenta corriente (admin) ---
+router.get("/admin/clients/:clientId/account", requireFlag("currentAccount"), requireCapability("account.view"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.clientId))) return res.status(400).json({ error: "invalid_id" });
+  const [balance, movements] = await Promise.all([computeClientBalance(req.params.clientId), listMovements(req.params.clientId)]);
+  res.json({ balance, movements });
+});
+
+// Cuenta corriente del cliente de un pedido (para el panel del editor).
+router.get("/admin/orders/:orderId/account", requireFlag("currentAccount"), requireCapability("account.view"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  const q = await pool.query(`select user_id from portal.quote_requests where id = $1`, [req.params.orderId]);
+  if (!q.rows[0]) return res.status(404).json({ error: "not_found" });
+  const clientId = q.rows[0].user_id;
+  const [balance, movements] = await Promise.all([computeClientBalance(clientId), listMovements(clientId)]);
+  res.json({ clientId, balance, movements });
+});
+
+router.post("/admin/clients/:clientId/adjustments", requireFlag("currentAccount"), requireCapability("account.manage"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.clientId))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const mov = await createAdjustment({
+      clientId: req.params.clientId, type: req.body?.type, amount: req.body?.amount,
+      description: req.body?.description || null, orderId: req.body?.orderId && UUID_RE.test(String(req.body.orderId)) ? req.body.orderId : null,
+      createdBy: req.user.id
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "account.adjustment", entityType: "account_movement", entityId: mov.id, after: { type: mov.movement_type, debit: mov.debit_amount, credit: mov.credit_amount } });
+    res.status(201).json({ movement: mov });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "adjustment_failed" });
+  }
+});
+
+router.post("/admin/movements/:movementId/reverse", requireFlag("currentAccount"), requireCapability("account.manage"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.movementId))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const r = await reverseMovement(req.params.movementId, { createdBy: req.user.id, reason: req.body?.reason || null });
+    await recordAudit({ actorUserId: req.user.id, action: "account.movement.reverse", entityType: "account_movement", entityId: req.params.movementId, metadata: r });
+    res.json(r);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "reverse_failed" });
+  }
+});
+
+// Cuenta corriente del propio cliente.
+router.get("/account", requireFlag("currentAccount"), requireApproved, async (req, res) => {
+  const [balance, movements] = await Promise.all([computeClientBalance(req.user.id), listMovements(req.user.id)]);
+  res.json({ balance, movements });
 });
 
 // --- Facturas visibles para el cliente (solo las propias) ---

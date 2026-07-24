@@ -3,6 +3,8 @@
 // por el total. La aplicación de pagos (Tanda 3) actualizará paid_amount; acá
 // el estado de cada cuota se computa al leer (overdue por fecha).
 import { pool, withTransaction } from "../db.js";
+import { flags } from "../featureFlags.js";
+import { insertMovement, reverseMovement } from "./ledger.js";
 
 export const PAYMENT_CONDITIONS = [
   "contado", "transferencia_anticipada", "efectivo", "cuenta_corriente", "echeq", "mixto", "personalizado"
@@ -84,6 +86,17 @@ export async function createInvoice({
         [invoice.id, n, i.dueDate, i.amount]
       );
     }
+    // Cuenta corriente: emitir la factura genera el débito en el mayor (misma
+    // transacción, atómico). Solo si el módulo está prendido.
+    if (flags.currentAccount && resolvedClient) {
+      const minDue = insts.map((i) => i.dueDate).sort()[0] || issue;
+      await insertMovement(client, {
+        clientId: resolvedClient, orderId, invoiceId: invoice.id, movementType: "invoice_debit",
+        description: `Factura ${invoiceType} ${pointOfSale || ""}-${invoiceNumber || "s/n"}`,
+        debit: total, currency, effectiveDate: issue, dueDate: minDue, createdBy: uploadedBy,
+        metadata: { invoice_number: invoiceNumber, point_of_sale: pointOfSale }
+      });
+    }
     return invoice;
   });
 }
@@ -119,7 +132,13 @@ export async function voidInvoice(invoiceId, actorId) {
      where id = $1 and voided_at is null returning *`,
     [invoiceId]
   );
-  return r.rows[0] || null;
+  const voided = r.rows[0] || null;
+  // Cuenta corriente: al anular, reversar el débito de la factura (si existía).
+  if (voided && flags.currentAccount) {
+    const movs = await pool.query(`select id from portal.account_movements where invoice_id = $1 and movement_type = 'invoice_debit' and status = 'active'`, [invoiceId]);
+    for (const m of movs.rows) await reverseMovement(m.id, { createdBy: actorId, reason: "Anulación de factura" });
+  }
+  return voided;
 }
 
 // Guarda la condición de pago del pedido (snapshot). Si saveAsClientDefault,
