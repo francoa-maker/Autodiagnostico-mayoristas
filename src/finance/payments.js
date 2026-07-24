@@ -121,6 +121,7 @@ export async function confirmPayment(paymentId, { confirmedBy, accountingDate = 
   return withTransaction(async (client) => {
     const p = (await client.query(`select * from portal.payments where id = $1 for update`, [paymentId])).rows[0];
     if (!p) throw Object.assign(new Error("pago_no_encontrado"), { statusCode: 404 });
+    if (p.payment_method === "echeq") throw Object.assign(new Error("echeq_se_acredita_por_su_flujo"), { statusCode: 400 });
     if (p.status === "confirmed") return p;
     if (!["draft", "informed"].includes(p.status)) throw Object.assign(new Error("estado_no_confirmable"), { statusCode: 400 });
     const upd = (await client.query(

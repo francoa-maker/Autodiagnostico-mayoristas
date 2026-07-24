@@ -6,6 +6,7 @@ import { recordAudit } from "../audit.js";
 import { createInvoice, listInvoices, voidInvoice, setOrderPaymentCondition, PAYMENT_CONDITIONS, INVOICE_TYPES } from "../finance/invoices.js";
 import { computeClientBalance, listMovements, createAdjustment, reverseMovement } from "../finance/ledger.js";
 import { createPayment, confirmPayment, applyPayment, reversePayment, listPayments, PAYMENT_METHODS } from "../finance/payments.js";
+import { createEcheq, acceptEcheq, accreditEcheq, rejectEcheq, listEcheqs } from "../finance/echeq.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const router = express.Router();
@@ -215,6 +216,45 @@ router.post("/orders/:orderId/payments/inform", requireFlag("financial"), requir
     console.error(error); res.status(500).json({ error: "payment_inform_failed" });
   }
 });
+
+// --- eCheqs (admin) ---
+router.get("/admin/orders/:orderId/echeqs", requireFlag("echeq"), requireCapability("echeq.view"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  res.json({ echeqs: await listEcheqs({ orderId: req.params.orderId }) });
+});
+router.post("/admin/orders/:orderId/echeqs", requireFlag("echeq"), requireCapability("echeq.manage"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body || {};
+  try {
+    const r = await createEcheq({
+      orderId: req.params.orderId, amount: b.amount, echeqNumber: b.echeqNumber || null, bankName: b.bankName || null,
+      issuerName: b.issuerName || null, issuerTaxId: b.issuerTaxId || null, issueDate: b.issueDate || null,
+      paymentDate: b.paymentDate || null, expectedCreditDate: b.expectedCreditDate || null,
+      documentId: b.documentId && UUID_RE.test(String(b.documentId)) ? b.documentId : null, notes: b.notes || null, createdBy: req.user.id
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "echeq.create", entityType: "echeq", entityId: r.echeq.id, after: { amount: r.payment.amount } });
+    res.status(201).json(r);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "echeq_create_failed" });
+  }
+});
+function echeqAction(fn, action) {
+  return async (req, res) => {
+    if (!UUID_RE.test(String(req.params.echeqId))) return res.status(400).json({ error: "invalid_id" });
+    try {
+      const r = await fn(req.params.echeqId, { ...req.body, actorId: req.user.id });
+      await recordAudit({ actorUserId: req.user.id, action, entityType: "echeq", entityId: req.params.echeqId });
+      res.json(r);
+    } catch (error) {
+      if (error.statusCode) return res.status(error.statusCode).json({ error: error.message, detail: error.detail });
+      console.error(error); res.status(500).json({ error: action + "_failed" });
+    }
+  };
+}
+router.post("/admin/echeqs/:echeqId/accept", requireFlag("echeq"), requireCapability("echeq.manage"), echeqAction(acceptEcheq, "echeq.accept"));
+router.post("/admin/echeqs/:echeqId/accredit", requireFlag("echeq"), requireCapability("echeq.manage"), echeqAction(accreditEcheq, "echeq.accredit"));
+router.post("/admin/echeqs/:echeqId/reject", requireFlag("echeq"), requireCapability("echeq.manage"), echeqAction(rejectEcheq, "echeq.reject"));
 
 // Cuenta corriente del propio cliente.
 router.get("/account", requireFlag("currentAccount"), requireApproved, async (req, res) => {

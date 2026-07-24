@@ -1318,6 +1318,24 @@ async function renderQuoteEditor(id) {
       </details>
     </div>
 
+    <div id="echeqSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">eCheqs</h4>
+      <div id="echeqList" style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Cargando eCheqs...</div>
+      <details>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--brand-red,#c8102e)">+ Registrar eCheq</summary>
+        <div class="form-grid" style="margin-top:10px">
+          <label>Monto<input id="echAmount" type="number" step="0.01"></label>
+          <label>N° eCheq<input id="echNumber"></label>
+          <label>Banco<input id="echBank"></label>
+          <label>Librador<input id="echIssuer"></label>
+          <label>CUIT librador<input id="echIssuerTax"></label>
+          <label>Fecha de pago<input id="echPayDate" type="date"></label>
+          <label>Acreditación esperada<input id="echExpDate" type="date"></label>
+          <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn-primary" id="echCreateBtn" type="button">Registrar eCheq</button><span id="echMsg" style="font-size:12px"></span></div>
+        </div>
+      </details>
+    </div>
+
     <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Documentos del pedido</h4>
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
@@ -1496,6 +1514,12 @@ async function wireFinance(id, quote) {
   document.getElementById("paymentsSection").hidden = false;
   wirePayments(id);
 
+  // eCheqs (Tanda 4), si el módulo está prendido.
+  if (status.echeq) {
+    document.getElementById("echeqSection").hidden = false;
+    wireEcheqs(id);
+  }
+
   // Cuenta corriente (Tanda 2), si el módulo está prendido.
   if (status.currentAccount) {
     document.getElementById("accountSection").hidden = false;
@@ -1517,6 +1541,66 @@ async function wireFinance(id, quote) {
   }
 }
 
+const ECHEQ_STATUS_LABEL = {
+  received: "Recibido", pending_bank_acceptance: "Pend. aceptación banco", accepted: "Aceptado",
+  pending_accreditation: "Pend. acreditación", accredited: "Acreditado", rejected: "Rechazado", cancelled: "Cancelado", expired: "Vencido"
+};
+async function loadEcheqs(id) {
+  const box = document.getElementById("echeqList");
+  if (!box) return;
+  try {
+    const { echeqs } = await fetchJson(`/api/admin/orders/${id}/echeqs`);
+    if (!echeqs.length) { box.textContent = "Sin eCheqs registrados."; return; }
+    box.innerHTML = echeqs.map((e) => {
+      const canAccept = ["received", "pending_bank_acceptance"].includes(e.status);
+      const canAccredit = ["accepted", "pending_accreditation"].includes(e.status);
+      const canReject = e.status !== "accredited" && e.status !== "rejected";
+      return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0${["rejected", "cancelled", "expired"].includes(e.status) ? ";opacity:.55" : ""}">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="flex:1">${e.echeq_number ? "N° " + esc(e.echeq_number) : "eCheq"} · ${esc(e.bank_name || "")} · ${money(e.amount)} · <b>${ECHEQ_STATUS_LABEL[e.status] || e.status}</b>${e.actual_credit_date ? " · acreditado " + e.actual_credit_date : e.expected_credit_date ? " · esperado " + e.expected_credit_date : ""}</span>
+          ${canAccept ? `<button class="link-btn" data-echacc="${e.id}">Aceptar</button>` : ""}
+          ${canAccredit ? `<button class="link-btn" data-echcred="${e.id}">Acreditar</button>` : ""}
+          ${canReject ? `<button class="link-btn ghost" data-echrej="${e.id}">Rechazar</button>` : ""}
+        </div></div>`;
+    }).join("");
+    const reload = () => { loadEcheqs(id); loadPayments(id); loadAccount(id); };
+    box.querySelectorAll("[data-echacc]").forEach((b) => b.addEventListener("click", async () => {
+      try { await postJson(`/api/admin/echeqs/${b.dataset.echacc}/accept`, {}); reload(); } catch (e) { alert("No se pudo aceptar: " + (e.body?.detail || e.message)); }
+    }));
+    box.querySelectorAll("[data-echcred]").forEach((b) => b.addEventListener("click", async () => {
+      const d = prompt("Fecha de acreditación real (YYYY-MM-DD, vacío = hoy):", new Date().toISOString().slice(0, 10));
+      if (d === null) return;
+      try { await postJson(`/api/admin/echeqs/${b.dataset.echcred}/accredit`, { actualCreditDate: d || null }); reload(); } catch (e) { alert("No se pudo acreditar: " + (e.body?.detail || e.message)); }
+    }));
+    box.querySelectorAll("[data-echrej]").forEach((b) => b.addEventListener("click", async () => {
+      const reason = prompt("Motivo del rechazo:"); if (reason === null) return;
+      try { await postJson(`/api/admin/echeqs/${b.dataset.echrej}/reject`, { reason }); reload(); } catch (e) { alert("No se pudo rechazar: " + (e.body?.detail || e.message)); }
+    }));
+  } catch (error) { box.textContent = "No se pudieron cargar los eCheqs: " + error.message; }
+}
+function wireEcheqs(id) {
+  document.getElementById("echCreateBtn").addEventListener("click", async () => {
+    const msg = document.getElementById("echMsg");
+    const amount = Number(document.getElementById("echAmount").value);
+    if (!Number.isFinite(amount) || amount <= 0) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Monto inválido."; return; }
+    msg.style.color = "var(--muted)"; msg.textContent = "Registrando...";
+    try {
+      await postJson(`/api/admin/orders/${id}/echeqs`, {
+        amount, echeqNumber: document.getElementById("echNumber").value.trim() || null,
+        bankName: document.getElementById("echBank").value.trim() || null,
+        issuerName: document.getElementById("echIssuer").value.trim() || null,
+        issuerTaxId: document.getElementById("echIssuerTax").value.trim() || null,
+        paymentDate: document.getElementById("echPayDate").value || null,
+        expectedCreditDate: document.getElementById("echExpDate").value || null
+      });
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "eCheq registrado ✓";
+      document.getElementById("echAmount").value = ""; document.getElementById("echNumber").value = "";
+      loadEcheqs(id); loadPayments(id);
+    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
+  });
+  loadEcheqs(id);
+}
+
 const PAY_METHOD_LABEL = { cash: "Efectivo", bank_transfer: "Transferencia", echeq: "eCheq", current_account: "Cta. corriente", customer_credit: "Saldo a favor", other: "Otro" };
 const PAY_STATUS_LABEL = { draft: "Borrador", informed: "Informado", confirmed: "Confirmado", pending_accreditation: "Pend. acreditación", rejected: "Rechazado", reversed: "Reversado" };
 
@@ -1529,7 +1613,7 @@ async function loadPayments(id) {
     box.innerHTML = payments.map((p) => {
       const applied = Number(p.applied_amount || 0);
       const remaining = Math.max(0, Number(p.amount) - applied);
-      const canConfirm = ["draft", "informed"].includes(p.status);
+      const canConfirm = ["draft", "informed"].includes(p.status) && p.payment_method !== "echeq";
       const canApply = p.status === "confirmed" && remaining > 0.005;
       const canReverse = p.status === "confirmed";
       return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0${p.status === "reversed" ? ";opacity:.55" : ""}">
