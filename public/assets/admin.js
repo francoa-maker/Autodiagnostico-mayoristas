@@ -1348,6 +1348,11 @@ async function renderQuoteEditor(id) {
       </div>
     </div>
 
+    <div id="serialSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">Números de serie <span style="font-weight:400;color:var(--muted);font-size:12px">(trazabilidad, solo lectura)</span></h4>
+      <div id="serialList" style="font-size:12.5px;color:var(--muted)">Cargando...</div>
+    </div>
+
     <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Documentos del pedido</h4>
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
@@ -1451,6 +1456,31 @@ async function loadInvoices(id) {
   }
 }
 
+const SERIAL_STATUS_LABEL = { assigned: "Asignado", delivered: "Entregado", removed: "Quitado", returned: "Devuelto", replaced: "Reemplazado" };
+
+async function loadSerials(id) {
+  const box = document.getElementById("serialList");
+  if (!box) return;
+  try {
+    const { serials } = await fetchJson(`/api/admin/orders/${id}/serials`);
+    const active = serials.filter((s) => s.status === "assigned");
+    if (!serials.length) { box.textContent = "Aún no se registraron números de serie para este pedido."; return; }
+    box.innerHTML = `<div style="margin-bottom:6px">${active.length} serial(es) activo(s)${serials.length > active.length ? ` · ${serials.length - active.length} en historial` : ""}.</div>` +
+      serials.map((s) => `<div style="padding:3px 0;border-bottom:1px solid #f5f5f5;${s.status !== "assigned" ? "opacity:.55;" : ""}">
+        <span style="font-family:var(--font-mono)">${esc(s.serial_number)}</span>
+        · <b>${SERIAL_STATUS_LABEL[s.status] || s.status}</b>
+        ${s.registered_by_name ? `· ${esc(s.registered_by_name)}` : ""}
+        ${s.removal_reason ? `· <span style="color:#9a3412">${esc(s.removal_reason)}</span>` : ""}
+      </div>`).join("");
+  } catch (error) {
+    // Roles sin capability de trazabilidad (ej. administración) reciben 403: ocultamos el panel.
+    if (error.status === 403 || error.body?.error === "forbidden") {
+      const sec = document.getElementById("serialSection"); if (sec) sec.hidden = true; return;
+    }
+    box.textContent = "No se pudieron cargar los números de serie: " + (error.body?.detail || error.message);
+  }
+}
+
 async function wireFinance(id, quote) {
   const section = document.getElementById("financeSection");
   if (!section) return;
@@ -1534,6 +1564,12 @@ async function wireFinance(id, quote) {
   if (status.echeq) {
     document.getElementById("echeqSection").hidden = false;
     wireEcheqs(id);
+  }
+
+  // Trazabilidad de números de serie (Tanda 8), solo lectura para Ventas/Superadmin.
+  if (status.serialNumbers) {
+    document.getElementById("serialSection").hidden = false;
+    loadSerials(id);
   }
 
   // Cuenta corriente (Tanda 2), si el módulo está prendido.

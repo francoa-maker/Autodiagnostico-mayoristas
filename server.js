@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { attachSession } from "./src/auth.js";
-import { isAdminStaff } from "./src/permissions.js";
+import { isAdminStaff, normalizeRole } from "./src/permissions.js";
 import authRouter from "./src/routes/auth.js";
 import catalogRouter from "./src/routes/catalog.js";
 import quotesRouter from "./src/routes/quotes.js";
@@ -10,6 +10,7 @@ import adminRouter from "./src/routes/admin.js";
 import profileRouter from "./src/routes/profile.js";
 import documentsRouter from "./src/routes/documents.js";
 import financeRouter from "./src/routes/finance.js";
+import logisticsRouter from "./src/routes/logistics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -61,6 +62,7 @@ app.use("/api", wrapRouterErrors(catalogRouter));
 app.use("/api", wrapRouterErrors(quotesRouter));
 app.use("/api", wrapRouterErrors(documentsRouter));
 app.use("/api", wrapRouterErrors(financeRouter));
+app.use("/api", wrapRouterErrors(logisticsRouter));
 // adminRouter va ÚLTIMO: usa router.use(requireAdmin) global, así que si se
 // montara antes interceptaría (con 403 admin_required) cualquier ruta /api/*
 // de cliente no resuelta por un router previo (documentos, facturas, etc.).
@@ -80,7 +82,8 @@ app.get("/pending", (req, res) => {
 app.get("/", (req, res) => {
   if (!req.user) return res.redirect("/login");
   if (req.user.status !== "approved") return res.redirect("/pending");
-  res.sendFile(path.join(publicDir, isAdminStaff(req.user.role) ? "admin.html" : "index.html"));
+  const page = isAdminStaff(req.user.role) ? "admin.html" : normalizeRole(req.user.role) === "logistics" ? "logistics.html" : "index.html";
+  res.sendFile(path.join(publicDir, page));
 });
 
 app.use((req, res) => {
