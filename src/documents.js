@@ -6,20 +6,20 @@ import { getStorageProvider } from "./storage/index.js";
 
 export const DOCUMENT_TYPES = [
   "proforma", "factura", "nota_credito", "comprobante_transferencia",
-  "comprobante_echeq", "remito", "etiqueta_envio", "constancia_entrega", "otro"
+  "comprobante_echeq", "recibo", "estado_cuenta", "remito", "etiqueta_envio", "constancia_entrega", "otro"
 ];
 
 // A qué subcarpeta va cada tipo dentro del "Pedido N".
 const TYPE_FOLDER = {
   proforma: "Proformas", factura: "Facturas", nota_credito: "Facturas",
-  comprobante_transferencia: "Pagos", comprobante_echeq: "Pagos",
+  comprobante_transferencia: "Pagos", comprobante_echeq: "Pagos", recibo: "Pagos", estado_cuenta: "Estados de cuenta",
   remito: "Logística", etiqueta_envio: "Logística", constancia_entrega: "Logística",
   otro: "Otros"
 };
 // Slug del tipo para el nombre controlado del archivo.
 const TYPE_SLUG = {
   proforma: "proforma", factura: "factura", nota_credito: "nota-credito",
-  comprobante_transferencia: "transferencia", comprobante_echeq: "echeq",
+  comprobante_transferencia: "transferencia", comprobante_echeq: "echeq", recibo: "recibo", estado_cuenta: "estado-cuenta",
   remito: "remito", etiqueta_envio: "etiqueta-envio", constancia_entrega: "constancia-entrega",
   otro: "documento"
 };

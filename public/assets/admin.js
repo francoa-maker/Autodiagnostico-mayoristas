@@ -1288,7 +1288,7 @@ async function renderQuoteEditor(id) {
     </div>
 
     <div id="accountSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
-      <h4 style="margin:0 0 8px">Cuenta corriente del cliente</h4>
+      <h4 style="margin:0 0 8px">Cuenta corriente del cliente <button class="link-btn" id="stmtBtn" type="button" style="font-weight:400;margin-left:8px">Ver estado de cuenta</button></h4>
       <div id="accountBalance" style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-bottom:10px"></div>
       <div id="accountMovements" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
       <details>
@@ -1539,6 +1539,9 @@ async function wireFinance(id, quote) {
   // Cuenta corriente (Tanda 2), si el módulo está prendido.
   if (status.currentAccount) {
     document.getElementById("accountSection").hidden = false;
+    document.getElementById("stmtBtn").addEventListener("click", () => {
+      if (window.__accountClientId) window.open(`/api/admin/clients/${window.__accountClientId}/account-statement`, "_blank");
+    });
     await loadAccount(id);
     document.getElementById("adjBtn").addEventListener("click", async () => {
       const msg = document.getElementById("adjMsg");

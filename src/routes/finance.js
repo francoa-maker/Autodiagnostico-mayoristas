@@ -8,6 +8,17 @@ import { computeClientBalance, listMovements, createAdjustment, reverseMovement 
 import { createPayment, confirmPayment, applyPayment, reversePayment, listPayments, PAYMENT_METHODS } from "../finance/payments.js";
 import { createEcheq, acceptEcheq, accreditEcheq, rejectEcheq, listEcheqs } from "../finance/echeq.js";
 import { getOrderFinancialSummary, authorizeOrder, AUTHORIZATION_REASONS } from "../finance/orders.js";
+import { renderAccountStatementHtml } from "../finance/statement.js";
+
+async function buildStatementHtml(clientId) {
+  const client = (await pool.query(`select id, email, display_name, company_name, client_code, tax_cuit from portal.users where id = $1`, [clientId])).rows[0];
+  if (!client) return null;
+  const [balance, movements, comp] = await Promise.all([
+    computeClientBalance(clientId), listMovements(clientId),
+    pool.query(`select value from portal.app_settings where key = 'company_profile'`)
+  ]);
+  return renderAccountStatementHtml({ client, balance, movements, company: comp.rows[0]?.value || {} });
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const router = express.Router();
@@ -281,6 +292,19 @@ router.post("/admin/echeqs/:echeqId/reject", requireFlag("echeq"), requireCapabi
 router.get("/account", requireFlag("currentAccount"), requireApproved, async (req, res) => {
   const [balance, movements] = await Promise.all([computeClientBalance(req.user.id), listMovements(req.user.id)]);
   res.json({ balance, movements });
+});
+
+// Estado de cuenta imprimible (HTML por backend). Admin: de cualquier cliente;
+// cliente: solo el propio.
+router.get("/admin/clients/:clientId/account-statement", requireFlag("currentAccount"), requireCapability("account.view"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.clientId))) return res.status(400).send("Cliente inválido");
+  const html = await buildStatementHtml(req.params.clientId);
+  if (!html) return res.status(404).send("Cliente no encontrado");
+  res.set("Content-Type", "text/html; charset=utf-8").send(html);
+});
+router.get("/account/statement", requireFlag("currentAccount"), requireApproved, async (req, res) => {
+  const html = await buildStatementHtml(req.user.id);
+  res.set("Content-Type", "text/html; charset=utf-8").send(html);
 });
 
 // --- Facturas visibles para el cliente (solo las propias) ---
