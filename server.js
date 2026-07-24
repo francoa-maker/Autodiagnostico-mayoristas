@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { attachSession } from "./src/auth.js";
 import { isAdminStaff, normalizeRole } from "./src/permissions.js";
+import { securityHeaders, createRateLimiter } from "./src/securityHeaders.js";
 import authRouter from "./src/routes/auth.js";
 import catalogRouter from "./src/routes/catalog.js";
 import quotesRouter from "./src/routes/quotes.js";
@@ -47,12 +48,22 @@ process.on("uncaughtException", (error) => {
 });
 
 const app = express();
+// Detrás del proxy de Render (un solo hop): que req.ip refleje el X-Forwarded-For
+// real del cliente (necesario para el rate limiting por IP).
+app.set("trust proxy", 1);
+app.use(securityHeaders);
 app.use(express.json());
 app.use(attachSession);
 
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
+
+// Rate limiting por IP (ventana fija, en memoria). Límites holgados: cortan
+// abuso/fuerza bruta sin molestar el uso normal (incluye varias personas
+// detrás de la misma IP de oficina). /auth es más estricto (login).
+app.use("/api", createRateLimiter({ windowMs: 60 * 1000, max: 600, keyPrefix: "api" }));
+app.use("/auth", createRateLimiter({ windowMs: 15 * 60 * 1000, max: 80, keyPrefix: "auth" }));
 
 // authRouter mounts /auth/* and /api/me at root (no /api prefix, matching
 // the ninots convention of keeping auth outside the requireUser-gated tree).
@@ -98,7 +109,10 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
   console.error(error);
   const statusCode = error.statusCode || error.status || 500;
-  res.status(statusCode).json({ error: error.message || "server_error" });
+  // Los 4xx llevan mensajes intencionales y seguros (ej. "invalid_id"); los 5xx
+  // no deben filtrar detalles internos (stack, nombres de tablas, etc.).
+  const body = statusCode >= 500 ? { error: "server_error" } : { error: error.message || "request_failed" };
+  res.status(statusCode).json(body);
 });
 
 app.listen(port, () => {

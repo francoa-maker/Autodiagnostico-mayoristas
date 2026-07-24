@@ -160,9 +160,10 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
   const toolbar = forEmail
     ? ""
     : `<div class="toolbar">
-        <button onclick="window.print()">Imprimir / Guardar PDF</button>
-        <button class="ghost" onclick="window.close()">Cerrar</button>
-      </div>`;
+        <button data-action="print">Imprimir / Guardar PDF</button>
+        <button class="ghost" data-action="close">Cerrar</button>
+      </div>
+      <script src="/assets/doc-actions.js"></script>`;
 
   const sheet = `
   <div class="sheet">

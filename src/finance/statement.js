@@ -26,7 +26,7 @@ export function renderAccountStatementHtml({ client, balance, movements, company
       <td class="num">${fmtMoney(running)}</td>
     </tr>`;
   }).join("");
-  const toolbar = forEmail ? "" : `<div class="toolbar"><button onclick="window.print()">Imprimir / PDF</button></div>`;
+  const toolbar = forEmail ? "" : `<div class="toolbar"><button data-action="print">Imprimir / PDF</button></div><script src="/assets/doc-actions.js"></script>`;
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Estado de cuenta - ${esc(client.display_name || client.email)}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0} body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#1a1a1a;background:#f3f4f6;padding:18px}
