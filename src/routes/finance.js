@@ -7,6 +7,7 @@ import { createInvoice, listInvoices, voidInvoice, setOrderPaymentCondition, PAY
 import { computeClientBalance, listMovements, createAdjustment, reverseMovement } from "../finance/ledger.js";
 import { createPayment, confirmPayment, applyPayment, reversePayment, listPayments, PAYMENT_METHODS } from "../finance/payments.js";
 import { createEcheq, acceptEcheq, accreditEcheq, rejectEcheq, listEcheqs } from "../finance/echeq.js";
+import { getOrderFinancialSummary, authorizeOrder, AUTHORIZATION_REASONS } from "../finance/orders.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const router = express.Router();
@@ -21,8 +22,28 @@ router.get("/admin/finance/status", requireAdmin, (req, res) => {
     echeq: flags.echeq,
     serialNumbers: flags.serialNumbers,
     paymentConditions: PAYMENT_CONDITIONS,
-    invoiceTypes: INVOICE_TYPES
+    invoiceTypes: INVOICE_TYPES,
+    authorizationReasons: AUTHORIZATION_REASONS
   });
+});
+
+// Resumen financiero del pedido + autorización a Logística (Tanda 5).
+router.get("/admin/orders/:orderId/financial-summary", requireFlag("financial"), requireCapability("orders.view"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  const summary = await getOrderFinancialSummary(req.params.orderId);
+  if (!summary) return res.status(404).json({ error: "not_found" });
+  res.json({ summary });
+});
+router.post("/admin/orders/:orderId/authorize", requireFlag("financial"), requireCapability("orders.authorize"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const r = await authorizeOrder(req.params.orderId, { reason: req.body?.reason, notes: req.body?.notes || null, actorId: req.user.id });
+    await recordAudit({ actorUserId: req.user.id, action: "order.authorize", entityType: "quote_request", entityId: req.params.orderId, after: { reason: req.body?.reason || null } });
+    res.json(r);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "authorize_failed" });
+  }
 });
 
 // --- Facturas (admin) ---

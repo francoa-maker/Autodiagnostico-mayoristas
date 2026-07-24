@@ -1336,6 +1336,18 @@ async function renderQuoteEditor(id) {
       </details>
     </div>
 
+    <div id="logisticsSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">Resumen y autorización a Logística</h4>
+      <div id="finSummary" style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px"></div>
+      <div id="authState" style="font-size:12.5px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="authReason" class="admin-search" style="min-width:190px"><option value="">Motivo de autorización...</option></select>
+        <input id="authNotes" class="admin-search" placeholder="Notas (opcional)" style="flex:1;min-width:160px">
+        <button class="btn-primary" id="authBtn" type="button">Autorizar para logística</button>
+        <span id="authMsg" style="font-size:12px"></span>
+      </div>
+    </div>
+
     <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Documentos del pedido</h4>
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
@@ -1514,6 +1526,10 @@ async function wireFinance(id, quote) {
   document.getElementById("paymentsSection").hidden = false;
   wirePayments(id);
 
+  // Resumen + autorización a logística (Tanda 5).
+  document.getElementById("logisticsSection").hidden = false;
+  wireLogistics(id, status);
+
   // eCheqs (Tanda 4), si el módulo está prendido.
   if (status.echeq) {
     document.getElementById("echeqSection").hidden = false;
@@ -1539,6 +1555,44 @@ async function wireFinance(id, quote) {
       } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
     });
   }
+}
+
+const AUTH_REASON_LABEL = {
+  pago_confirmado: "Pago confirmado", cuenta_corriente: "Cuenta corriente autorizada", echeq_aceptado: "eCheq aceptado",
+  acuerdo_comercial: "Acuerdo comercial", excepcion_manual: "Excepción manual"
+};
+async function loadFinSummary(id) {
+  const box = document.getElementById("finSummary");
+  const st = document.getElementById("authState");
+  if (!box) return;
+  try {
+    const { summary } = await fetchJson(`/api/admin/orders/${id}/financial-summary`);
+    box.innerHTML =
+      balChip("Total operación", summary.operationTotal) +
+      balChip("Facturado", summary.invoiced) +
+      balChip("Acreditado", summary.accredited, summary.accredited > 0 ? "var(--success,#137333)" : undefined) +
+      balChip("Pend. acreditación", summary.pendingAccreditation) +
+      balChip("Saldo del pedido", summary.orderBalance, summary.orderBalance > 0 ? "var(--brand-red,#c8102e)" : undefined) +
+      balChip("Saldo cliente (vencido)", summary.clientBalance.overdue, summary.clientBalance.overdue > 0 ? "var(--brand-red,#c8102e)" : undefined);
+    st.innerHTML = summary.authorized
+      ? `✅ <b>Autorizado para logística</b> por ${esc(summary.authorizedByName || "")} · ${AUTH_REASON_LABEL[summary.authorizationReason] || summary.authorizationReason || ""}${summary.authorizationNotes ? " · " + esc(summary.authorizationNotes) : ""} <span style="color:var(--muted)">(estado: ${esc(summary.logisticsStatus)})</span>`
+      : `<span style="color:var(--muted)">Pedido NO autorizado a logística todavía. Estado de pago: <b>${esc(summary.paymentState)}</b>.</span>`;
+  } catch (error) { box.textContent = "No se pudo cargar el resumen: " + error.message; }
+}
+function wireLogistics(id, status) {
+  const sel = document.getElementById("authReason");
+  sel.innerHTML = '<option value="">Motivo de autorización...</option>' + (status.authorizationReasons || []).map((r) => `<option value="${r}">${AUTH_REASON_LABEL[r] || r}</option>`).join("");
+  document.getElementById("authBtn").addEventListener("click", async () => {
+    const msg = document.getElementById("authMsg");
+    if (!sel.value) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Elegí un motivo."; return; }
+    if (!confirm("¿Autorizar este pedido para preparación en Logística? Logística no verá información financiera.")) return;
+    try {
+      await postJson(`/api/admin/orders/${id}/authorize`, { reason: sel.value, notes: document.getElementById("authNotes").value.trim() || null });
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "Autorizado ✓";
+      loadFinSummary(id);
+    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
+  });
+  loadFinSummary(id);
 }
 
 const ECHEQ_STATUS_LABEL = {
