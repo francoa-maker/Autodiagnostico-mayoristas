@@ -1,5 +1,6 @@
 import express from "express";
-import { requireAdmin, requireApproved } from "../middleware.js";
+import { pool } from "../db.js";
+import { requireApproved, requireAdmin } from "../middleware.js";
 import { recordAudit } from "../audit.js";
 import { storageProviderName, getStorageProvider } from "../storage/index.js";
 import {
@@ -93,6 +94,33 @@ router.get("/documents/:id/download", requireApproved, async (req, res) => {
   } catch (error2) {
     console.error(error2);
     res.status(502).send("No se pudo obtener el archivo del almacenamiento");
+  }
+});
+
+// Subida de comprobante por el CLIENTE (solo su propio pedido; tipos de
+// comprobante; queda visible para el cliente). Devuelve el id para vincularlo
+// a una transferencia informada.
+router.post("/documents", requireApproved, express.raw({ type: () => true, limit: maxBytes() }), async (req, res) => {
+  try {
+    const buffer = Buffer.isBuffer(req.body) ? req.body : null;
+    if (!buffer || !buffer.length) return res.status(400).json({ error: "archivo_vacio" });
+    const { documentType, orderId, filename } = req.query;
+    const type = ["comprobante_transferencia", "comprobante_echeq"].includes(String(documentType)) ? String(documentType) : "comprobante_transferencia";
+    if (orderId && !UUID_RE.test(String(orderId))) return res.status(400).json({ error: "order_id_invalido" });
+    if (orderId) {
+      const own = await pool.query(`select user_id from portal.quote_requests where id = $1`, [orderId]);
+      if (!own.rows[0] || own.rows[0].user_id !== req.user.id) return res.status(403).json({ error: "forbidden" });
+    }
+    const doc = await saveDocument({
+      buffer, mimeType: req.headers["content-type"], originalFilename: String(filename || "comprobante"),
+      documentType: type, orderId: orderId || null, clientId: req.user.id, visibleToCustomer: true, uploadedBy: req.user.id
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "document.upload.client", entityType: "document", entityId: doc.id, metadata: { type } });
+    res.status(201).json({ document: { id: doc.id, original_filename: doc.original_filename } });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ error: "upload_failed", detail: error.message });
   }
 });
 

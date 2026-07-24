@@ -38,6 +38,11 @@ router.get("/admin/finance/status", requireAdmin, (req, res) => {
   });
 });
 
+// Estado de los módulos para el CLIENTE (para mostrar/ocultar su UI financiera).
+router.get("/finance/status", requireApproved, (req, res) => {
+  res.json({ financial: flags.financial, currentAccount: flags.currentAccount, echeq: flags.echeq });
+});
+
 // Resumen financiero del pedido + autorización a Logística (Tanda 5).
 router.get("/admin/orders/:orderId/financial-summary", requireFlag("financial"), requireCapability("orders.view"), async (req, res) => {
   if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });

@@ -867,6 +867,23 @@ const requestsOverlay = document.getElementById("requestsOverlay");
 const REQ_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotización emitida", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
 const REQ_STATUS_HINT = { submitted: "Esperando revisión de un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización lista para ver", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
 
+let finState = {};
+async function accountBanner() {
+  if (!finState.currentAccount) return "";
+  try {
+    const { balance } = await fetchJson("/api/account");
+    const chip = (l, v, c) => `<span class="hs-chip"><b${c ? ` style="color:${c}"` : ""}>${money(v)}</b> ${l}</span>`;
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      ${chip("deuda", balance.debt, balance.debt > 0 ? "var(--brand-red)" : "")}
+      ${chip("vencido", balance.overdue, balance.overdue > 0 ? "var(--brand-red)" : "")}
+      ${chip("a vencer", balance.toDue)}
+      ${chip("a favor", balance.inFavor, balance.inFavor > 0 ? "var(--success)" : "")}
+      ${chip("eCheqs pend.", balance.pendingAccreditation)}
+      <button class="btn-primary sm" id="stmtDownload">Estado de cuenta</button>
+    </div>`;
+  } catch { return ""; }
+}
+
 async function openRequests(mode) {
   requestsOverlay.hidden = false;
   const onlyQuoted = mode === "quoted";
@@ -876,30 +893,82 @@ async function openRequests(mode) {
   try {
     const { quotes: all } = await fetchJson("/api/quotes");
     const quotes = onlyQuoted ? all.filter((q) => q.quoted_at) : all;
+    const banner = await accountBanner();
     if (!quotes.length) {
-      body.innerHTML = `<div style="text-align:center;color:var(--muted);padding:30px">${onlyQuoted ? "Todavía no tenés cotizaciones emitidas." : "Todavía no hiciste ninguna solicitud."}</div>`;
-      return;
+      body.innerHTML = banner + `<div style="text-align:center;color:var(--muted);padding:30px">${onlyQuoted ? "Todavía no tenés cotizaciones emitidas." : "Todavía no hiciste ninguna solicitud."}</div>`;
+    } else {
+      body.innerHTML = banner + `<div style="overflow-x:auto"><table class="req-table">
+        <thead><tr><th>#</th><th>Fecha</th><th>Estado</th><th style="text-align:right">Total</th><th>Cotizada por</th><th></th></tr></thead>
+        <tbody>${quotes
+          .map(
+            (q) => `<tr>
+              <td><strong>#${q.request_number}</strong></td>
+              <td>${fmtDate(q.submitted_at)}</td>
+              <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
+              <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
+              <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
+              <td style="white-space:nowrap">${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">Proforma</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+            </tr>`
+          )
+          .join("")}</tbody></table></div>`;
     }
-    body.innerHTML = `<div style="overflow-x:auto"><table class="req-table">
-      <thead><tr><th>#</th><th>Fecha</th><th>Estado</th><th style="text-align:right">Total</th><th>Cotizada por</th><th></th></tr></thead>
-      <tbody>${quotes
-        .map(
-          (q) => `<tr>
-            <td><strong>#${q.request_number}</strong></td>
-            <td>${fmtDate(q.submitted_at)}</td>
-            <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
-            <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
-            <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-            <td>${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">Ver proforma</button>` : ""}</td>
-          </tr>`
-        )
-        .join("")}</tbody></table></div>`;
-    body.querySelectorAll("[data-proforma]").forEach((btn) => {
-      btn.addEventListener("click", () => window.open(`/api/quotes/${btn.dataset.proforma}/proforma`, "_blank"));
-    });
+    body.querySelectorAll("[data-proforma]").forEach((b) => b.addEventListener("click", () => window.open(`/api/quotes/${b.dataset.proforma}/proforma`, "_blank")));
+    body.querySelectorAll("[data-fin]").forEach((b) => b.addEventListener("click", () => openOrderFinance(b.dataset.fin, b.dataset.num, mode)));
+    const stmt = document.getElementById("stmtDownload");
+    if (stmt) stmt.addEventListener("click", () => window.open("/api/account/statement", "_blank"));
   } catch (error) {
     body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${esc(error.message)}</div>`;
   }
+}
+
+// Detalle financiero de un pedido para el cliente: facturas visibles + informar
+// una transferencia (con comprobante opcional).
+async function openOrderFinance(orderId, num, mode) {
+  const body = document.getElementById("requestsBody");
+  body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>';
+  let invoices = [];
+  try { ({ invoices } = await fetchJson(`/api/orders/${orderId}/invoices`)); } catch { /* módulo puede estar off */ }
+  const invHtml = invoices.length
+    ? invoices.map((i) => {
+        const insts = (i.installments || []).map((it) => `<div style="margin-left:12px;color:var(--muted)">· Cuota ${it.installment_number}: vence ${it.due_date} · ${money(it.amount)} · ${it.display_status}</div>`).join("");
+        return `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b>${esc(i.invoice_type)}</b> ${esc(i.point_of_sale || "")}-${esc(i.invoice_number || "s/n")} · ${money(i.total_amount)} · ${i.issue_date}
+          ${i.document_id ? `<button class="link-btn" data-doc="${i.document_id}">Ver PDF</button>` : ""}</div>${insts}`;
+      }).join("")
+    : '<div style="color:var(--muted)">Sin facturas cargadas todavía.</div>';
+  body.innerHTML = `
+    <button class="link-btn" id="finBack" style="margin-bottom:12px">&larr; Volver</button>
+    <h4 style="margin:0 0 8px">Pedido #${esc(num)} — Facturas</h4>
+    ${invHtml}
+    <h4 style="margin:16px 0 8px">Informar una transferencia</h4>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Queda registrada como <b>informada</b>; un administrador la confirma. Podés adjuntar el comprobante.</p>
+    <div class="form-grid">
+      <label>Monto<input id="cInfAmount" type="number" step="0.01"></label>
+      <label>Referencia<input id="cInfRef" placeholder="N° operación"></label>
+      <label class="full">Comprobante (opcional)<input id="cInfFile" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></label>
+      <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn-primary" id="cInfBtn" type="button">Informar transferencia</button><span id="cInfMsg" style="font-size:12px"></span></div>
+    </div>`;
+  document.getElementById("finBack").addEventListener("click", () => openRequests(mode));
+  body.querySelectorAll("[data-doc]").forEach((b) => b.addEventListener("click", () => window.open(`/api/documents/${b.dataset.doc}/download`, "_blank")));
+  document.getElementById("cInfBtn").addEventListener("click", async () => {
+    const msg = document.getElementById("cInfMsg");
+    const amount = Number(document.getElementById("cInfAmount").value);
+    if (!Number.isFinite(amount) || amount <= 0) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Monto inválido."; return; }
+    msg.style.color = "var(--muted)"; msg.textContent = "Enviando...";
+    try {
+      let documentId = null;
+      const file = document.getElementById("cInfFile").files[0];
+      if (file) {
+        const qs = new URLSearchParams({ documentType: "comprobante_transferencia", orderId, filename: file.name });
+        const r = await fetch(`/api/documents?${qs}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+        const jb = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(jb.detail || jb.error || "no se pudo subir");
+        documentId = jb.document?.id || null;
+      }
+      await postJson(`/api/orders/${orderId}/payments/inform`, { amount, reference: document.getElementById("cInfRef").value.trim() || null, documentId });
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "Transferencia informada ✓";
+      document.getElementById("cInfAmount").value = ""; document.getElementById("cInfRef").value = "";
+    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo informar: " + (e.body?.detail || e.message); }
+  });
 }
 function closeRequests() { requestsOverlay.hidden = true; }
 document.getElementById("requestsClose").addEventListener("click", closeRequests);
@@ -913,4 +982,5 @@ requestsOverlay.addEventListener("click", (e) => { if (e.target === requestsOver
   renderCart();
   loadProfile();
   loadNotifications();
+  fetchJson("/api/finance/status").then((s) => { finState = s; }).catch(() => {});
 })();
