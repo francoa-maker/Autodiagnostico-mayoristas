@@ -2,6 +2,7 @@
 // borra un movimiento; para corregir se reversa (movimiento inverso + original
 // status='reversed'). El saldo se calcula sumando movimientos activos.
 import { pool, withTransaction } from "../db.js";
+import { flags } from "../featureFlags.js";
 
 export const MOVEMENT_TYPES = [
   "invoice_debit", "payment_credit", "credit_note", "debit_adjustment",
@@ -97,10 +98,10 @@ export async function computeClientBalance(clientId) {
      where i.client_id = $1 and i.voided_at is null`,
     [clientId]
   );
+  // eCheqs aceptados pendientes de acreditación (Tanda 4). Solo si el módulo
+  // está prendido (la tabla echeq_details recién existe entonces).
   let pending = 0;
-  // eCheqs aceptados pendientes de acreditación (Tanda 4). Si la tabla no existe
-  // todavía, se ignora.
-  try {
+  if (flags.echeq) {
     const e = await pool.query(
       `select coalesce(sum(p.amount),0) as pending
        from portal.payments p join portal.echeq_details e on e.payment_id = p.id
@@ -108,7 +109,7 @@ export async function computeClientBalance(clientId) {
       [clientId]
     );
     pending = round2(e.rows[0].pending);
-  } catch { pending = 0; }
+  }
   return {
     total,
     debt: Math.max(0, total),

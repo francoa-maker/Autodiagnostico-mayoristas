@@ -5,6 +5,7 @@ import { requireFlag, flags } from "../featureFlags.js";
 import { recordAudit } from "../audit.js";
 import { createInvoice, listInvoices, voidInvoice, setOrderPaymentCondition, PAYMENT_CONDITIONS, INVOICE_TYPES } from "../finance/invoices.js";
 import { computeClientBalance, listMovements, createAdjustment, reverseMovement } from "../finance/ledger.js";
+import { createPayment, confirmPayment, applyPayment, reversePayment, listPayments, PAYMENT_METHODS } from "../finance/payments.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const router = express.Router();
@@ -126,6 +127,92 @@ router.post("/admin/movements/:movementId/reverse", requireFlag("currentAccount"
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error(error); res.status(500).json({ error: "reverse_failed" });
+  }
+});
+
+// --- Pagos (admin) ---
+router.get("/admin/orders/:orderId/payments", requireFlag("financial"), requireCapability("payments.view"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  const payments = await listPayments({ orderId: req.params.orderId });
+  res.json({ payments });
+});
+
+router.post("/admin/orders/:orderId/payments", requireFlag("financial"), requireCapability("payments.register"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body || {};
+  try {
+    const payment = await createPayment({
+      orderId: req.params.orderId, method: b.method, amount: b.amount,
+      paymentDate: b.paymentDate || null, accountingDate: b.accountingDate || null,
+      reference: b.reference || null, notes: b.notes || null,
+      documentId: b.documentId && UUID_RE.test(String(b.documentId)) ? b.documentId : null,
+      status: b.status === "informed" ? "informed" : "confirmed", // por defecto el staff confirma en el acto
+      createdBy: req.user.id, confirmedBy: req.user.id
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "payment.create", entityType: "payment", entityId: payment.id, after: { method: payment.payment_method, amount: payment.amount, status: payment.status } });
+    res.status(201).json({ payment });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message, detail: error.detail });
+    console.error(error); res.status(500).json({ error: "payment_create_failed", detail: error.message });
+  }
+});
+
+router.post("/admin/payments/:paymentId/confirm", requireFlag("financial"), requireCapability("payments.confirm"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.paymentId))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const payment = await confirmPayment(req.params.paymentId, { confirmedBy: req.user.id, accountingDate: req.body?.accountingDate || null });
+    await recordAudit({ actorUserId: req.user.id, action: "payment.confirm", entityType: "payment", entityId: req.params.paymentId });
+    res.json({ payment });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "payment_confirm_failed" });
+  }
+});
+
+router.post("/admin/payments/:paymentId/apply", requireFlag("financial"), requireCapability("payments.apply"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.paymentId))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const r = await applyPayment(req.params.paymentId, req.body?.allocations || [], { actorId: req.user.id });
+    await recordAudit({ actorUserId: req.user.id, action: "payment.apply", entityType: "payment", entityId: req.params.paymentId, after: r });
+    res.json(r);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message, detail: error.detail });
+    console.error(error); res.status(500).json({ error: "payment_apply_failed" });
+  }
+});
+
+router.post("/admin/payments/:paymentId/reverse", requireFlag("financial"), requireCapability("payments.reverse"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.paymentId))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const r = await reversePayment(req.params.paymentId, { actorId: req.user.id, reason: req.body?.reason || null });
+    await recordAudit({ actorUserId: req.user.id, action: "payment.reverse", entityType: "payment", entityId: req.params.paymentId, metadata: r });
+    res.json(r);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "payment_reverse_failed" });
+  }
+});
+
+// Cliente informa una transferencia (queda 'informed', sin crédito hasta que
+// Ventas/Administración la confirme). No puede confirmar ni aplicar.
+router.post("/orders/:orderId/payments/inform", requireFlag("financial"), requireApproved, async (req, res) => {
+  if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
+  const own = await pool.query(`select user_id from portal.quote_requests where id = $1`, [req.params.orderId]);
+  if (!own.rows[0]) return res.status(404).json({ error: "not_found" });
+  if (own.rows[0].user_id !== req.user.id) return res.status(403).json({ error: "forbidden" });
+  const b = req.body || {};
+  try {
+    const payment = await createPayment({
+      clientId: req.user.id, orderId: req.params.orderId, method: "bank_transfer", amount: b.amount,
+      paymentDate: b.paymentDate || null, reference: b.reference || null, notes: b.notes || null,
+      documentId: b.documentId && UUID_RE.test(String(b.documentId)) ? b.documentId : null,
+      status: "informed", createdBy: req.user.id
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "payment.inform", entityType: "payment", entityId: payment.id, after: { amount: payment.amount } });
+    res.status(201).json({ payment: { id: payment.id, status: payment.status, amount: payment.amount } });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error); res.status(500).json({ error: "payment_inform_failed" });
   }
 });
 

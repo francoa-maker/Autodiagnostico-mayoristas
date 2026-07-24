@@ -1302,6 +1302,22 @@ async function renderQuoteEditor(id) {
       </details>
     </div>
 
+    <div id="paymentsSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">Pagos</h4>
+      <div id="paymentsList" style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Cargando pagos...</div>
+      <details>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--brand-red,#c8102e)">+ Registrar pago</summary>
+        <div class="form-grid" style="margin-top:10px">
+          <label>Método<select id="payMethod"><option value="cash">Efectivo</option><option value="bank_transfer">Transferencia</option><option value="other">Otro</option></select></label>
+          <label>Monto<input id="payAmount" type="number" step="0.01"></label>
+          <label>Referencia<input id="payRef" placeholder="N° operación"></label>
+          <label>Fecha<input id="payDate" type="date"></label>
+          <label class="full" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="payInformed"> Solo informar (no confirmar todavía)</label>
+          <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn-primary" id="payCreateBtn" type="button">Registrar pago</button><span id="payMsg" style="font-size:12px"></span></div>
+        </div>
+      </details>
+    </div>
+
     <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Documentos del pedido</h4>
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
@@ -1476,6 +1492,10 @@ async function wireFinance(id, quote) {
 
   loadInvoices(id);
 
+  // Pagos (Tanda 3) — parte del módulo financiero.
+  document.getElementById("paymentsSection").hidden = false;
+  wirePayments(id);
+
   // Cuenta corriente (Tanda 2), si el módulo está prendido.
   if (status.currentAccount) {
     document.getElementById("accountSection").hidden = false;
@@ -1497,6 +1517,106 @@ async function wireFinance(id, quote) {
   }
 }
 
+const PAY_METHOD_LABEL = { cash: "Efectivo", bank_transfer: "Transferencia", echeq: "eCheq", current_account: "Cta. corriente", customer_credit: "Saldo a favor", other: "Otro" };
+const PAY_STATUS_LABEL = { draft: "Borrador", informed: "Informado", confirmed: "Confirmado", pending_accreditation: "Pend. acreditación", rejected: "Rechazado", reversed: "Reversado" };
+
+async function loadPayments(id) {
+  const box = document.getElementById("paymentsList");
+  if (!box) return;
+  try {
+    const { payments } = await fetchJson(`/api/admin/orders/${id}/payments`);
+    if (!payments.length) { box.textContent = "Sin pagos registrados."; return; }
+    box.innerHTML = payments.map((p) => {
+      const applied = Number(p.applied_amount || 0);
+      const remaining = Math.max(0, Number(p.amount) - applied);
+      const canConfirm = ["draft", "informed"].includes(p.status);
+      const canApply = p.status === "confirmed" && remaining > 0.005;
+      const canReverse = p.status === "confirmed";
+      return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0${p.status === "reversed" ? ";opacity:.55" : ""}">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="flex:1">${PAY_METHOD_LABEL[p.payment_method] || p.payment_method} · ${money(p.amount)} · <b>${PAY_STATUS_LABEL[p.status] || p.status}</b> · aplicado ${money(applied)}/${money(p.amount)}${p.reference_number ? " · ref " + esc(p.reference_number) : ""}</span>
+          ${canConfirm ? `<button class="link-btn" data-payconfirm="${p.id}">Confirmar</button>` : ""}
+          ${canApply ? `<button class="link-btn" data-payapply="${p.id}" data-rem="${remaining}">Aplicar</button>` : ""}
+          ${canReverse ? `<button class="link-btn ghost" data-payreverse="${p.id}">Reversar</button>` : ""}
+        </div></div>`;
+    }).join("");
+    box.querySelectorAll("[data-payconfirm]").forEach((b) => b.addEventListener("click", async () => {
+      try { await postJson(`/api/admin/payments/${b.dataset.payconfirm}/confirm`, {}); loadPayments(id); loadAccount(id); loadInvoices(id); }
+      catch (e) { alert("No se pudo confirmar: " + (e.body?.detail || e.message)); }
+    }));
+    box.querySelectorAll("[data-payreverse]").forEach((b) => b.addEventListener("click", async () => {
+      const reason = prompt("Motivo de la reversa del pago:"); if (reason === null) return;
+      try { await postJson(`/api/admin/payments/${b.dataset.payreverse}/reverse`, { reason }); loadPayments(id); loadAccount(id); loadInvoices(id); }
+      catch (e) { alert("No se pudo reversar: " + (e.body?.detail || e.message)); }
+    }));
+    box.querySelectorAll("[data-payapply]").forEach((b) => b.addEventListener("click", () => openApplyModal(id, b.dataset.payapply, Number(b.dataset.rem))));
+  } catch (error) { box.textContent = "No se pudieron cargar los pagos: " + error.message; }
+}
+
+// Modal para aplicar un pago a las cuotas impagas (prefill FIFO hasta el disponible).
+async function openApplyModal(orderId, paymentId, remaining) {
+  const { invoices } = await fetchJson(`/api/admin/orders/${orderId}/invoices`);
+  const pend = [];
+  for (const inv of invoices) {
+    if (inv.voided_at) continue;
+    for (const it of inv.installments) {
+      const debt = Number(it.amount) - Number(it.paid_amount);
+      if (debt > 0.005) pend.push({ id: it.id, label: `${inv.invoice_type} ${inv.point_of_sale || ""}-${inv.invoice_number || "s/n"} · cuota ${it.installment_number} (vence ${it.due_date})`, debt });
+    }
+  }
+  if (!pend.length) { alert("No hay cuotas impagas para aplicar."); return; }
+  let left = remaining;
+  const rows = pend.map((c) => {
+    const pre = Math.min(left, c.debt); left = Math.round((left - pre) * 100) / 100;
+    return `<label class="full" style="display:grid;grid-template-columns:1fr 120px;gap:8px;align-items:center">
+      <span style="font-size:12.5px">${esc(c.label)} · debe ${money(c.debt)}</span>
+      <input type="number" step="0.01" class="apply-amt" data-inst="${c.id}" data-debt="${c.debt}" value="${pre || ""}">
+    </label>`;
+  }).join("");
+  openModal(`
+    <div class="modal-head"><h3>Aplicar pago</h3><button class="modal-x" data-close>&times;</button></div>
+    <p style="font-size:12.5px;color:var(--muted)">Disponible del pago: <b>${money(remaining)}</b>. Ajustá los montos por cuota.</p>
+    <form id="applyForm" class="form-grid">${rows}
+      <div class="full" style="display:flex;gap:10px;justify-content:flex-end;align-items:center">
+        <span id="applyMsg" style="font-size:12px;margin-right:auto"></span>
+        <button type="button" class="link-btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn-primary">Aplicar</button>
+      </div>
+    </form>`);
+  document.getElementById("applyForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const allocations = [...ev.target.querySelectorAll(".apply-amt")].map((i) => ({ installmentId: i.dataset.inst, amount: Number(i.value) })).filter((a) => a.amount > 0);
+    const msg = document.getElementById("applyMsg");
+    if (!allocations.length) { msg.textContent = "Ingresá al menos un monto."; return; }
+    try {
+      await postJson(`/api/admin/payments/${paymentId}/apply`, { allocations });
+      closeModal(); loadPayments(orderId); loadAccount(orderId); loadInvoices(orderId);
+    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
+  });
+}
+
+function wirePayments(id) {
+  document.getElementById("payDate").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("payCreateBtn").addEventListener("click", async () => {
+    const msg = document.getElementById("payMsg");
+    const amount = Number(document.getElementById("payAmount").value);
+    if (!Number.isFinite(amount) || amount <= 0) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Monto inválido."; return; }
+    msg.style.color = "var(--muted)"; msg.textContent = "Registrando...";
+    try {
+      await postJson(`/api/admin/orders/${id}/payments`, {
+        method: document.getElementById("payMethod").value, amount,
+        reference: document.getElementById("payRef").value.trim() || null,
+        paymentDate: document.getElementById("payDate").value || null,
+        status: document.getElementById("payInformed").checked ? "informed" : "confirmed"
+      });
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "Pago registrado ✓";
+      document.getElementById("payAmount").value = ""; document.getElementById("payRef").value = "";
+      loadPayments(id); loadAccount(id); loadInvoices(id);
+    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
+  });
+  loadPayments(id);
+}
+
 const MOVEMENT_LABEL = {
   invoice_debit: "Factura (débito)", payment_credit: "Pago (crédito)", credit_note: "Nota de crédito",
   debit_adjustment: "Ajuste débito", credit_adjustment: "Ajuste crédito", balance_applied: "Saldo aplicado",
@@ -1506,6 +1626,8 @@ function balChip(label, value, color) {
   return `<span style="background:#f6f6f6;border:1px solid var(--border,#e0e0e0);border-radius:8px;padding:6px 10px"><span style="color:var(--muted,#888)">${label}</span> <b style="color:${color || "var(--catalog-dark,#111)"}">${money(value)}</b></span>`;
 }
 async function loadAccount(id) {
+  const section = document.getElementById("accountSection");
+  if (!section || section.hidden) return; // módulo de cuenta corriente apagado
   const balBox = document.getElementById("accountBalance");
   const movBox = document.getElementById("accountMovements");
   if (!balBox) return;
