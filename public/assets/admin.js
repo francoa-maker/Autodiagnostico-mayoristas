@@ -1253,6 +1253,40 @@ async function renderQuoteEditor(id) {
         : `Para enviar desde tu casilla necesitás <a href="/auth/google/gmail">conectar tu Gmail</a> una vez.`}
     </div>
 
+    <div id="financeSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      <h4 style="margin:0 0 8px">Facturación</h4>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px">Condición de pago
+          <select id="finPayCond" class="admin-search" style="min-width:180px"></select>
+        </label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="finSaveDefault"> Guardar como habitual del cliente</label>
+        <button class="link-btn" id="finPayCondSave" type="button">Guardar condición</button>
+        <span id="finCondMsg" style="font-size:12px"></span>
+      </div>
+      <div id="finInvoicesList" style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Cargando facturas...</div>
+      <details>
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--brand-red,#c8102e)">+ Cargar factura</summary>
+        <div class="form-grid" style="margin-top:10px">
+          <label>Tipo<select id="finType"></select></label>
+          <label>Punto de venta<input id="finPos" placeholder="0001"></label>
+          <label>Número<input id="finNumber" placeholder="00000123"></label>
+          <label>Fecha de emisión<input id="finIssueDate" type="date"></label>
+          <label>Total<input id="finTotal" type="number" step="0.01" placeholder="0.00"></label>
+          <label>PDF (opcional)<input id="finFile" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.webp,image/*"></label>
+          <div class="full">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Vencimientos (si dejás uno solo = pago único por el total). La suma debe dar el total.</div>
+            <div id="finInstallments"></div>
+            <button class="link-btn ghost" id="finAddInst" type="button">+ Agregar vencimiento</button>
+          </div>
+          <label class="full" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="finVisible"> Visible para el cliente</label>
+          <div class="full" style="display:flex;gap:10px;align-items:center">
+            <button class="btn-primary" id="finCreateBtn" type="button">Cargar factura</button>
+            <span id="finMsg" style="font-size:12px"></span>
+          </div>
+        </div>
+      </details>
+    </div>
+
     <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Documentos del pedido</h4>
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
@@ -1310,6 +1344,122 @@ async function renderQuoteEditor(id) {
   wireQuoteItemsDnD(id);
   wireAddProduct(id);
   wireDocuments(id);
+  wireFinance(id, quote);
+}
+
+// ==================== Facturación (Tanda 1, detrás de feature flag) ====================
+const PAY_COND_LABEL = {
+  contado: "Contado", transferencia_anticipada: "Transferencia anticipada", efectivo: "Efectivo",
+  cuenta_corriente: "Cuenta corriente", echeq: "eCheq", mixto: "Pago mixto", personalizado: "Personalizada"
+};
+const INST_STATUS_LABEL = { pending: "Pendiente", partially_paid: "Parcial", paid: "Pagada", overdue: "Vencida", cancelled: "Cancelada" };
+
+function finInstallmentRow(date, amount) {
+  return `<div class="fin-inst-row" style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+    <input type="date" class="fin-inst-date" value="${date || ""}" style="font-size:12.5px">
+    <input type="number" step="0.01" class="fin-inst-amount" value="${amount ?? ""}" placeholder="monto" style="width:120px;font-size:12.5px">
+    <button class="link-btn ghost fin-inst-del" type="button">✕</button>
+  </div>`;
+}
+
+async function loadInvoices(id) {
+  const box = document.getElementById("finInvoicesList");
+  if (!box) return;
+  try {
+    const { invoices } = await fetchJson(`/api/admin/orders/${id}/invoices`);
+    if (!invoices.length) { box.textContent = "Sin facturas cargadas."; return; }
+    box.innerHTML = invoices.map((inv) => {
+      const insts = (inv.installments || []).map((it) =>
+        `<div style="margin-left:12px">· Cuota ${it.installment_number}: vence ${it.due_date} · ${money(it.amount)} · <b>${INST_STATUS_LABEL[it.display_status] || it.display_status}</b></div>`
+      ).join("");
+      return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0${inv.voided_at ? ";opacity:.5" : ""}">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="flex:1"><b>${esc(inv.invoice_type)}</b> ${esc(inv.point_of_sale || "")}-${esc(inv.invoice_number || "s/n")} · ${money(inv.total_amount)} · emitida ${inv.issue_date}${inv.voided_at ? " · <span style='color:#c8102e'>ANULADA</span>" : ""}${inv.visible_to_customer ? " · 👁 cliente" : ""}</span>
+          ${inv.document_id ? `<button class="link-btn" data-doc="${inv.document_id}">Ver PDF</button>` : ""}
+          ${inv.voided_at ? "" : `<button class="link-btn ghost" data-void="${inv.id}">Anular</button>`}
+        </div>${insts}</div>`;
+    }).join("");
+    box.querySelectorAll("[data-void]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm("¿Anular esta factura?")) return;
+      try { await postJson(`/api/admin/invoices/${b.dataset.void}/void`, {}); loadInvoices(id); }
+      catch (e) { alert("No se pudo anular: " + (e.body?.detail || e.message)); }
+    }));
+    box.querySelectorAll("[data-doc]").forEach((b) => b.addEventListener("click", () => window.open(`/api/documents/${b.dataset.doc}/download`, "_blank")));
+  } catch (error) {
+    box.textContent = "No se pudieron cargar las facturas: " + error.message;
+  }
+}
+
+async function wireFinance(id, quote) {
+  const section = document.getElementById("financeSection");
+  if (!section) return;
+  let status;
+  try { status = await fetchJson("/api/admin/finance/status"); } catch { return; }
+  if (!status.financial) return; // módulo apagado: el panel queda oculto
+  section.hidden = false;
+
+  // Condición de pago
+  const cond = document.getElementById("finPayCond");
+  cond.innerHTML = '<option value="">(sin definir)</option>' + status.paymentConditions.map((c) => `<option value="${c}"${quote?.payment_condition === c ? " selected" : ""}>${PAY_COND_LABEL[c] || c}</option>`).join("");
+  document.getElementById("finPayCondSave").addEventListener("click", async () => {
+    const msg = document.getElementById("finCondMsg");
+    try {
+      await patchJson(`/api/admin/orders/${id}/payment-condition`, { condition: cond.value || null, saveAsClientDefault: document.getElementById("finSaveDefault").checked });
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "Guardada ✓";
+    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
+  });
+
+  // Form de carga
+  document.getElementById("finType").innerHTML = status.invoiceTypes.map((t) => `<option value="${t}"${t === "B" ? " selected" : ""}>${t}</option>`).join("");
+  document.getElementById("finIssueDate").value = new Date().toISOString().slice(0, 10);
+  const instBox = document.getElementById("finInstallments");
+  instBox.innerHTML = finInstallmentRow(new Date().toISOString().slice(0, 10), "");
+  document.getElementById("finAddInst").addEventListener("click", () => instBox.insertAdjacentHTML("beforeend", finInstallmentRow("", "")));
+  instBox.addEventListener("click", (e) => { if (e.target.closest(".fin-inst-del") && instBox.querySelectorAll(".fin-inst-row").length > 1) e.target.closest(".fin-inst-row").remove(); });
+
+  document.getElementById("finCreateBtn").addEventListener("click", async () => {
+    const msg = document.getElementById("finMsg");
+    const total = Number(document.getElementById("finTotal").value);
+    if (!Number.isFinite(total) || total <= 0) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Total inválido."; return; }
+    const installments = [...instBox.querySelectorAll(".fin-inst-row")].map((r) => ({
+      dueDate: r.querySelector(".fin-inst-date").value,
+      amount: Number(r.querySelector(".fin-inst-amount").value)
+    })).filter((i) => i.dueDate || i.amount);
+    // si hay una sola cuota sin monto, se asume el total
+    if (installments.length === 1 && (!installments[0].amount || Number.isNaN(installments[0].amount))) installments[0].amount = total;
+    msg.style.color = "var(--muted)"; msg.textContent = "Cargando...";
+    try {
+      // subir PDF si hay
+      let documentId = null;
+      const file = document.getElementById("finFile").files[0];
+      if (file) {
+        const qs = new URLSearchParams({ documentType: "factura", orderId: id, filename: file.name, visibleToCustomer: String(document.getElementById("finVisible").checked) });
+        const r = await fetch(`/api/admin/documents?${qs}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+        const b = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(b.detail || b.error || "no se pudo subir el PDF");
+        documentId = b.document?.id || null;
+      }
+      await postJson(`/api/admin/orders/${id}/invoices`, {
+        invoiceType: document.getElementById("finType").value,
+        pointOfSale: document.getElementById("finPos").value.trim() || null,
+        invoiceNumber: document.getElementById("finNumber").value.trim() || null,
+        issueDate: document.getElementById("finIssueDate").value || null,
+        totalAmount: total,
+        installments,
+        visibleToCustomer: document.getElementById("finVisible").checked,
+        documentId
+      });
+      msg.style.color = "var(--success,#137333)"; msg.textContent = "Factura cargada ✓";
+      document.getElementById("finTotal").value = ""; document.getElementById("finNumber").value = "";
+      document.getElementById("finFile").value = "";
+      instBox.innerHTML = finInstallmentRow(new Date().toISOString().slice(0, 10), "");
+      loadInvoices(id);
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo cargar: " + (error.body?.detail || error.message);
+    }
+  });
+
+  loadInvoices(id);
 }
 
 // ==================== Documentos del pedido (Google Drive) ====================

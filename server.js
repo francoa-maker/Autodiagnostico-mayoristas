@@ -9,6 +9,7 @@ import quotesRouter from "./src/routes/quotes.js";
 import adminRouter from "./src/routes/admin.js";
 import profileRouter from "./src/routes/profile.js";
 import documentsRouter from "./src/routes/documents.js";
+import financeRouter from "./src/routes/finance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -58,8 +59,12 @@ app.use(wrapRouterErrors(authRouter));
 app.use("/api", wrapRouterErrors(profileRouter));
 app.use("/api", wrapRouterErrors(catalogRouter));
 app.use("/api", wrapRouterErrors(quotesRouter));
-app.use("/api", wrapRouterErrors(adminRouter));
 app.use("/api", wrapRouterErrors(documentsRouter));
+app.use("/api", wrapRouterErrors(financeRouter));
+// adminRouter va ÚLTIMO: usa router.use(requireAdmin) global, así que si se
+// montara antes interceptaría (con 403 admin_required) cualquier ruta /api/*
+// de cliente no resuelta por un router previo (documentos, facturas, etc.).
+app.use("/api", wrapRouterErrors(adminRouter));
 
 app.use("/assets", express.static(path.join(publicDir, "assets")));
 
