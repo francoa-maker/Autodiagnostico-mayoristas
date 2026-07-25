@@ -2,6 +2,8 @@ import express from "express";
 import { pool } from "../db.js";
 import { requireApproved } from "../middleware.js";
 import { getStockForSkus } from "../stock/stockRepository.js";
+import { resolveWholesaleUnit } from "../pricing.js";
+import { renderCatalogPdfHtml } from "../catalogPdf.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -120,6 +122,55 @@ router.get("/catalog/products", async (req, res) => {
   });
 
   res.json({ products });
+});
+
+// Catálogo imprimible (PDF) para el cliente: HTML autocontenido con marca de
+// agua por usuario y fecha de emisión. Mismos precios que ve en el catálogo
+// (mayorista 1u resuelto + PVP). Se descarga con "Guardar como PDF".
+router.get("/catalog/pdf", async (req, res) => {
+  const productsResult = await pool.query(
+    `select p.id, p.sku, p.sku_normalized, p.name, p.brand, p.category, p.image_url,
+            coalesce(
+              jsonb_object_agg(pp.tier, jsonb_build_object('state', pp.state, 'amount', pp.amount, 'currency', pp.currency, 'label', pp.custom_label))
+                filter (where pp.tier is not null),
+              '{}'::jsonb
+            ) as prices
+     from portal.products p
+     left join portal.product_prices pp on pp.product_id = p.id
+     where active and visible
+     group by p.id
+     order by p.sort_order, p.name`
+  );
+  const stockMap = await getStockForSkus(productsResult.rows.map((r) => r.sku_normalized));
+  const [brandOrderRow, companyRow] = await Promise.all([
+    pool.query(`select value from portal.app_settings where key = 'brand_order'`),
+    pool.query(`select value from portal.app_settings where key = 'company_profile'`)
+  ]);
+  const brandOrder = brandOrderRow.rows[0]?.value || [];
+  const company = companyRow.rows[0]?.value || {};
+
+  const byBrand = new Map();
+  for (const row of productsResult.rows) {
+    const stock = stockMap.get(row.sku_normalized) || { pvp: null };
+    const pvp = stock.pvp != null ? { state: "value", amount: stock.pvp, currency: "ARS" } : { state: "hidden" };
+    const wholesale = resolveWholesaleUnit(row.prices, stock.pvp, 1);
+    const brand = row.brand || "Sin marca";
+    if (!byBrand.has(brand)) byBrand.set(brand, []);
+    byBrand.get(brand).push({ sku: row.sku, name: row.name, imageUrl: row.image_url, pvp, wholesale });
+  }
+  // Orden de marcas: primero el orden manual del admin, luego alfabético.
+  const pos = new Map(brandOrder.map((b, i) => [b, i]));
+  const groups = [...byBrand.entries()]
+    .sort((a, b) => {
+      const pa = pos.has(a[0]) ? pos.get(a[0]) : Infinity;
+      const pb = pos.has(b[0]) ? pos.get(b[0]) : Infinity;
+      return pa !== pb ? pa - pb : a[0].localeCompare(b[0], "es");
+    })
+    .map(([brand, products]) => ({ brand, products }));
+
+  const html = renderCatalogPdfHtml({ client: req.user, groups, company, issueDate: new Date() });
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
 });
 
 // --- Favoritos por usuario -------------------------------------------------
