@@ -1,6 +1,6 @@
 import express from "express";
 import { pool, withTransaction } from "../db.js";
-import { requireAdmin } from "../middleware.js";
+import { requireAdmin, requireCapability } from "../middleware.js";
 import { getStockSourceHealth, getStockForSkus } from "../stock/stockRepository.js";
 import { recordAudit } from "../audit.js";
 import { normalizeSku } from "../skuNormalize.js";
@@ -14,6 +14,16 @@ import { ROLES, normalizeRole, isSuperadmin, isAdminStaff } from "../permissions
 
 const router = express.Router();
 router.use(requireAdmin);
+
+// Gating por sector encima de requireAdmin (que sólo exige personal aprobado).
+// Las LECTURAS quedan abiertas a todo el personal (la nav de cada rol decide qué
+// se muestra, y facturación necesita leer pedidos/clientes). Las MUTACIONES de
+// cada sector se cierran por capability: así administración (solo Facturación)
+// no puede tocar catálogo, cotizaciones ni usuarios aunque llame la API directo.
+// superadmin tiene "*" y pasa siempre.
+const canCatalog = requireCapability("catalog.manage");
+const canQuotes = requireCapability("quotes.manage");
+const canClients = requireCapability("clients.manage");
 
 // ------------------------------------------------------------------ helpers
 
@@ -125,7 +135,7 @@ router.get("/admin/users", async (req, res) => {
 // (ej. un mayorista que pide por teléfono). Se crea con google_sub NULL: si
 // ese email inicia sesión con Google más adelante, findOrCreateUser
 // (src/auth.js) vincula esta misma ficha en vez de duplicarla.
-router.post("/admin/users", async (req, res) => {
+router.post("/admin/users", canClients, async (req, res) => {
   const { email, displayName, companyName, role, status } = req.body || {};
   const cleanEmail = String(email || "").trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes("@")) return res.status(400).json({ error: "invalid_email" });
@@ -158,7 +168,7 @@ router.get("/admin/users/:id/profile", async (req, res) => {
   res.json({ profile: r.rows[0], complete: profileComplete(r.rows[0]) });
 });
 
-router.put("/admin/users/:id/profile", async (req, res) => {
+router.put("/admin/users/:id/profile", canClients, async (req, res) => {
   const exists = await pool.query(`select id from portal.users where id = $1`, [req.params.id]);
   if (!exists.rows[0]) return res.status(404).json({ error: "not_found" });
   const profile = await saveUserProfile(req.params.id, req.body?.profile || {});
@@ -179,7 +189,7 @@ router.get("/admin/users/months", async (req, res) => {
 // primero se borran sus cotizaciones (cascada a items/revisiones) y sesiones,
 // todo en una transacción. Mismas protecciones que el PATCH: no borrarse a
 // uno mismo ni al último admin.
-router.delete("/admin/users/:id", async (req, res) => {
+router.delete("/admin/users/:id", canClients, async (req, res) => {
   if (req.params.id === req.user.id) return res.status(400).json({ error: "cannot_delete_self", detail: "No podés borrar tu propia cuenta." });
   const target = await pool.query(`select id, role, status, email from portal.users where id = $1`, [req.params.id]);
   if (!target.rows[0]) return res.status(404).json({ error: "not_found" });
@@ -201,10 +211,15 @@ router.delete("/admin/users/:id", async (req, res) => {
   }
 });
 
-router.patch("/admin/users/:id", async (req, res) => {
+router.patch("/admin/users/:id", canClients, async (req, res) => {
   const { status, role, rejectionReason } = req.body || {};
   if (status != null && !USER_STATUSES.includes(status)) return res.status(400).json({ error: "invalid_status" });
   if (role != null && !USER_ROLES.includes(role)) return res.status(400).json({ error: "invalid_role" });
+  // Cambiar ROLES es exclusivo de superadmin (evita escalada de privilegios:
+  // que un rol con clients.manage se ascienda a sí mismo o a otro).
+  if (role != null && !isSuperadmin(req.user.role)) {
+    return res.status(403).json({ error: "forbidden", detail: "Solo superadmin puede cambiar roles." });
+  }
 
   const before = await pool.query(`select * from portal.users where id = $1`, [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
@@ -288,7 +303,7 @@ router.get("/admin/brand-logos", async (req, res) => {
   res.json({ logos: r.rows[0]?.value || {} });
 });
 
-router.put("/admin/brand-logos", async (req, res) => {
+router.put("/admin/brand-logos", canCatalog, async (req, res) => {
   const incoming = req.body?.logos && typeof req.body.logos === "object" ? req.body.logos : {};
   // Normaliza: sólo entradas con URL no vacía.
   const logos = {};
@@ -335,7 +350,7 @@ router.get("/admin/catalog/meta", async (req, res) => {
 
 // Guarda el orden manual de marcas y/o categorías (arrays de nombres) en
 // app_settings. Aditivo, sin migración; se refleja en el catálogo del cliente.
-router.put("/admin/catalog/order", async (req, res) => {
+router.put("/admin/catalog/order", canCatalog, async (req, res) => {
   const brands = Array.isArray(req.body?.brands) ? req.body.brands.map((x) => String(x).trim()).filter(Boolean) : null;
   const categories = Array.isArray(req.body?.categories) ? req.body.categories.map((x) => String(x).trim()).filter(Boolean) : null;
   if (!brands && !categories) return res.status(400).json({ error: "nothing_to_save" });
@@ -358,7 +373,7 @@ router.put("/admin/catalog/order", async (req, res) => {
 // sort_order, name) reemplazando las posiciones que ocupaban esos productos, y
 // se renumera todo densamente. Así el orden arrastrado persiste sin colisiones
 // y los productos fuera del filtro conservan su posición relativa.
-router.put("/admin/products/order", async (req, res) => {
+router.put("/admin/products/order", canCatalog, async (req, res) => {
   const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds : [];
   if (!orderedIds.length) return res.status(400).json({ error: "empty" });
   if (!orderedIds.every((id) => UUID_RE.test(String(id)))) return res.status(400).json({ error: "invalid_id" });
@@ -390,7 +405,7 @@ router.put("/admin/products/order", async (req, res) => {
 // Renombrar/fusionar una marca: pasa todos los productos de `from` a `to`. Si
 // `to` ya existe, es una fusión. Migra también el logo de marca (si el destino
 // no tenía uno propio) y elimina la clave vieja del mapa de logos.
-router.post("/admin/catalog/rename-brand", async (req, res) => {
+router.post("/admin/catalog/rename-brand", canCatalog, async (req, res) => {
   const from = String(req.body?.from ?? "").trim();
   const to = String(req.body?.to ?? "").trim();
   if (!from || !to) return res.status(400).json({ error: "from_and_to_required" });
@@ -424,7 +439,7 @@ router.post("/admin/catalog/rename-brand", async (req, res) => {
 });
 
 // Renombrar/fusionar una categoría (mismo criterio que la marca).
-router.post("/admin/catalog/rename-category", async (req, res) => {
+router.post("/admin/catalog/rename-category", canCatalog, async (req, res) => {
   const from = String(req.body?.from ?? "").trim();
   const to = String(req.body?.to ?? "").trim();
   if (!from || !to) return res.status(400).json({ error: "from_and_to_required" });
@@ -444,7 +459,7 @@ router.post("/admin/catalog/rename-category", async (req, res) => {
 
 // Reasignación masiva: cambia marca y/o categoría de un conjunto de productos
 // (selección múltiple en el editor). Sólo se aplican los campos provistos.
-router.post("/admin/products/bulk-assign", async (req, res) => {
+router.post("/admin/products/bulk-assign", canCatalog, async (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
   if (!ids.length) return res.status(400).json({ error: "empty" });
   if (!ids.every((id) => UUID_RE.test(id))) return res.status(400).json({ error: "invalid_id" });
@@ -473,7 +488,7 @@ router.post("/admin/products/bulk-assign", async (req, res) => {
 // are optional; each provided tier is written to portal.product_prices in
 // the same transaction. SKU is normalized the same way the legacy importer
 // does, so it lines up with the stock source's SKU column.
-router.post("/admin/products", async (req, res) => {
+router.post("/admin/products", canCatalog, async (req, res) => {
   const { sku, name, brand, category, imageUrl, publicationUrl, note, visible, sortOrder, prices, ivaRate } = req.body || {};
   if (!sku || !String(sku).trim()) return res.status(400).json({ error: "sku_required" });
   if (!name || !String(name).trim()) return res.status(400).json({ error: "name_required" });
@@ -534,7 +549,7 @@ router.post("/admin/products", async (req, res) => {
   }
 });
 
-router.patch("/admin/products/:id", async (req, res) => {
+router.patch("/admin/products/:id", canCatalog, async (req, res) => {
   const { sku, sortOrder, visible, name, brand, category, imageUrl, publicationUrl, note, ivaRate } = req.body || {};
   const sortCheck = asNumber(sortOrder);
   if (!sortCheck.ok) return res.status(400).json({ error: "invalid_number", field: "sortOrder" });
@@ -594,7 +609,7 @@ router.patch("/admin/products/:id", async (req, res) => {
 // Soft delete: keeps the row (and any quote_items referencing it) but drops
 // it from the catalog and the admin editor list. Reversible by re-creating
 // the same SKU (see POST above, which revives inactive rows).
-router.delete("/admin/products/:id", async (req, res) => {
+router.delete("/admin/products/:id", canCatalog, async (req, res) => {
   const before = await pool.query(`select * from portal.products where id = $1`, [req.params.id]);
   if (!before.rows[0]) return res.status(404).json({ error: "not_found" });
   await pool.query(`update portal.products set active = false, updated_by = $2, updated_at = now() where id = $1`, [req.params.id, req.user.id]);
@@ -602,7 +617,7 @@ router.delete("/admin/products/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
-router.put("/admin/products/:id/prices/:tier", async (req, res) => {
+router.put("/admin/products/:id/prices/:tier", canCatalog, async (req, res) => {
   const { tier } = req.params;
   if (tier === "pvp") return res.status(400).json({ error: "pvp_is_read_only", detail: "PVP se lee en vivo desde Supabase, no se edita desde el portal." });
   if (!["one", "four", "eight"].includes(tier)) return res.status(400).json({ error: "invalid_tier" });
@@ -704,7 +719,7 @@ router.get("/admin/quotes/months", async (req, res) => {
 // no que la pidió el cliente desde el catálogo. Sin items al crearse: el
 // admin los agrega desde el editor de detalle (mismo POST .../items que ya
 // usa para sumar productos a una cotización existente).
-router.post("/admin/quotes", async (req, res) => {
+router.post("/admin/quotes", canQuotes, async (req, res) => {
   const { userId } = req.body || {};
   if (!userId || !UUID_RE.test(String(userId))) return res.status(400).json({ error: "invalid_user_id" });
   const user = await pool.query(`select id from portal.users where id = $1`, [userId]);
@@ -721,7 +736,7 @@ router.post("/admin/quotes", async (req, res) => {
 });
 
 // Borrado definitivo de una cotización (cascada a items y revisiones).
-router.delete("/admin/quotes/:id", async (req, res) => {
+router.delete("/admin/quotes/:id", canQuotes, async (req, res) => {
   const del = await pool.query(`delete from portal.quote_requests where id = $1 returning request_number`, [req.params.id]);
   if (!del.rows[0]) return res.status(404).json({ error: "not_found" });
   await recordAudit({ actorUserId: req.user.id, action: "quote.delete", entityType: "quote_request", entityId: req.params.id, before: { request_number: del.rows[0].request_number } });
@@ -769,7 +784,7 @@ router.get("/admin/quotes/:id", async (req, res) => {
 // Reordenar las líneas de una cotización (drag-and-drop en el editor). Recibe
 // el nuevo orden completo de ids; escribe sort_order = posición. Acotado al
 // quote para que no se puedan tocar items de otra cotización.
-router.put("/admin/quotes/:id/items/order", async (req, res) => {
+router.put("/admin/quotes/:id/items/order", canQuotes, async (req, res) => {
   const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map(String) : [];
   if (!orderedIds.length) return res.status(400).json({ error: "empty" });
   if (!orderedIds.every((x) => UUID_RE.test(x))) return res.status(400).json({ error: "invalid_id" });
@@ -791,7 +806,7 @@ router.put("/admin/quotes/:id/items/order", async (req, res) => {
 
 // Header-level edits: status, adjustments (discount/shipping/surcharge/tax),
 // notes. Totals are recomputed from the adjustments in the same transaction.
-router.patch("/admin/quotes/:id", async (req, res) => {
+router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
   const { status, discount, discountType, shipping, surcharge, adminNotes, publicNotes, currency } = req.body || {};
   if (discountType !== undefined && !["nominal", "percent"].includes(discountType)) {
     return res.status(400).json({ error: "invalid_discount_type" });
@@ -843,7 +858,7 @@ router.patch("/admin/quotes/:id", async (req, res) => {
 // Add a line to an existing quote. Snapshots product identity like the
 // customer submit path does; quoted_unit_price defaults to the product's
 // current tier price for the given quantity unless the admin overrides it.
-router.post("/admin/quotes/:id/items", async (req, res) => {
+router.post("/admin/quotes/:id/items", canQuotes, async (req, res) => {
   const { productId, quantity, unitPrice, ivaRate } = req.body || {};
   if (!productId) return res.status(400).json({ error: "product_required" });
   if (!UUID_RE.test(String(productId))) return res.status(400).json({ error: "invalid_product_id" });
@@ -898,7 +913,7 @@ router.post("/admin/quotes/:id/items", async (req, res) => {
 
 // Edit a line: quantity and/or quoted unit price. Editing the price is the
 // core of the admin quoting flow ("a qué precio compraría cada producto").
-router.put("/admin/quotes/:id/items/:itemId", async (req, res) => {
+router.put("/admin/quotes/:id/items/:itemId", canQuotes, async (req, res) => {
   const { quantity, unitPrice, ivaRate } = req.body || {};
   if (quantity !== undefined && !asNumber(quantity).ok) return res.status(400).json({ error: "invalid_number", field: "quantity" });
   if (!asNumber(unitPrice).ok) return res.status(400).json({ error: "invalid_number", field: "unitPrice" });
@@ -932,7 +947,7 @@ router.put("/admin/quotes/:id/items/:itemId", async (req, res) => {
   }
 });
 
-router.delete("/admin/quotes/:id/items/:itemId", async (req, res) => {
+router.delete("/admin/quotes/:id/items/:itemId", canQuotes, async (req, res) => {
   try {
     await withTransaction(async (client) => {
       const del = await client.query(`delete from portal.quote_items where id = $1 and quote_request_id = $2 returning id`, [req.params.itemId, req.params.id]);
@@ -954,7 +969,7 @@ router.get("/admin/company-profile", async (req, res) => {
   res.json({ profile: await getCompanyProfile() });
 });
 
-router.put("/admin/company-profile", async (req, res) => {
+router.put("/admin/company-profile", canCatalog, async (req, res) => {
   const incoming = req.body?.profile || {};
   const merged = { ...DEFAULT_COMPANY_PROFILE, ...incoming };
   // Normalize addressLines to an array of non-empty strings.
@@ -1016,7 +1031,7 @@ router.get("/admin/quotes/:id/proforma", async (req, res) => {
 // Send the proforma to the client from the vendor's own Gmail mailbox. Requires
 // the admin to have connected Gmail (incremental gmail.send consent). On
 // success the quote is marked 'quoted' and signed by the sender.
-router.post("/admin/quotes/:id/send-proforma", async (req, res) => {
+router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
   if (!req.user.gmail_connected) {
     return res.status(400).json({ error: "gmail_not_connected", detail: "Conectá tu Gmail primero para enviar desde tu casilla." });
   }
@@ -1065,7 +1080,7 @@ router.post("/admin/quotes/:id/send-proforma", async (req, res) => {
 // Envía al depósito la hoja de armado (picking + dirección de entrega) desde
 // la casilla del vendedor. Destinatario: warehouseEmail del perfil de empresa
 // (default joaquin.guerri@) + un correo extra opcional por cotización.
-router.post("/admin/quotes/:id/send-warehouse", async (req, res) => {
+router.post("/admin/quotes/:id/send-warehouse", canQuotes, async (req, res) => {
   if (!req.user.gmail_connected) {
     return res.status(400).json({ error: "gmail_not_connected", detail: "Conectá tu Gmail primero para enviar desde tu casilla." });
   }

@@ -43,6 +43,54 @@ router.get("/finance/status", requireApproved, (req, res) => {
   res.json({ financial: flags.financial, currentAccount: flags.currentAccount, echeq: flags.echeq });
 });
 
+// Lista de trabajo de Facturación: pedidos confirmados listos para facturar/cobrar
+// (cotizados + aceptados; excluye cancelados/rechazados/vencidos). Los ya pagados
+// NO se sacan: quedan con estado "Pagada" para servir de historial. Todo el
+// cálculo (facturado/cobrado/vencido) sale de las tablas, no de campos editables.
+router.get("/admin/finance/orders", requireFlag("financial"), requireCapability("invoices.view"), async (req, res) => {
+  const r = await pool.query(
+    `select q.id, q.request_number, q.status, q.submitted_at, q.quoted_at,
+            u.display_name, u.company_name, u.client_code,
+            coalesce(inv.total_invoiced, 0)   as total_invoiced,
+            coalesce(inv.invoice_count, 0)    as invoice_count,
+            coalesce(pay.total_paid, 0)       as total_paid,
+            coalesce(ov.overdue_count, 0)     as overdue_count
+     from portal.quote_requests q
+     join portal.users u on u.id = q.user_id
+     left join (select order_id, sum(total_amount) as total_invoiced, count(*) as invoice_count
+                from portal.invoices where voided_at is null group by order_id) inv on inv.order_id = q.id
+     left join (select i.order_id, sum(ii.paid_amount) as total_paid
+                from portal.invoice_installments ii join portal.invoices i on i.id = ii.invoice_id
+                where i.voided_at is null group by i.order_id) pay on pay.order_id = q.id
+     left join (select i.order_id, count(*) as overdue_count
+                from portal.invoice_installments ii join portal.invoices i on i.id = ii.invoice_id
+                where i.voided_at is null and ii.due_date < current_date
+                  and ii.status in ('pending','partially_paid','overdue')
+                group by i.order_id) ov on ov.order_id = q.id
+     where q.status in ('quoted','accepted')
+     order by q.quoted_at desc nulls last, q.submitted_at desc`
+  );
+  const EPS = 0.005;
+  const orders = r.rows.map((o) => {
+    const invoiced = Number(o.total_invoiced), paid = Number(o.total_paid);
+    const balance = Math.round((invoiced - paid + Number.EPSILON) * 100) / 100;
+    let payState;
+    if (o.invoice_count === 0) payState = "sin_facturar";
+    else if (paid >= invoiced - EPS) payState = "pagada";
+    else if (o.overdue_count > 0) payState = "vencida";
+    else if (paid > EPS) payState = "parcial";
+    else payState = "a_cobrar";
+    return {
+      id: o.id, request_number: o.request_number, status: o.status,
+      submitted_at: o.submitted_at, quoted_at: o.quoted_at,
+      display_name: o.display_name, company_name: o.company_name, client_code: o.client_code,
+      total_invoiced: invoiced, total_paid: paid, balance, invoice_count: o.invoice_count,
+      overdue_count: o.overdue_count, payState
+    };
+  });
+  res.json({ orders });
+});
+
 // Resumen financiero del pedido + autorización a Logística (Tanda 5).
 router.get("/admin/orders/:orderId/financial-summary", requireFlag("financial"), requireCapability("orders.view"), async (req, res) => {
   if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });

@@ -20,6 +20,8 @@
           <a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a>
           <a data-section="clients"><span class="ic">&#128100;</span>Clientes</a>
           <a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a>
+          <a data-section="billing"><span class="ic">&#129534;</span>Facturación</a>
+          <a data-section="logistics"><span class="ic">&#128666;</span>Logística</a>
           <a data-section="settings"><span class="ic">&#9881;</span>Configuración</a>
         </nav>
         <div class="admin-user">
@@ -198,6 +200,41 @@
               <div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver y editar el detalle.</div>
             </div>
           </div>
+        </div>
+
+        <!-- ==================== FACTURACIÓN ==================== -->
+        <div class="admin-section" id="section-billing" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Facturación</h1>
+              <p>Pedidos confirmados listos para facturar y cobrar</p>
+            </div>
+            <select id="billingFilter" class="admin-search" style="min-width:150px">
+              <option value="all">Todos</option>
+              <option value="por_cobrar">Por cobrar</option>
+              <option value="pagados">Pagados</option>
+            </select>
+          </div>
+          <div class="panel">
+            <div id="billingOrders">Cargando...</div>
+          </div>
+          <div class="panel" style="margin-top:14px">
+            <div id="billingDetailBody" class="empty-row">Elegí un pedido de la lista para facturar y cobrar.</div>
+          </div>
+        </div>
+
+        <!-- ==================== LOGÍSTICA / DEPÓSITO ==================== -->
+        <div class="admin-section" id="section-logistics" hidden>
+          <div class="admin-topline">
+            <div>
+              <h1>Logística / Depósito</h1>
+              <p>Pedidos autorizados para preparar (sin datos de precios)</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div id="logiOrdersAdmin">Cargando...</div>
+          </div>
+          <div id="logiDetailAdmin" style="margin-top:14px"></div>
         </div>
 
         <!-- ==================== CONFIGURACIÓN ==================== -->

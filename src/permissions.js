@@ -30,7 +30,10 @@ const ROLE_CAPABILITIES = {
     "invoices.manage", "invoices.view", "payments.register", "payments.confirm", "payments.apply",
     "payments.reverse", "payments.view", "account.manage", "account.view", "echeq.manage", "echeq.view",
     "documents.upload", "documents.view", "financial.reports.view", "clients.view", "clients.manage",
-    "catalog.manage", "sales.serial_numbers.view"
+    "catalog.manage", "sales.serial_numbers.view",
+    // Ventas también opera Depósito/Logística (preparar + números de serie).
+    "logistics.prepare", "logistics.serial_numbers.view", "logistics.serial_numbers.create",
+    "logistics.serial_numbers.update", "logistics.serial_numbers.remove"
   ],
   administration: [
     "orders.view", "invoices.manage", "invoices.view", "payments.register", "payments.confirm",

@@ -1,4 +1,5 @@
 import { fetchJson, postJson, patchJson, putJson, money, STOCK_LABEL } from "/assets/api.js";
+import { mountLogistics } from "/assets/logistics.js";
 
 function timeAgo(iso) {
   if (!iso) return "-";
@@ -20,13 +21,33 @@ async function deleteJson(url) {
 }
 
 let currentUser = null;
+let CAN_MANAGE_QUOTES = false; // ventas: editar precios/ítems/estado de la cotización
+
+// Normaliza roles legacy en el front (espeja src/permissions.js).
+function roleOf(user) {
+  if (!user) return "client";
+  if (user.role === "admin") return "superadmin";
+  if (user.role === "customer") return "client";
+  return user.role || "client";
+}
+
+// Qué secciones ve cada rol. La seguridad real vive en el backend (capabilities);
+// esto sólo ordena la UI para que cada sector vea lo suyo.
+const SECTIONS_BY_ROLE = {
+  superadmin: ["dashboard", "catalog", "products", "clients", "quotes", "billing", "logistics", "settings"],
+  sales_billing: ["dashboard", "catalog", "products", "clients", "quotes", "billing", "logistics", "settings"],
+  administration: ["billing"],
+  logistics: ["logistics"]
+};
+function allowedSections() { return SECTIONS_BY_ROLE[roleOf(currentUser)] || []; }
 
 async function loadMe() {
   const { user } = await fetchJson("/api/me");
   if (!user) return (location.href = "/login");
-  // Acceso al panel: personal admin (superadmin/sales_billing/administration; 'admin' es legacy).
-  if (!["superadmin", "sales_billing", "administration", "admin"].includes(user.role)) return (location.href = "/");
+  // Acceso al panel: todo el personal interno (incluye logística; 'admin' es legacy).
+  if (!["superadmin", "sales_billing", "administration", "logistics", "admin"].includes(user.role)) return (location.href = "/");
   currentUser = user;
+  CAN_MANAGE_QUOTES = ["superadmin", "sales_billing", "admin"].includes(user.role);
   document.getElementById("adminName").textContent = user.display_name || user.email;
   document.getElementById("adminEmail").textContent = user.email;
 }
@@ -192,6 +213,8 @@ const sectionLoaders = {
   products: loadProducts,
   clients: async () => { await populateMonths("clientMonthFilter", "/api/admin/users/months"); await loadClients(); },
   quotes: async () => { await populateMonths("quoteMonthFilter", "/api/admin/quotes/months"); await loadQuotes(); },
+  billing: loadBillingOrders,
+  logistics: mountLogisticsSection,
   settings: loadCompanyProfile
 };
 const loadedSections = new Set();
@@ -1152,8 +1175,13 @@ function previewTotals({ items, discount, discountType, shipping }) {
   return { itemsGross, discountAmount, ivaGroups, total };
 }
 
-async function renderQuoteEditor(id) {
-  const panel = document.getElementById("quoteDetailBody");
+async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
+  const canEditQuote = CAN_MANAGE_QUOTES; // ventas/superadmin editan; administración: solo finanzas (lectura)
+  // Sólo un editor a la vez: limpio el otro contenedor para no dejar IDs duplicados.
+  ["quoteDetailBody", "billingDetailBody"].forEach((tid) => {
+    if (tid !== targetId) { const el = document.getElementById(tid); if (el) { el.className = "empty-row"; el.textContent = "Elegí un pedido de la lista."; } }
+  });
+  const panel = document.getElementById(targetId);
   panel.className = "";
   panel.innerHTML = "Cargando...";
   const { quote, items } = await fetchJson(`/api/admin/quotes/${id}`);
@@ -1162,7 +1190,8 @@ async function renderQuoteEditor(id) {
 
   const itemRows = items
     .map(
-      (it) => `<tr data-item="${it.id}">
+      (it) => canEditQuote
+        ? `<tr data-item="${it.id}">
         <td class="q-handle-cell"><span class="q-handle" title="Arrastrar para reordenar" aria-hidden="true">⠿</span></td>
         <td><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted)">${esc(it.sku_snapshot)}</span><br>${esc(it.product_name_snapshot)}</td>
         <td><input class="cell-input" data-f="quantity" type="number" min="1" value="${Number(it.quantity)}" style="width:56px"></td>
@@ -1174,21 +1203,32 @@ async function renderQuoteEditor(id) {
           <button class="link-btn ghost" data-action="del-item">Quitar</button>
         </td>
       </tr>`
+        : `<tr>
+        <td><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted)">${esc(it.sku_snapshot)}</span><br>${esc(it.product_name_snapshot)}</td>
+        <td class="num tabular">${Number(it.quantity)}</td>
+        <td class="num">${itemRate(it)}%</td>
+        <td class="num tabular">${itemUnit(it) != null ? money(itemUnit(it), cur) : "-"}</td>
+        <td class="num tabular">${itemUnit(it) != null ? money(itemUnit(it) * Number(it.quantity), cur) : "-"}</td>
+      </tr>`
     )
     .join("");
 
+  const staticTotals = previewTotals({
+    items: items.map((it) => ({ quantity: it.quantity, unit: itemUnit(it), rate: itemRate(it) })),
+    discount: quote.discount, discountType: dtype, shipping: quote.shipping
+  });
   const gmailConnected = currentUser?.gmail_connected;
 
   panel.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div>
-        <h3 style="margin:0">Cotización #${quote.request_number}</h3>
+        <h3 style="margin:0">${canEditQuote ? "Cotización" : "Pedido"} #${quote.request_number}</h3>
         <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${esc(quote.company_name || quote.display_name || quote.email)} · ${esc(quote.email)}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select id="quoteStatus" class="admin-search" style="min-width:140px">
-          ${QUOTE_STATUS.map((s) => `<option value="${s}"${quote.status === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}
-        </select>
+        ${canEditQuote
+          ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${QUOTE_STATUS.map((s) => `<option value="${s}"${quote.status === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
+          : `<span class="status-pill approved">${QUOTE_STATUS_LABEL[quote.status] || quote.status}</span>`}
         <button class="btn-primary" id="proformaBtn">Ver proforma</button>
       </div>
     </div>
@@ -1197,18 +1237,18 @@ async function renderQuoteEditor(id) {
 
     <div style="overflow-x:auto;margin-top:14px">
       <table>
-        <thead><tr><th style="width:22px"></th><th>Producto</th><th>Cant.</th><th>IVA</th><th>Precio unit.</th><th class="num">Importe</th><th></th></tr></thead>
-        <tbody id="quoteItemsBody">${itemRows || '<tr><td colspan="7" class="empty-row">Sin items. Agregá productos abajo.</td></tr>'}</tbody>
+        <thead><tr>${canEditQuote ? '<th style="width:22px"></th>' : ""}<th>Producto</th><th${canEditQuote ? "" : ' class="num"'}>Cant.</th><th${canEditQuote ? "" : ' class="num"'}>IVA</th><th${canEditQuote ? "" : ' class="num"'}>Precio unit.</th><th class="num">Importe</th>${canEditQuote ? "<th></th>" : ""}</tr></thead>
+        <tbody id="quoteItemsBody">${itemRows || `<tr><td colspan="${canEditQuote ? 7 : 5}" class="empty-row">Sin items.</td></tr>`}</tbody>
       </table>
     </div>
 
-    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+    ${canEditQuote ? `<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
       <input type="search" id="addProductSearch" class="admin-search" placeholder="Buscar producto para agregar..." style="flex:1;min-width:200px">
       <div id="addProductResults" class="add-results"></div>
-    </div>
+    </div>` : ""}
 
     <div class="quote-totals">
-      <div class="qt-adjustments">
+      ${canEditQuote ? `<div class="qt-adjustments">
         <label>Descuento
           <div style="display:flex;gap:4px">
             <input id="qDiscount" type="number" step="0.01" value="${Number(quote.discount || 0)}" style="width:88px">
@@ -1219,16 +1259,16 @@ async function renderQuoteEditor(id) {
           </div>
         </label>
         <label>Envío<input id="qShipping" type="number" step="0.01" value="${Number(quote.shipping || 0)}"></label>
-      </div>
+      </div>` : "<div></div>"}
       <div class="qt-summary">
-        <div><span>Subtotal (IVA incl.)</span><b id="qSubtotal">-</b></div>
-        <div><span>Descuento</span><b id="qDiscountShown">-</b></div>
+        <div><span>Subtotal (IVA incl.)</span><b id="qSubtotal">${money(Math.round((staticTotals.itemsGross + Number.EPSILON) * 100) / 100, cur)}</b></div>
+        <div><span>Descuento</span><b id="qDiscountShown">-${money(Math.round((staticTotals.discountAmount + Number.EPSILON) * 100) / 100, cur)}</b></div>
         <div id="qIvaBreakdown"></div>
-        <div class="grand"><span>Total</span><b id="qTotal">-</b></div>
+        <div class="grand"><span>Total</span><b id="qTotal">${money(Math.round((staticTotals.total + Number.EPSILON) * 100) / 100, cur)}</b></div>
       </div>
     </div>
 
-    <label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la proforma)
+    ${canEditQuote ? `<label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la proforma)
       <textarea id="qPublicNotes" rows="2" class="admin-search" style="width:100%;margin-top:4px">${esc(quote.public_notes || "")}</textarea>
     </label>
 
@@ -1245,13 +1285,13 @@ async function renderQuoteEditor(id) {
         <span id="warehouseMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
       </div>
       <div style="font-size:11.5px;color:var(--muted);margin-top:6px">Envía la hoja de armado (productos + dirección de entrega) al depósito desde tu casilla.</div>
-    </div>
+    </div>` : ""}
 
-    <div style="font-size:11.5px;color:var(--muted);margin-top:10px">
+    ${canEditQuote ? `<div style="font-size:11.5px;color:var(--muted);margin-top:10px">
       ${gmailConnected
         ? `Los envíos salen desde tu casilla (${esc(currentUser.gmail_address || currentUser.email)}).`
         : `Para enviar desde tu casilla necesitás <a href="/auth/google/gmail">conectar tu Gmail</a> una vez.`}
-    </div>
+    </div>` : ""}
 
     <div id="financeSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Facturación</h4>
@@ -1378,37 +1418,44 @@ async function renderQuoteEditor(id) {
   `;
 
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
-  const recalc = () => {
-    const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].map((r) => ({
-      quantity: Number(r.querySelector('[data-f="quantity"]').value) || 0,
-      unit: r.querySelector('[data-f="unitPrice"]').value === "" ? null : Number(r.querySelector('[data-f="unitPrice"]').value),
-      rate: Number(r.querySelector('[data-f="ivaRate"]').value)
-    }));
-    const t = previewTotals({
-      items: rows,
-      discount: document.getElementById("qDiscount").value,
-      discountType: document.getElementById("qDiscountType").value,
-      shipping: document.getElementById("qShipping").value
-    });
-    document.getElementById("qSubtotal").textContent = money(r2(t.itemsGross), cur);
-    document.getElementById("qDiscountShown").textContent = "-" + money(r2(t.discountAmount), cur);
-    document.getElementById("qIvaBreakdown").innerHTML = t.ivaGroups
-      .map((g) => `<div><span>Neto ${g.rate}%</span><b>${money(r2(g.neto), cur)}</b></div><div><span>IVA ${g.rate}%</span><b>${money(r2(g.iva), cur)}</b></div>`)
-      .join("");
-    document.getElementById("qTotal").textContent = money(r2(t.total), cur);
-  };
-  ["qDiscount", "qDiscountType", "qShipping"].forEach((elId) => document.getElementById(elId).addEventListener("input", recalc));
-  document.getElementById("quoteItemsBody").addEventListener("input", (e) => { if (e.target.dataset.f) recalc(); });
-  document.getElementById("quoteItemsBody").addEventListener("change", (e) => { if (e.target.dataset.f === "ivaRate") recalc(); });
-  recalc();
+  // IVA discriminado del total (se muestra en ambos modos; en solo-lectura es estático).
+  document.getElementById("qIvaBreakdown").innerHTML = staticTotals.ivaGroups
+    .map((g) => `<div><span>Neto ${g.rate}%</span><b>${money(r2(g.neto), cur)}</b></div><div><span>IVA ${g.rate}%</span><b>${money(r2(g.iva), cur)}</b></div>`)
+    .join("");
 
   document.getElementById("proformaBtn").addEventListener("click", () => window.open(`/api/admin/quotes/${id}/proforma`, "_blank"));
-  document.getElementById("saveQuoteBtn").addEventListener("click", () => saveQuoteHeader(id));
-  document.getElementById("sendProformaBtn").addEventListener("click", () => sendProforma(id, quote.email));
-  document.getElementById("sendWarehouseBtn").addEventListener("click", () => sendWarehouse(id));
-  wireQuoteItemActions(id);
-  wireQuoteItemsDnD(id);
-  wireAddProduct(id);
+
+  if (canEditQuote) {
+    const recalc = () => {
+      const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].map((r) => ({
+        quantity: Number(r.querySelector('[data-f="quantity"]').value) || 0,
+        unit: r.querySelector('[data-f="unitPrice"]').value === "" ? null : Number(r.querySelector('[data-f="unitPrice"]').value),
+        rate: Number(r.querySelector('[data-f="ivaRate"]').value)
+      }));
+      const t = previewTotals({
+        items: rows,
+        discount: document.getElementById("qDiscount").value,
+        discountType: document.getElementById("qDiscountType").value,
+        shipping: document.getElementById("qShipping").value
+      });
+      document.getElementById("qSubtotal").textContent = money(r2(t.itemsGross), cur);
+      document.getElementById("qDiscountShown").textContent = "-" + money(r2(t.discountAmount), cur);
+      document.getElementById("qIvaBreakdown").innerHTML = t.ivaGroups
+        .map((g) => `<div><span>Neto ${g.rate}%</span><b>${money(r2(g.neto), cur)}</b></div><div><span>IVA ${g.rate}%</span><b>${money(r2(g.iva), cur)}</b></div>`)
+        .join("");
+      document.getElementById("qTotal").textContent = money(r2(t.total), cur);
+    };
+    ["qDiscount", "qDiscountType", "qShipping"].forEach((elId) => document.getElementById(elId).addEventListener("input", recalc));
+    document.getElementById("quoteItemsBody").addEventListener("input", (e) => { if (e.target.dataset.f) recalc(); });
+    document.getElementById("quoteItemsBody").addEventListener("change", (e) => { if (e.target.dataset.f === "ivaRate") recalc(); });
+    recalc();
+    document.getElementById("saveQuoteBtn").addEventListener("click", () => saveQuoteHeader(id));
+    document.getElementById("sendProformaBtn").addEventListener("click", () => sendProforma(id, quote.email));
+    document.getElementById("sendWarehouseBtn").addEventListener("click", () => sendWarehouse(id));
+    wireQuoteItemActions(id);
+    wireQuoteItemsDnD(id);
+    wireAddProduct(id);
+  }
   wireDocuments(id);
   wireFinance(id, quote);
 }
@@ -2246,13 +2293,87 @@ async function pollSummary() {
   lastSummary = s;
 }
 
+// ==================== Facturación (worklist por sector) ====================
+const BILLING_STATE = {
+  sin_facturar: { label: "Sin facturar", cls: "pending" },
+  a_cobrar: { label: "A cobrar", cls: "pending" },
+  parcial: { label: "Parcial", cls: "pending" },
+  vencida: { label: "Vencida", cls: "rejected" },
+  pagada: { label: "Pagada", cls: "approved" }
+};
+let billingFilter = "all";
+let billingOrders = [];
+
+async function loadBillingOrders() {
+  const box = document.getElementById("billingOrders");
+  box.innerHTML = "Cargando...";
+  try {
+    const { orders } = await fetchJson("/api/admin/finance/orders");
+    billingOrders = orders;
+    renderBillingTable();
+  } catch (e) {
+    box.innerHTML = `<p class="empty-row">No se pudo cargar: ${esc(e.body?.detail || e.message)}</p>`;
+  }
+}
+
+function renderBillingTable() {
+  const box = document.getElementById("billingOrders");
+  const orders = billingOrders.filter((o) => {
+    if (billingFilter === "por_cobrar") return o.payState !== "pagada";
+    if (billingFilter === "pagados") return o.payState === "pagada";
+    return true;
+  });
+  if (!orders.length) { box.innerHTML = '<p class="empty-row">No hay pedidos con ese filtro.</p>'; return; }
+  box.innerHTML = `<div style="overflow-x:auto"><table>
+    <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Facturado</th><th class="num">Cobrado</th><th class="num">Saldo</th><th>Pago</th></tr></thead>
+    <tbody>${orders.map((o) => {
+      const st = BILLING_STATE[o.payState] || { label: o.payState, cls: "pending" };
+      return `<tr data-bill="${o.id}" class="quote-row" style="cursor:pointer">
+        <td><b>#${o.request_number}</b></td>
+        <td>${esc(o.company_name || o.display_name || "")}${o.client_code ? ` <span style="color:var(--muted);font-size:11px">(${esc(o.client_code)})</span>` : ""}</td>
+        <td><span class="status-pill ${o.status === "accepted" ? "approved" : "pending"}">${QUOTE_STATUS_LABEL[o.status] || o.status}</span></td>
+        <td class="num tabular">${o.invoice_count ? money(o.total_invoiced) : "-"}</td>
+        <td class="num tabular">${o.total_paid ? money(o.total_paid) : "-"}</td>
+        <td class="num tabular">${o.invoice_count ? money(o.balance) : "-"}</td>
+        <td><span class="status-pill ${st.cls}">${st.label}</span></td>
+      </tr>`;
+    }).join("")}</tbody></table></div>`;
+  box.querySelectorAll("[data-bill]").forEach((r) => r.addEventListener("click", () => {
+    box.querySelectorAll(".quote-row").forEach((x) => x.classList.toggle("active", x === r));
+    renderQuoteEditor(r.dataset.bill, "billingDetailBody");
+  }));
+}
+
+// ==================== Logística (pestaña) ====================
+async function mountLogisticsSection() {
+  await mountLogistics(document.getElementById("logiOrdersAdmin"), document.getElementById("logiDetailAdmin"));
+}
+
+// ==================== Nav por rol ====================
+function applyRoleNav() {
+  const allowed = allowedSections();
+  document.querySelectorAll("#adminNav a[data-section]").forEach((a) => {
+    a.style.display = allowed.includes(a.dataset.section) ? "" : "none";
+  });
+  const landing = allowed[0] || "dashboard";
+  document.querySelectorAll("#adminNav a").forEach((a) => a.classList.toggle("active", a.dataset.section === landing));
+  document.querySelectorAll(".admin-section").forEach((s) => (s.hidden = s.id !== `section-${landing}`));
+  const loader = sectionLoaders[landing];
+  if (loader && !loadedSections.has(landing)) { loadedSections.add(landing); loader(); }
+}
+
 (async function init() {
   await loadMe();
-  await loadStockHealth();
-  await refreshKpis();
-  await loadAudit();
-  await pollSummary(); // siembra lastSummary sin notificar
-  setInterval(pollSummary, 12000);
-  // Refresca al volver a la pestaña (más inmediato tras estar en otra app).
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollSummary(); });
+  const billingSel = document.getElementById("billingFilter");
+  if (billingSel) billingSel.addEventListener("change", (e) => { billingFilter = e.target.value; renderBillingTable(); });
+  applyRoleNav();
+  // El polling/KPIs/auditoría del dashboard sólo corre para roles que lo ven.
+  if (allowedSections().includes("dashboard")) {
+    await loadStockHealth();
+    await refreshKpis();
+    await loadAudit();
+    await pollSummary(); // siembra lastSummary sin notificar
+    setInterval(pollSummary, 12000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pollSummary(); });
+  }
 })();

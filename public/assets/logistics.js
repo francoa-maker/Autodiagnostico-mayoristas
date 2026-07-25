@@ -1,19 +1,15 @@
+// Vista de Depósito/Logística. Se monta como pestaña dentro del panel unificado
+// (admin.js) o de forma standalone. mountLogistics(ordersEl, detailEl) rellena
+// esos dos contenedores; no muestra ningún dato financiero.
 import { fetchJson, postJson } from "/assets/api.js";
 
 function esc(v) { return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
-async function loadMe() {
-  const { user } = await fetchJson("/api/me");
-  if (!user) return (location.href = "/login");
-  document.getElementById("logiUser").textContent = user.display_name || user.email;
-}
-
-async function loadOrders() {
-  const box = document.getElementById("logiOrders");
+async function loadOrders(ordersEl, detailEl) {
   try {
     const { orders } = await fetchJson("/api/logistics/orders");
-    if (!orders.length) { box.innerHTML = '<p style="color:var(--muted)">No hay pedidos autorizados para preparación.</p>'; return; }
-    box.innerHTML = `<div style="overflow-x:auto"><table class="req-table">
+    if (!orders.length) { ordersEl.innerHTML = '<p style="color:var(--muted)">No hay pedidos autorizados para preparación.</p>'; return; }
+    ordersEl.innerHTML = `<div style="overflow-x:auto"><table class="req-table">
       <thead><tr><th>#</th><th>Cliente</th><th>Destino</th><th>Estado</th><th></th></tr></thead>
       <tbody>${orders.map((o) => `<tr>
         <td><b>#${o.request_number}</b></td>
@@ -22,22 +18,21 @@ async function loadOrders() {
         <td>${esc(o.logistics_status)}</td>
         <td><button class="btn-primary sm" data-open="${o.id}" data-num="${o.request_number}">Preparar</button></td>
       </tr>`).join("")}</tbody></table></div>`;
-    box.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openOrder(b.dataset.open, b.dataset.num)));
-  } catch (error) { box.innerHTML = `<p style="color:var(--danger,#c8102e)">No se pudo cargar: ${esc(error.message)}</p>`; }
+    ordersEl.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openOrder(b.dataset.open, b.dataset.num, ordersEl, detailEl)));
+  } catch (error) { ordersEl.innerHTML = `<p style="color:var(--danger,#c8102e)">No se pudo cargar: ${esc(error.body?.detail || error.message)}</p>`; }
 }
 
-async function openOrder(id, num) {
-  const d = document.getElementById("logiDetail");
-  d.innerHTML = "Cargando...";
+async function openOrder(id, num, ordersEl, detailEl) {
+  detailEl.innerHTML = "Cargando...";
   const { order, items, serials } = await fetchJson(`/api/logistics/orders/${id}`);
   const byItem = {};
   serials.forEach((s) => { (byItem[s.order_item_id] = byItem[s.order_item_id] || []).push(s); });
-  d.innerHTML = `<div class="panel">
+  detailEl.innerHTML = `<div class="panel">
     <h2 style="margin:0 0 4px">Pedido #${esc(num)} — ${esc(order.company_name || order.display_name || "")}</h2>
     <p style="color:var(--muted);font-size:12.5px">Envío: ${esc([order.ship_street, order.ship_number, order.ship_floor, order.ship_apartment, order.ship_postal_code, order.ship_city, order.ship_province].filter(Boolean).join(" ")) || "sin dirección"} · Tel ${esc(order.ship_phone || "-")}</p>
     </div>
     ${items.map((it) => itemHtml(it, byItem[it.id] || [])).join("")}`;
-  wireItems(id, num);
+  wireItems(id, num, ordersEl, detailEl);
 }
 
 function itemHtml(it, serials) {
@@ -60,27 +55,32 @@ function itemHtml(it, serials) {
   </div>`;
 }
 
-function wireItems(orderId, num) {
-  const d = document.getElementById("logiDetail");
-  d.querySelectorAll("[data-item]").forEach((panel) => {
+function wireItems(orderId, num, ordersEl, detailEl) {
+  const reopen = () => openOrder(orderId, num, ordersEl, detailEl);
+  detailEl.querySelectorAll("[data-item]").forEach((panel) => {
     const itemId = panel.dataset.item;
     panel.querySelector(".savePrep").addEventListener("click", async () => {
-      try { await fetchJson(`/api/logistics/order-items/${itemId}/prepared`, { method: "PATCH", body: JSON.stringify({ quantity: Number(panel.querySelector(".prepQty").value) }) }); openOrder(orderId, num); }
+      try { await fetchJson(`/api/logistics/order-items/${itemId}/prepared`, { method: "PATCH", body: JSON.stringify({ quantity: Number(panel.querySelector(".prepQty").value) }) }); reopen(); }
       catch (e) { alert("No se pudo: " + (e.body?.detail || e.message)); }
     });
     panel.querySelector(".addSerials").addEventListener("click", async () => {
       const msg = panel.querySelector(".serialMsg");
       const serials = panel.querySelector(".serialInput").value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
       if (!serials.length) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Ingresá al menos uno."; return; }
-      try { await postJson(`/api/logistics/order-items/${itemId}/serials`, { serials }); openOrder(orderId, num); }
+      try { await postJson(`/api/logistics/order-items/${itemId}/serials`, { serials }); reopen(); }
       catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = e.body?.detail || e.message; }
     });
     panel.querySelectorAll(".delSerial").forEach((b) => b.addEventListener("click", async () => {
       const reason = prompt("Motivo para quitar el serial:"); if (reason === null) return;
-      try { await fetchJson(`/api/logistics/serials/${b.dataset.sid}`, { method: "DELETE", body: JSON.stringify({ reason }) }); openOrder(orderId, num); }
+      try { await fetchJson(`/api/logistics/serials/${b.dataset.sid}`, { method: "DELETE", body: JSON.stringify({ reason }) }); reopen(); }
       catch (e) { alert("No se pudo: " + (e.body?.detail || e.message)); }
     }));
   });
 }
 
-(async function init() { await loadMe(); await loadOrders(); })();
+// Monta la vista en dos contenedores dados (lista + detalle).
+export function mountLogistics(ordersEl, detailEl) {
+  if (!ordersEl || !detailEl) return;
+  detailEl.innerHTML = "";
+  return loadOrders(ordersEl, detailEl);
+}

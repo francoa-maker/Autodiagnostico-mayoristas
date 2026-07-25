@@ -93,8 +93,11 @@ app.get("/pending", (req, res) => {
 app.get("/", (req, res) => {
   if (!req.user) return res.redirect("/login");
   if (req.user.status !== "approved") return res.redirect("/pending");
-  const page = isAdminStaff(req.user.role) ? "admin.html" : normalizeRole(req.user.role) === "logistics" ? "logistics.html" : "index.html";
-  res.sendFile(path.join(publicDir, page));
+  // Personal interno (incluida logística) usa el panel unificado; el panel
+  // muestra sólo las pestañas del rol. El cliente ve el catálogo.
+  const role = normalizeRole(req.user.role);
+  const staff = isAdminStaff(req.user.role) || role === "logistics";
+  res.sendFile(path.join(publicDir, staff ? "admin.html" : "index.html"));
 });
 
 app.use((req, res) => {
