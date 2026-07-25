@@ -49,7 +49,7 @@ function buildMime({ from, fromName, to, cc, subject, html, replyTo }) {
     `Content-Type: multipart/alternative; boundary="${boundary}"`
   ].filter(Boolean);
 
-  const textFallback = "Su proforma está adjunta en formato HTML. Si no la ve, abra este correo en un cliente que soporte HTML.";
+  const textFallback = "El documento está adjunto en formato HTML. Si no lo ve, abra este correo en un cliente que soporte HTML.";
   const body = [
     `--${boundary}`,
     "Content-Type: text/plain; charset=UTF-8",

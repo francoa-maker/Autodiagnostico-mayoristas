@@ -1056,7 +1056,8 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
 
   const to = (req.body?.to && String(req.body.to).trim()) || ctx.quote.email;
   const html = renderProformaHtml({ ...ctx, forEmail: true });
-  const subject = `Proforma #${ctx.quote.request_number} - ${ctx.company.name}`;
+  const term = ctx.quote.status === "accepted" ? "Compra" : "Pre-compra";
+  const subject = `${term} #${ctx.quote.request_number} - ${ctx.company.name}`;
 
   try {
     await sendGmail({

@@ -146,6 +146,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
     : `<div class="logo-text">Auto<span>diagnostico</span></div>`;
 
   const dateStr = new Date(quote.submitted_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  // Mientras es cotización = "Pre-compra"; cuando queda confirmada (aceptada) = "Compra".
+  const docTerm = quote.status === "accepted" ? "Compra" : "Pre-compra";
   const addr = addressLines(quote);
 
   const signatureBlock = signer
@@ -184,7 +186,7 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:14px">
       <div style="flex:1"></div>
       <div>
-        <h1>Proforma</h1>
+        <h1>${docTerm}</h1>
         <div class="docmeta">
           <div>N° <b>#${quote.request_number}</b></div>
           <div>Fecha: <b>${esc(dateStr)}</b></div>
@@ -233,7 +235,7 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Proforma #${quote.request_number} - ${esc(company.name)}</title>
+<title>${docTerm} #${quote.request_number} - ${esc(company.name)}</title>
 <style>${A4_STYLES}</style></head>
 <body>
   ${toolbar}

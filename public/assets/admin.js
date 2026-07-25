@@ -1187,6 +1187,8 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   const { quote, items } = await fetchJson(`/api/admin/quotes/${id}`);
   const cur = quote.currency || "ARS";
   const dtype = quote.discount_type || "nominal";
+  // Mientras es cotización = "Pre-compra"; confirmada (aceptada) = "Compra".
+  const docTerm = quote.status === "accepted" ? "Compra" : "Pre-compra";
 
   const itemRows = items
     .map(
@@ -1229,7 +1231,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         ${canEditQuote
           ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${QUOTE_STATUS.map((s) => `<option value="${s}"${quote.status === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
           : `<span class="status-pill approved">${QUOTE_STATUS_LABEL[quote.status] || quote.status}</span>`}
-        <button class="btn-primary" id="proformaBtn">Ver proforma</button>
+        <button class="btn-primary" id="proformaBtn">Ver ${docTerm.toLowerCase()}</button>
       </div>
     </div>
 
@@ -1268,13 +1270,13 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
     </div>
 
-    ${canEditQuote ? `<label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la proforma)
+    ${canEditQuote ? `<label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la pre-compra)
       <textarea id="qPublicNotes" rows="2" class="admin-search" style="width:100%;margin-top:4px">${esc(quote.public_notes || "")}</textarea>
     </label>
 
     <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
       <button class="btn-primary" id="saveQuoteBtn">Guardar cotización</button>
-      <button class="btn-primary" id="sendProformaBtn" style="background:#137333">✉ Enviar proforma al cliente</button>
+      <button class="btn-primary" id="sendProformaBtn" style="background:#137333">✉ Enviar ${docTerm.toLowerCase()} al cliente</button>
       <span id="quoteSaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
     </div>
 
@@ -1398,7 +1400,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <select id="docType" class="admin-search" style="min-width:180px">
-          <option value="proforma">Proforma</option>
+          <option value="proforma">Pre-compra</option>
           <option value="factura">Factura</option>
           <option value="nota_credito">Nota de crédito</option>
           <option value="comprobante_transferencia">Comprobante de transferencia</option>
@@ -1887,7 +1889,7 @@ async function loadAccount(id) {
 
 // ==================== Documentos del pedido (Google Drive) ====================
 const DOC_TYPE_LABEL = {
-  proforma: "Proforma", factura: "Factura", nota_credito: "Nota de crédito",
+  proforma: "Pre-compra", factura: "Factura", nota_credito: "Nota de crédito",
   comprobante_transferencia: "Transferencia", comprobante_echeq: "eCheq",
   remito: "Remito", etiqueta_envio: "Etiqueta de envío", constancia_entrega: "Constancia de entrega", otro: "Otro"
 };
@@ -2051,9 +2053,10 @@ async function sendProforma(id, clientEmail) {
     }
     return;
   }
-  const to = prompt("Enviar proforma a:", clientEmail || "");
-  if (!to) return;
   const btn = document.getElementById("sendProformaBtn");
+  const label = btn?.textContent || "✉ Enviar al cliente";
+  const to = prompt("Enviar a:", clientEmail || "");
+  if (!to) return;
   btn.disabled = true;
   btn.textContent = "Enviando...";
   try {
@@ -2067,13 +2070,13 @@ async function sendProforma(id, clientEmail) {
       publicNotes: document.getElementById("qPublicNotes").value
     });
     await postJson(`/api/admin/quotes/${id}/send-proforma`, { to });
-    alert("Proforma enviada a " + to);
+    alert("Documento enviado a " + to);
     await renderQuoteEditor(id);
     await loadQuotes();
   } catch (error) {
     alert("No se pudo enviar: " + (error.body?.detail || error.message));
     const b = document.getElementById("sendProformaBtn");
-    if (b) { b.disabled = false; b.textContent = "✉ Enviar proforma al cliente"; }
+    if (b) { b.disabled = false; b.textContent = label; }
   }
 }
 

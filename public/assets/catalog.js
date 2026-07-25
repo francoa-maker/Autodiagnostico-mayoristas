@@ -907,7 +907,7 @@ async function openRequests(mode) {
               <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
               <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
               <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-              <td style="white-space:nowrap">${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">Proforma</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+              <td style="white-space:nowrap">${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">${q.status === "accepted" ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
             </tr>`
           )
           .join("")}</tbody></table></div>`;

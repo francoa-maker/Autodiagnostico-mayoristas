@@ -169,7 +169,7 @@
           <div class="admin-topline">
             <div>
               <h1>Cotizaciones</h1>
-              <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la proforma.</p>
+              <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la pre-compra.</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select id="quoteMonthFilter" class="admin-search" style="min-width:150px">
@@ -242,7 +242,7 @@
           <div class="admin-topline">
             <div>
               <h1>Configuración</h1>
-              <p>Datos de la empresa que aparecen en la proforma que se envía a los clientes</p>
+              <p>Datos de la empresa que aparecen en la pre-compra/compra que se envía a los clientes</p>
             </div>
           </div>
           <div class="panel" style="max-width:640px">
@@ -256,8 +256,8 @@
               <label>CUIT / Tax ID<input name="taxId" placeholder="30-71610175-0"></label>
               <label>Casilla del depósito<input name="warehouseEmail" placeholder="joaquin.guerri@patagoniatools.com.ar"></label>
               <label class="full">URL del logo (opcional; si se deja vacío se usa el texto "Autodiagnostico")<input name="logoUrl" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label>
-              <label>Validez de la proforma (días)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label>
-              <label class="full">Texto al pie de la proforma<textarea name="proformaFooter" rows="2" placeholder="Documento no válido como factura. Precios sujetos a confirmación."></textarea></label>
+              <label>Validez de la pre-compra (días)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label>
+              <label class="full">Texto al pie de la pre-compra<textarea name="proformaFooter" rows="2" placeholder="Documento no válido como factura. Precios sujetos a confirmación."></textarea></label>
               <div class="full" style="display:flex;gap:10px;align-items:center">
                 <button type="submit" class="btn-primary">Guardar cambios</button>
                 <span id="companySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
