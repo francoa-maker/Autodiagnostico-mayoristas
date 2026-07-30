@@ -1095,6 +1095,10 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
   if (!ctx) return res.status(404).json({ error: "not_found" });
 
   const to = (req.body?.to && String(req.body.to).trim()) || ctx.quote.email;
+  // Multi-destinatario (guía §11.1): CC opcional, como array o lista separada por comas.
+  const ccList = (Array.isArray(req.body?.cc) ? req.body.cc : String(req.body?.cc || "").split(","))
+    .map((s) => String(s).trim()).filter(Boolean);
+  const cc = ccList.length ? ccList.join(", ") : undefined;
   const html = renderProformaHtml({ ...ctx, forEmail: true });
   const term = ["orden", "despachado"].includes(ctx.quote.status) ? "Compra" : "Pre-compra";
   const subject = `${term} #${ctx.quote.request_number} - ${ctx.company.name}`;
@@ -1105,6 +1109,7 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
       from: tokenRow.rows[0].gmail_address || req.user.email,
       fromName: req.user.display_name || ctx.company.name,
       to,
+      cc,
       subject,
       html,
       replyTo: req.user.email
@@ -1114,8 +1119,8 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
     return res.status(502).json({ error: "gmail_send_failed", detail: error.message });
   }
 
-  await recordAudit({ actorUserId: req.user.id, action: "quote.proforma.sent", entityType: "quote_request", entityId: req.params.id, metadata: { to } });
-  res.json({ ok: true, to });
+  await recordAudit({ actorUserId: req.user.id, action: "quote.proforma.sent", entityType: "quote_request", entityId: req.params.id, metadata: { to, cc: ccList } });
+  res.json({ ok: true, to, cc: ccList });
 });
 
 // Envía al depósito la hoja de armado (picking + dirección de entrega) desde

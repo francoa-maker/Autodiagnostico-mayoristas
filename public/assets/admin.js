@@ -2180,38 +2180,53 @@ async function sendWarehouse(id) {
   }
 }
 
-async function sendProforma(id, clientEmail) {
+// Compositor de email multi-destinatario (guía §11.1): Para + CC, desde la casilla
+// del vendedor. (Programar envío / plantillas quedan para una próxima iteración.)
+function sendProforma(id, clientEmail) {
   if (!currentUser?.gmail_connected) {
     if (confirm("Necesitás conectar tu Gmail una vez para enviar desde tu casilla. ¿Conectar ahora?")) {
       location.href = "/auth/google/gmail";
     }
     return;
   }
-  const btn = document.getElementById("sendProformaBtn");
-  const label = btn?.textContent || "✉ Enviar al cliente";
-  const to = prompt("Enviar a:", clientEmail || "");
-  if (!to) return;
-  btn.disabled = true;
-  btn.textContent = "Enviando...";
-  try {
-    // Persistir precios/ajustes en pantalla (sin re-render) antes de enviar.
-    // (El IVA es por línea; ya no hay selector global de IVA acá.)
-    await patchJson(`/api/admin/quotes/${id}`, {
-      status: document.getElementById("quoteStatus").value,
-      discount: Number(document.getElementById("qDiscount").value || 0),
-      discountType: document.getElementById("qDiscountType").value,
-      shipping: Number(document.getElementById("qShipping").value || 0),
-      publicNotes: document.getElementById("qPublicNotes").value
-    });
-    await postJson(`/api/admin/quotes/${id}/send-proforma`, { to });
-    alert("Documento enviado a " + to);
-    await renderQuoteEditor(id);
-    await loadQuotes();
-  } catch (error) {
-    alert("No se pudo enviar: " + (error.body?.detail || error.message));
-    const b = document.getElementById("sendProformaBtn");
-    if (b) { b.disabled = false; b.textContent = label; }
-  }
+  openModal(`
+    <div class="modal-head"><h3>Enviar al cliente</h3><button class="modal-x" data-close>&times;</button></div>
+    <div class="form-grid">
+      <label class="full">Para<input id="emailTo" value="${esc(clientEmail || "")}" placeholder="cliente@correo.com"></label>
+      <label class="full">CC <span style="color:var(--muted);font-weight:400">(separá varios con coma)</span><input id="emailCc" placeholder="ventas@empresa.com, contador@empresa.com"></label>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:10px 0">El documento (Pre-compra/Compra) se envía en el cuerpo del correo, desde tu casilla de Gmail.</p>
+    <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:8px">
+      <span id="emailMsg" style="font-size:12px;margin-right:auto"></span>
+      <button class="link-btn ghost" data-close>Cancelar</button>
+      <button class="btn-primary" id="emailSendBtn" type="button">Enviar</button>
+    </div>`);
+  document.getElementById("emailSendBtn").addEventListener("click", async () => {
+    const to = document.getElementById("emailTo").value.trim();
+    const cc = document.getElementById("emailCc").value.split(",").map((s) => s.trim()).filter(Boolean);
+    const msg = document.getElementById("emailMsg");
+    if (!to) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Ingresá al menos un destinatario."; return; }
+    const btn = document.getElementById("emailSendBtn");
+    btn.disabled = true; btn.textContent = "Enviando...";
+    try {
+      // Persistir precios/ajustes en pantalla antes de enviar (el editor sigue montado).
+      await patchJson(`/api/admin/quotes/${id}`, {
+        status: document.getElementById("quoteStatus").value,
+        discount: Number(document.getElementById("qDiscount").value || 0),
+        discountType: document.getElementById("qDiscountType").value,
+        shipping: Number(document.getElementById("qShipping").value || 0),
+        publicNotes: document.getElementById("qPublicNotes").value
+      });
+      await postJson(`/api/admin/quotes/${id}/send-proforma`, { to, cc });
+      closeModal();
+      await renderQuoteEditor(id);
+      await loadQuotes();
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)";
+      msg.textContent = error.body?.detail || error.message;
+      btn.disabled = false; btn.textContent = "Enviar";
+    }
+  });
 }
 
 function wireQuoteItemActions(id) {
