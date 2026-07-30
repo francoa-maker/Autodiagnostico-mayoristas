@@ -1028,6 +1028,35 @@ router.put("/admin/company-profile", canCatalog, async (req, res) => {
   res.json({ profile: merged });
 });
 
+// ---------------------------------------- notificaciones automáticas por email (§11.1)
+// Un CC global + destinatarios por evento. Guardado en app_settings key
+// 'email_recipients'. El compositor de envío precarga el CC según el evento.
+const EMAIL_EVENTS = ["enviada", "orden", "pago", "despachado"];
+async function getEmailRecipients() {
+  const r = await pool.query(`select value from portal.app_settings where key = 'email_recipients'`);
+  const v = r.rows[0]?.value || {};
+  return { globalCc: v.globalCc || "", events: v.events || {} };
+}
+
+router.get("/admin/email-recipients", async (req, res) => {
+  res.json({ recipients: await getEmailRecipients() });
+});
+
+router.put("/admin/email-recipients", canCatalog, async (req, res) => {
+  const incoming = req.body?.recipients || {};
+  const events = {};
+  for (const ev of EMAIL_EVENTS) events[ev] = String(incoming.events?.[ev] || "").trim();
+  const merged = { globalCc: String(incoming.globalCc || "").trim(), events };
+  await pool.query(
+    `insert into portal.app_settings (key, value, description, updated_by, updated_at)
+     values ('email_recipients', $1, 'Destinatarios de avisos automaticos por email', $2, now())
+     on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()`,
+    [JSON.stringify(merged), req.user.id]
+  );
+  await recordAudit({ actorUserId: req.user.id, action: "email_recipients.update", entityType: "app_settings", entityId: "email_recipients", after: merged });
+  res.json({ recipients: merged });
+});
+
 // ------------------------------------------------------ proforma (printable)
 
 // Loads a quote + its client + items + company profile + the signer (the

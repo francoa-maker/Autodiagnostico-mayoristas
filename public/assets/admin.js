@@ -2188,18 +2188,24 @@ async function sendWarehouse(id) {
 
 // Compositor de email multi-destinatario (guía §11.1): Para + CC, desde la casilla
 // del vendedor. (Programar envío / plantillas quedan para una próxima iteración.)
-function sendProforma(id, clientEmail) {
+async function sendProforma(id, clientEmail) {
   if (!currentUser?.gmail_connected) {
     if (confirm("Necesitás conectar tu Gmail una vez para enviar desde tu casilla. ¿Conectar ahora?")) {
       location.href = "/auth/google/gmail";
     }
     return;
   }
+  // Precarga el CC desde la config de notificaciones (CC global + evento "enviada").
+  let defaultCc = "";
+  try {
+    const { recipients } = await fetchJson("/api/admin/email-recipients");
+    defaultCc = [recipients.globalCc, recipients.events?.enviada].filter(Boolean).join(", ");
+  } catch { /* la config es opcional */ }
   openModal(`
     <div class="modal-head"><h3>Enviar al cliente</h3><button class="modal-x" data-close>&times;</button></div>
     <div class="form-grid">
       <label class="full">Para<input id="emailTo" value="${esc(clientEmail || "")}" placeholder="cliente@correo.com"></label>
-      <label class="full">CC <span style="color:var(--muted);font-weight:400">(separá varios con coma)</span><input id="emailCc" placeholder="ventas@empresa.com, contador@empresa.com"></label>
+      <label class="full">CC <span style="color:var(--muted);font-weight:400">(separá varios con coma)</span><input id="emailCc" value="${esc(defaultCc)}" placeholder="ventas@empresa.com, contador@empresa.com"></label>
     </div>
     <p style="font-size:12px;color:var(--muted);margin:10px 0">El documento (Pre-compra/Compra) se envía en el cuerpo del correo, desde tu casilla de Gmail.</p>
     <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:8px">
@@ -2351,8 +2357,47 @@ document.getElementById("newQuoteBtn").addEventListener("click", () => {
 
 // ==================== Configuración (perfil de empresa) ====================
 
+// Notificaciones automáticas por email (§11.1): CC global + destinatarios por evento.
+async function loadNotifyRecipients() {
+  const f = document.getElementById("notifyForm");
+  if (!f) return;
+  try {
+    const { recipients } = await fetchJson("/api/admin/email-recipients");
+    f.globalCc.value = recipients.globalCc || "";
+    f.ev_enviada.value = recipients.events?.enviada || "";
+    f.ev_orden.value = recipients.events?.orden || "";
+    f.ev_pago.value = recipients.events?.pago || "";
+    f.ev_despachado.value = recipients.events?.despachado || "";
+  } catch { /* config opcional */ }
+}
+document.getElementById("notifyForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const msg = document.getElementById("notifySaveMsg");
+  try {
+    await putJson("/api/admin/email-recipients", {
+      recipients: {
+        globalCc: f.globalCc.value.trim(),
+        events: {
+          enviada: f.ev_enviada.value.trim(),
+          orden: f.ev_orden.value.trim(),
+          pago: f.ev_pago.value.trim(),
+          despachado: f.ev_despachado.value.trim()
+        }
+      }
+    });
+    msg.style.color = "var(--success,#137333)";
+    msg.textContent = "Guardado ✓";
+    setTimeout(() => (msg.textContent = ""), 1800);
+  } catch (error) {
+    msg.style.color = "var(--danger,#c8102e)";
+    msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
+  }
+});
+
 async function loadCompanyProfile() {
   const { profile } = await fetchJson("/api/admin/company-profile");
+  await loadNotifyRecipients();
   const f = document.getElementById("companyForm");
   f.name.value = profile.name || "";
   f.legalName.value = profile.legalName || "";

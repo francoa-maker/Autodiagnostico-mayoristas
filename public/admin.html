@@ -263,6 +263,22 @@
               </div>
             </form>
           </div>
+
+          <div class="panel" style="max-width:640px;margin-top:16px">
+            <h3 style="margin:0 0 4px">Notificaciones automáticas por email</h3>
+            <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px">Definí a quién se copia en cada aviso. El "CC siempre" se precarga en el compositor al enviar. Separá varios correos con coma.</p>
+            <form id="notifyForm" class="form-grid">
+              <label class="full">CC siempre (global)<input name="globalCc" placeholder="ventas@empresa.com, contador@empresa.com"></label>
+              <label>Cotización enviada<input name="ev_enviada" placeholder="correo@empresa.com"></label>
+              <label>Orden de venta<input name="ev_orden" placeholder="correo@empresa.com"></label>
+              <label>Pago recibido<input name="ev_pago" placeholder="correo@empresa.com"></label>
+              <label>Despachado<input name="ev_despachado" placeholder="correo@empresa.com"></label>
+              <div class="full" style="display:flex;gap:10px;align-items:center">
+                <button type="submit" class="btn-primary">Guardar destinatarios</button>
+                <span id="notifySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
+              </div>
+            </form>
+          </div>
         </div>
       </main>
     </div>
