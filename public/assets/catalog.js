@@ -307,6 +307,46 @@ function computeFiltered() {
   return list;
 }
 
+// ---------------------------------------------------- descarga PDF filtrada --
+function hasActiveFilters() {
+  const f = state.filters;
+  return !!(state.search || (state.quick && state.quick !== "all") ||
+    f.brands.size || f.categories.size || f.availability.size ||
+    f.priceMin != null || f.priceMax != null);
+}
+function filterSummaryText() {
+  const parts = [];
+  if (state.quick && state.quick !== "all") parts.push(QUICK_LABEL[state.quick] || state.quick);
+  if (state.filters.brands.size) parts.push("Marca: " + [...state.filters.brands].join(", "));
+  if (state.filters.categories.size) parts.push("Categoría: " + [...state.filters.categories].join(", "));
+  if (state.filters.availability.size) parts.push([...state.filters.availability].map((a) => STOCK_LABEL[a] || a).join(", "));
+  if (state.filters.priceMin != null) parts.push("Desde " + money(state.filters.priceMin));
+  if (state.filters.priceMax != null) parts.push("Hasta " + money(state.filters.priceMax));
+  if (state.search) parts.push(`“${state.search}”`);
+  return parts.join(" · ");
+}
+// El botón arma la descarga desde lo que el cliente ve: con filtros activos manda
+// los SKU visibles (?skus=...) para que el PDF -con marca de agua- respete
+// marca/categoría/disponibilidad/precio/favoritos/frecuentes/búsqueda; sin filtros
+// baja el catálogo completo. CSP-safe: solo setea href/texto, sin JS inline.
+function updateDownloadBtn(list) {
+  const a = document.getElementById("downloadCatalogBtn");
+  if (!a) return;
+  const label = a.querySelector(".dl-label");
+  const narrowed = hasActiveFilters() && list.length > 0 && list.length < state.products.length;
+  if (narrowed) {
+    const skus = list.map((p) => p.sku).filter(Boolean).join(",");
+    const params = new URLSearchParams({ skus });
+    const resumen = filterSummaryText();
+    if (resumen) params.set("resumen", resumen);
+    a.href = "/api/catalog/pdf?" + params.toString();
+    if (label) label.textContent = `Descargar filtrado (${list.length})`;
+  } else {
+    a.href = "/api/catalog/pdf";
+    if (label) label.textContent = "Descargar catálogo (PDF)";
+  }
+}
+
 // ------------------------------------------------------------- productos ----
 function heartIco(on) { return on ? "&#9829;" : "&#9825;"; }
 
@@ -348,6 +388,7 @@ function productCardHtml(p) {
 
 function renderProducts() {
   const list = computeFiltered();
+  updateDownloadBtn(list);
   window.__products = new Map(state.products.map((p) => [p.id, p]));
   const grid = document.getElementById("productGrid");
   grid.className = "grid" + (state.view === "list" ? " list" : "");
