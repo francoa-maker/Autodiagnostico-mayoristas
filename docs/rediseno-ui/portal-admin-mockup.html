@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Portal Autodiagnóstico — Maqueta panel interno</title>
+<style>
+  :root{
+    --red:#C8102E; --red-600:#a60d26; --red-050:#fff0f2; --red-100:#fbdbe0;
+    --dark:#111111; --dark-2:#1c1c1c; --mid:#2C2C2C; --light:#F4F4F4;
+    --card:#ffffff; --surface-2:#f7f7f8; --surface-3:#eeeef0;
+    --border:#E4E4E7; --border-strong:#d2d2d6; --muted:#8a8a90; --faint:#aeaeb4; --ink:#161616;
+    --ok-bg:#dcfce7; --ok-fg:#166534; --low-bg:#fef9c3; --low-fg:#854d0e; --out-bg:#fee2e2; --out-fg:#991b1b;
+    --green:#16a34a; --blue:#2563eb;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 3px 12px rgba(0,0,0,.05);
+    --shadow-lg:0 12px 38px rgba(0,0,0,.16);
+    --radius:12px; --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,sans-serif;
+    color-scheme:light;
+  }
+  *{box-sizing:border-box} html,body{margin:0;background:var(--light)}
+  body{font-family:var(--sans);color:var(--mid);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  button{font-family:inherit} .num{font-variant-numeric:tabular-nums} .mono{font-family:var(--mono)}
+  :focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:4px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+  .mockflag{background:#111;color:#ccc;text-align:center;font-size:11.5px;padding:5px} .mockflag b{color:var(--red)}
+
+  .layout{display:grid; grid-template-columns:232px minmax(0,1fr); min-height:100vh}
+  /* Sidebar */
+  .side{background:var(--card); border-right:1px solid var(--border); display:flex; flex-direction:column; position:sticky; top:0; height:100vh}
+  .side .brand{display:flex; align-items:center; gap:10px; padding:16px 16px; border-bottom:1px solid var(--border)}
+  .side .brand .mark{width:32px;height:32px;border-radius:7px;background:var(--red);display:grid;place-items:center;color:#fff;flex:none}
+  .side .brand .mark svg{width:19px;height:19px}
+  .side .brand .word{font-size:17px;font-weight:800;letter-spacing:-.02em;color:var(--dark)}
+  .side .brand .word span{color:var(--red)}
+  .side nav{padding:10px 8px; overflow:auto; flex:1}
+  .navitem{display:flex; align-items:center; gap:11px; width:100%; text-align:left; background:transparent; border:0; cursor:pointer; color:var(--mid); font-size:13.5px; font-weight:500; padding:9px 11px; border-radius:8px; position:relative}
+  .navitem:hover{background:var(--surface-2)}
+  .navitem.active{background:var(--red-050); color:var(--red-600); font-weight:600}
+  .navitem.active::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;background:var(--red);border-radius:3px}
+  .navitem svg{width:18px;height:18px;flex:none}
+  .navitem .nb{margin-left:auto;background:var(--red);color:#fff;font-size:10.5px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:999px;display:grid;place-items:center}
+  .navitem.hidden{display:none}
+  .side .foot{border-top:1px solid var(--border); padding:12px}
+  .side .foot .u{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .side .foot .ua{width:32px;height:32px;border-radius:50%;background:var(--dark);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .side .foot .un{font-size:12.5px;font-weight:700;color:var(--dark);line-height:1.1}
+  .side .foot .ue{font-size:11px;color:var(--muted)}
+  .side .foot label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);display:block;margin-bottom:4px}
+  .side .foot select{width:100%;height:36px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font-size:13px;padding:0 9px;outline:none;color:var(--ink)}
+  .side .foot select:focus{border-color:var(--red)}
+  .side .foot .hint{font-size:10.5px;color:var(--faint);margin-top:6px}
+
+  .main{min-width:0; display:flex; flex-direction:column}
+  .topbar{background:var(--card); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px; padding:13px 22px}
+  .topbar h1{margin:0; font-size:19px; font-weight:800; letter-spacing:-.02em; color:var(--dark)}
+  .topbar .rolechip{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:var(--dark);color:#fff;padding:3px 10px;border-radius:999px}
+  .topbar .spacer{flex:1}
+  .content{padding:22px; max-width:1240px; width:100%}
+  .section{display:none} .section.active{display:block; animation:fade .16s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .btn{cursor:pointer;border-radius:8px;border:1px solid transparent;font-weight:600;font-size:13px;padding:0 14px;height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+  .btn svg{width:15px;height:15px}
+  .btn-red{background:var(--red);color:#fff} .btn-red:hover{background:var(--red-600)}
+  .btn-dark{background:var(--dark);color:#fff} .btn-dark:hover{background:var(--dark-2)}
+  .btn-ghost{background:var(--surface-2);color:var(--mid);border-color:var(--border)} .btn-ghost:hover{border-color:var(--border-strong);color:var(--ink)}
+  .btn-sm{height:32px;padding:0 11px;font-size:12.5px;border-radius:7px}
+  .btn-xs{height:28px;padding:0 9px;font-size:11.5px;border-radius:6px}
+
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-bottom:20px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .kpi .stripe{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .kpi .k{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .kpi .v{font-size:24px;font-weight:800;margin-top:3px;color:var(--dark)}
+  .kpi .d{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+  .panel .ph{display:flex;align-items:center;gap:9px;padding:12px 15px;border-bottom:1px solid var(--border)}
+  .panel .ph h3{margin:0;font-size:14px;font-weight:800;color:var(--dark)}
+  .panel .ph .spacer{flex:1}
+  .panel .pb{padding:6px}
+  .panel .pad{padding:15px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  .tscroll{overflow-x:auto} table.min{min-width:720px}
+  thead th{background:var(--dark);color:#fff;text-align:left;font-weight:600;font-size:11px;letter-spacing:.03em;text-transform:uppercase;padding:10px 13px;white-space:nowrap}
+  thead th.r,td.r{text-align:right} thead th.c,td.c{text-align:center}
+  tbody td{padding:9px 13px;border-bottom:1px solid var(--border);color:var(--mid)}
+  tbody tr:last-child td{border-bottom:0} tbody tr:hover{background:var(--surface-2)} tbody td b{color:var(--dark)}
+  tfoot td{padding:11px 13px;font-weight:800;color:var(--dark);background:var(--surface-3);border-top:2px solid var(--border-strong)}
+  .simple thead th{background:var(--surface-3);color:var(--muted)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+  .pill .dot{width:7px;height:7px;border-radius:50%}
+  .pill.ok{background:var(--ok-bg);color:var(--ok-fg)} .pill.ok .dot{background:var(--ok-fg)}
+  .pill.warn{background:var(--low-bg);color:var(--low-fg)} .pill.warn .dot{background:var(--low-fg)}
+  .pill.info{background:var(--red-050);color:var(--red-600)} .pill.info .dot{background:var(--red)}
+  .pill.neutral{background:var(--surface-3);color:var(--muted)} .pill.neutral .dot{background:var(--muted)}
+  .pill.blue{background:#e6efff;color:var(--blue)} .pill.blue .dot{background:var(--blue)}
+  .icononly{border:1px solid var(--border);background:var(--card);cursor:pointer;color:var(--muted);width:30px;height:30px;border-radius:7px;display:inline-grid;place-items:center}
+  .icononly:hover{color:var(--red);border-color:var(--red-100);background:var(--red-050)} .icononly svg{width:15px;height:15px}
+  .icononly.g:hover{color:var(--green);border-color:#bbf7d0;background:var(--ok-bg)}
+  .rowact{display:flex;gap:4px;justify-content:flex-end}
+  .inp{height:32px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);padding:0 8px;font-size:13px;outline:none;color:var(--ink);width:100%}
+  .inp:focus{border-color:var(--red)} .inp.mini{width:64px;text-align:right} .inp.ord{width:52px;text-align:center}
+  select.inp{padding:0 6px}
+  .toolbar{display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar .spacer{flex:1}
+  .searchbox{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:0 11px;height:38px;min-width:220px}
+  .searchbox svg{width:16px;height:16px;color:var(--faint)} .searchbox input{border:0;background:transparent;outline:none;font-size:13.5px;width:100%}
+  .eye{border:1px solid var(--border);background:var(--card);width:30px;height:30px;border-radius:7px;cursor:pointer;color:var(--muted);display:inline-grid;place-items:center}
+  .eye.on{color:var(--green);border-color:#bbf7d0;background:var(--ok-bg)} .eye.off{color:var(--faint)}
+  .eye svg{width:15px;height:15px}
+  .muted{color:var(--muted)} .small{font-size:12px}
+
+  /* catalog editor cards */
+  .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+  .ccard{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;position:relative}
+  .ccard.hidden-prod{opacity:.55}
+  .ccard .cth{height:84px;background:var(--surface-2);display:grid;place-items:center;border-bottom:1px solid var(--border);position:relative}
+  .ccard .cth svg{width:34px;height:34px;color:#9aa0a6}
+  .ccard .drag{position:absolute;top:6px;left:6px;color:var(--faint);cursor:grab;font-size:13px}
+  .ccard .chk{position:absolute;top:6px;right:6px}
+  .ccard .cb{padding:9px 10px}
+  .ccard .cn{font-size:12px;font-weight:700;color:var(--dark);line-height:1.3;min-height:31px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ccard .cm{font-size:10.5px;color:var(--muted);font-family:var(--mono);margin-top:2px}
+  .ccard .cp{font-size:12px;font-weight:700;color:var(--dark);margin-top:5px}
+  .ccard .ca{display:flex;gap:4px;margin-top:8px}
+
+  /* modal */
+  .modal{position:fixed;inset:0;z-index:80;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;background:rgba(0,0,0,.45)} .modal.open{display:flex}
+  .modal-box{background:var(--card);border-radius:14px;box-shadow:var(--shadow-lg);width:100%;max-width:600px;overflow:hidden}
+  .modal-box.wide{max-width:860px}
+  .modal-box .mh{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border)}
+  .modal-box .mh h3{margin:0;font-size:16px;font-weight:800;color:var(--dark)}
+  .modal-box .mh .x{border:0;background:transparent;cursor:pointer;color:var(--muted);width:32px;height:32px;border-radius:8px}
+  .modal-box .mh .x:hover{background:var(--surface-2);color:var(--dark)}
+  .modal-body{padding:18px;display:flex;flex-direction:column;gap:12px}
+  .modal-foot{padding:13px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+  .frow{display:grid;grid-template-columns:1fr 1fr;gap:12px} .frow.three{grid-template-columns:1fr 1fr 1fr}
+  .fld{display:flex;flex-direction:column;gap:5px} .fld.full{grid-column:1/-1}
+  .fld label{font-size:11.5px;font-weight:600;color:var(--muted)}
+  .fld input,.fld select,.fld textarea{height:38px;border:1px solid var(--border);border-radius:8px;padding:0 11px;font-size:13.5px;background:var(--surface-2);outline:none;font-family:inherit;color:var(--ink)}
+  .fld textarea{height:auto;padding:9px 11px;resize:vertical}
+  .fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--red)}
+  .modal-sec{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 -2px}
+  .finblock{border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  .finblock .fbh{background:var(--surface-2);padding:9px 13px;font-size:12.5px;font-weight:700;color:var(--dark);display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+  .finblock .fbb{padding:11px 13px}
+
+  .toast-wrap{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:100}
+  .toast{background:var(--dark);color:#fff;padding:11px 15px;border-radius:9px;box-shadow:var(--shadow-lg);font-size:13px;font-weight:500;display:flex;align-items:center;gap:9px;animation:sl .2s ease}
+  .toast svg{width:17px;height:17px;color:#4ade80}
+  @keyframes sl{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .empty{text-align:center;padding:40px 20px;color:var(--muted)}
+  .notice{background:var(--low-bg);color:var(--low-fg);border:1px solid #f5e08a;border-radius:9px;padding:9px 13px;font-size:12.5px;margin-bottom:14px;display:flex;gap:8px;align-items:center}
+  .notice svg{width:16px;height:16px;flex:none}
+
+  @media(max-width:1080px){ .kpis{grid-template-columns:repeat(3,1fr)} .grid2{grid-template-columns:1fr} }
+  @media(max-width:860px){
+    .layout{grid-template-columns:1fr}
+    .side{position:fixed;left:0;top:0;bottom:0;width:240px;z-index:70;transform:translateX(-105%);transition:transform .2s} .side.open{transform:none}
+    .side-toggle{display:inline-grid!important}
+    .kpis{grid-template-columns:repeat(2,1fr)} .frow,.frow.three{grid-template-columns:1fr}
+  }
+  .side-toggle{display:none;width:38px;height:38px;border-radius:8px;border:1px solid var(--border);background:var(--card);cursor:pointer;place-items:center;color:var(--dark)}
+  .side-toggle svg{width:20px;height:20px}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:65;display:none} .scrim.show{display:block}
+  /* Chatter (timeline lateral estilo Odoo) + stepper + adjuntos + programar */
+  .modal-box.xwide{max-width:1060px}
+  .qlayout{display:grid;grid-template-columns:1fr 312px;gap:0}
+  .qmain{padding-right:16px}
+  .chatter{border-left:1px solid var(--border);padding-left:16px;display:flex;flex-direction:column;gap:12px}
+  .chatter .cbar{display:flex;gap:6px;flex-wrap:wrap}
+  .chatter .composer{border:1px solid var(--border);border-radius:9px;overflow:hidden}
+  .chatter .composer textarea{width:100%;border:0;padding:9px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:50px;outline:none;color:var(--ink)}
+  .chatter .composer .ctools{display:flex;align-items:center;gap:3px;padding:5px 7px;border-top:1px solid var(--border);background:var(--surface-2)}
+  .chatter .composer .ctools .spacer{flex:1}
+  .attach-chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:11.5px;color:var(--mid)}
+  .attach-chip svg{width:13px;height:13px;color:var(--red)} .attach-chip .rm{cursor:pointer;color:var(--faint)}
+  .daysep{text-align:center;font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;border-top:1px solid var(--border);padding-top:8px}
+  .tl{display:flex;flex-direction:column;gap:13px}
+  .tl .ev{display:flex;gap:9px}
+  .tl .av{width:28px;height:28px;border-radius:50%;background:var(--dark);color:#fff;display:grid;place-items:center;font-size:10.5px;font-weight:700;flex:none}
+  .tl .av.sys{background:var(--surface-3);color:var(--muted)}
+  .tl .evb{flex:1;min-width:0}
+  .tl .evh{font-size:11px;color:var(--muted)} .tl .evh b{color:var(--dark)}
+  .tl .chg{font-size:12px;margin-top:1px}
+  .tl .chg .k{color:var(--muted)} .tl .chg .from{color:var(--faint)} .tl .chg .to{color:var(--red-600);font-weight:600}
+  .tl .msg{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:3px;color:var(--mid)}
+  .tl .evc{font-size:12px;color:var(--mid);margin-top:1px}
+  .stepper{display:inline-flex;align-items:center}
+  .stepper .st{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-right:0;padding:4px 13px;white-space:nowrap}
+  .stepper .st:first-child{border-radius:6px 0 0 6px} .stepper .st:last-child{border-radius:0 6px 6px 0;border-right:1px solid var(--border)}
+  .stepper .st.done{background:var(--dark);color:#fff;border-color:var(--dark)}
+  .stepper .st.cur{background:var(--red);color:#fff;border-color:var(--red)}
+  .sched{display:flex;align-items:center;gap:10px;margin-top:4px;font-size:12.5px;color:var(--mid)}
+  .sched input[type=datetime-local]{height:34px;border:1px solid var(--border);border-radius:7px;padding:0 8px;font-size:12.5px;background:var(--surface-2);color:var(--ink)}
+  .chk{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .chk input{width:16px;height:16px;accent-color:var(--red)}
+  .chipbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--surface-2)}
+  .chipbox .chipin{border:0;background:transparent;outline:none;font-size:13px;min-width:150px;flex:1;height:26px;color:var(--ink)}
+  #emTo,#emCc{display:contents}
+  @media(max-width:820px){ .qlayout{grid-template-columns:1fr} .qmain{padding-right:0} .chatter{border-left:0;border-top:1px solid var(--border);padding-left:0;padding-top:14px;margin-top:6px} }
+</style>
+</head>
+<body>
+<div class="mockflag">MAQUETA — Panel interno de <b>Autodiagnóstico</b> · paleta clara · datos ficticios (catálogo real) · usá el selector "Ver como rol" abajo a la izquierda</div>
+
+<div class="layout">
+  <aside class="side" id="side">
+    <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2-6 4 14 2-6h6"/></svg></span><span class="word">Auto<span>diag</span></span></div>
+    <nav id="adminNav"></nav>
+    <div class="foot">
+      <div class="u"><span class="ua" id="uAvatar">FA</span><div><div class="un">Franco Andrino</div><div class="ue" id="uRole">Superadmin</div></div></div>
+      <label>Ver como rol (demo)</label>
+      <select id="roleSel" onchange="setRole(this.value)">
+        <option value="superadmin">Superadmin (ve todo)</option>
+        <option value="sales_billing">Ventas / Facturación</option>
+        <option value="administration">Administración (solo Facturación)</option>
+        <option value="logistics">Logística (solo Depósito)</option>
+      </select>
+      <div class="hint">El backend gatea por capability; cambiar roles es solo superadmin.</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="side-toggle" onclick="document.getElementById('side').classList.toggle('open');document.getElementById('scrim').classList.toggle('show')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <h1 id="secTitle">Dashboard</h1>
+      <span class="rolechip" id="roleChip">Superadmin</span>
+      <div class="spacer"></div>
+      <div id="topActions"></div>
+    </div>
+    <div class="content">
+      <section class="section active" id="sec-dashboard"></section>
+      <section class="section" id="sec-catalog"></section>
+      <section class="section" id="sec-products"></section>
+      <section class="section" id="sec-clients"></section>
+      <section class="section" id="sec-quotes"></section>
+      <section class="section" id="sec-billing"></section>
+      <section class="section" id="sec-logistics"></section>
+      <section class="section" id="sec-settings"></section>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal"><div class="modal-box" id="modalBox"></div></div>
+<div class="scrim" id="scrim" onclick="document.getElementById('side').classList.remove('open');this.classList.remove('show')"></div>
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+const P = [{"id":1,"sku":"30429","name":"JDiag M400 PRO MOTOSYS – Escáner Profesional para Motos","brand":"JDiag","cat":"Escáneres Motos","pvp":2250000,"disc":12,"stock":"no","nov":false},{"id":2,"sku":"30316","name":"JDiag M400 MOTOSYS – Escáner Profesional para Motos","brand":"JDiag","cat":"Escáneres Motos","pvp":1885000,"disc":12,"stock":"no","nov":false},{"id":3,"sku":"30446","name":"Scanner Moto JDiag M100 Full Diagnóstico Multimarca Profesional","brand":"JDiag","cat":"Escáneres Motos","pvp":615000,"disc":12,"stock":"no","nov":false},{"id":4,"sku":"30447","name":"Adaptador Iveco Eco 8+8 SGW Para Diagnóstico","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":85000,"disc":17,"stock":"no","nov":false},{"id":5,"sku":"30448","name":"Autel BT608 Analizador Profesional De Baterías Automotrices","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":753000,"disc":17,"stock":"no","nov":false},{"id":6,"sku":"10952","name":"Reed CM-8822 Medidor Espesor De Recubrimiento Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":800000,"disc":17,"stock":"no","nov":false},{"id":7,"sku":"11554","name":"Medidor Espesor Revestimiento Digital Portátil Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":85000,"disc":17,"stock":"no","nov":false},{"id":8,"sku":"10243","name":"Medidor Espesor Pintura Automóvil Para Inspección De Vehículos","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":90000,"disc":17,"stock":"no","nov":false},{"id":9,"sku":"10244","name":"EC-900 Medidor Espesor Con Datalogger Y Sonda","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":525000,"disc":17,"stock":"no","nov":false},{"id":10,"sku":"10245","name":"Medidor Espesor Pintura Profesional FE Y NFE","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":400000,"disc":17,"stock":"no","nov":false},{"id":11,"sku":"","name":"Gainexpress E04-025 Medidor De Espesor De Pintura","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":48500,"disc":23,"stock":"no","nov":false},{"id":12,"sku":"","name":"Medidor Espesor Pintura Ferroso Y No Ferroso","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":275000,"disc":17,"stock":"no","nov":false},{"id":13,"sku":"11832","name":"Etilometro Con Impresora Para Test De Alcoholemia","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":3750000,"disc":17,"stock":"no","nov":false},{"id":14,"sku":"11958","name":"Alcoholímetro Vehicular Con Bloqueo De Arranque","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":3750000,"disc":17,"stock":"no","nov":false},{"id":15,"sku":"10069","name":"Alcoholímetro Pasivo Sin Contacto De Alta Precisión","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":1850000,"disc":17,"stock":"no","nov":false},{"id":16,"sku":"10089","name":"SL5868P Decibelímetro Con Datalogger 30 A 130dB","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":385000,"disc":17,"stock":"no","nov":false},{"id":17,"sku":"11084","name":"Sper 850017 Decibelímetro Integrador Con Datalogger","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":2350000,"disc":17,"stock":"no","nov":false},{"id":18,"sku":"10081","name":"WT1357 Decibelímetro Profesional Con Maletín 130dB","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":200000,"disc":17,"stock":"no","nov":false},{"id":19,"sku":"10090","name":"MK09 Decibelímetro Digital 30 A 130dB Portátil","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":75000,"disc":17,"stock":"no","nov":false},{"id":20,"sku":"11466","name":"Patagonia SLM-24 Decibelímetro Digital 30 A 130dB","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":150000,"disc":17,"stock":"no","nov":false},{"id":21,"sku":"10086","name":"HoldPeak HP-882A Decibelímetro Digital Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":200000,"disc":17,"stock":"no","nov":false},{"id":22,"sku":"10707","name":"Habotest HT64 Decibelímetro Digital Medidor De Ruido","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":38500,"disc":23,"stock":"no","nov":false},{"id":23,"sku":"10079","name":"VONKY Decibelímetro Digital Medidor De Ruido 130dB","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":32990,"disc":23,"stock":"no","nov":false},{"id":24,"sku":"10087","name":"Risepro HT-80A Sonómetro Digital Medidor De Ruido","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":64990,"disc":17,"stock":"no","nov":false},{"id":25,"sku":"10080","name":"Smart Sensor ST9604 Sonómetro Digital Clase 2","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":64990,"disc":17,"stock":"no","nov":false},{"id":26,"sku":"11176","name":"Data Logger 4G LTE Temperatura Humedad Remoto","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":650000,"disc":17,"stock":"no","nov":false},{"id":27,"sku":"11353","name":"Multímetro Digital Inteligente Pantalla Gigante True RMS","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":85000,"disc":17,"stock":"no","nov":false},{"id":28,"sku":"11262","name":"CEM DT-8852 Sonómetro Data Logger Clase 2","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":440000,"disc":17,"stock":"no","nov":false},{"id":29,"sku":"11147","name":"Danoplus THE-373 Termómetro Data Logger 4 Canales","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":350000,"disc":17,"stock":"no","nov":false},{"id":30,"sku":"10354","name":"Data Logger USB IP67 Termómetro Ambiental Digital","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":40000,"disc":23,"stock":"bajo","nov":false},{"id":31,"sku":"10352","name":"TZONE TEMPU 03 Data Logger Temperatura Humedad","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":115000,"disc":17,"stock":"bajo","nov":false},{"id":32,"sku":"10350","name":"Elitech RC-4HC Datalogger Temperatura Y Humedad USB","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":115000,"disc":17,"stock":"bajo","nov":false},{"id":33,"sku":"10351","name":"Elitech RC-4 Datalogger USB Registro De Temperatura","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":75000,"disc":17,"stock":"bajo","nov":false},{"id":34,"sku":"10348","name":"Elitech RC-5 Datalogger USB De Temperatura Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":64990,"disc":17,"stock":"bajo","nov":false},{"id":35,"sku":"11574","name":"Caudalímetro Surtidor Digital Para Nafta Y Gasolina","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":250000,"disc":17,"stock":"bajo","nov":false},{"id":36,"sku":"10439","name":"Caudalímetro Combustible 1 Pulgada Cuenta Litros Digital","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":90000,"disc":17,"stock":"bajo","nov":false},{"id":37,"sku":"10435","name":"Caudalímetro Diésel Digital 1 Pulgada 120 L/min","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":90000,"disc":17,"stock":"bajo","nov":false},{"id":38,"sku":"10438","name":"Caudalímetro Zerone K24 Medidor Digital Combustible","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":85000,"disc":17,"stock":"bajo","nov":false},{"id":39,"sku":"11260","name":"CEM AT-9135 Punta Lógica Para Diagnóstico Automotriz","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":145000,"disc":17,"stock":"bajo","nov":false},{"id":40,"sku":"10330","name":"Pistola Bushnell Medicion Velocidad Radar 16 A 322 Km/h","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":600000,"disc":17,"stock":"bajo","nov":false},{"id":41,"sku":"30414","name":"Autel Ultra S2 Escáner Profesional Con MaxiFlash VCMI2","brand":"Autel","cat":"Escáneres Autos","pvp":10328000,"disc":12,"stock":"bajo","nov":true},{"id":42,"sku":"12042","name":"Anteojos Seguridad Wejump Cristal Transparente","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":17500,"disc":23,"stock":"bajo","nov":false},{"id":43,"sku":"11616","name":"DXZtoz RT-100 Boroscopio Inalámbrico Full HD 1080P","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":525000,"disc":17,"stock":"bajo","nov":false},{"id":44,"sku":"12068","name":"Boroscopio Articulado 4 Direcciones 6.2mm Con Pantalla","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":675000,"disc":17,"stock":"bajo","nov":false},{"id":45,"sku":"11852","name":"FNIRSI GD-02 Detector Gas Metano Propano Isobutano","brand":"FNIRSI","cat":"Otras Herramientas","pvp":95000,"disc":18,"stock":"bajo","nov":false},{"id":46,"sku":"11737","name":"UNI-T UT89X Multímetro Digital True RMS NCV Dual","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":45900,"disc":23,"stock":"bajo","nov":false},{"id":47,"sku":"10164","name":"Pinza Corriente Fuga 60A AC Alta Sensibilidad","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":346900,"disc":17,"stock":"bajo","nov":false},{"id":48,"sku":"10240","name":"Medidor Espesor Pintura Digital 0-1300μm Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":215000,"disc":17,"stock":"bajo","nov":false},{"id":49,"sku":"11380","name":"Multímetro Smart Digital True RMS Pantalla Gigante","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":65000,"disc":17,"stock":"bajo","nov":false},{"id":50,"sku":"10136","name":"ACDelco ARM303-4A Torquímetro Digital Angular 1/2\u0026#8243;","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":975000,"disc":17,"stock":"bajo","nov":false},{"id":51,"sku":"10137","name":"ACDelco Llave Angular Digital Torque Profesional 1/2\u0026#8243;","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":850000,"disc":17,"stock":"bajo","nov":false},{"id":52,"sku":"10132","name":"ACDelco ARM601-2 Torquímetro Digital 1/4\u0026#8243; 2.5-25Nm","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":850000,"disc":17,"stock":"bajo","nov":false},{"id":53,"sku":"10130","name":"ACDelco Torquímetro Digital 1/2\u0026#8243; 20-200Nm Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":635000,"disc":17,"stock":"bajo","nov":false},{"id":54,"sku":"10138","name":"ACDelco ARM602-4 Torquímetro Digital 1/2\u0026#8243; 200Nm","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":285000,"disc":17,"stock":"bajo","nov":false},{"id":55,"sku":"11364","name":"Hantek DSO4104B Osciloscopio 100MHz 4 Canales","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":943500,"disc":17,"stock":"bajo","nov":false},{"id":56,"sku":"10875","name":"Osciloscopio 4 Canales 120MHz Portátil Táctil","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":2250000,"disc":17,"stock":"bajo","nov":false},{"id":57,"sku":"10923","name":"OWON XDS2102A Osciloscopio 100MHz 2 Canales","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":1300000,"disc":17,"stock":"bajo","nov":false},{"id":58,"sku":"11107","name":"OWON HDS272S Osciloscopio 70MHz 2 Canales","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":675000,"disc":17,"stock":"bajo","nov":false},{"id":59,"sku":"11192","name":"OWON HDS242S Osciloscopio 40MHz 2 Canales","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":425000,"disc":17,"stock":"bajo","nov":false},{"id":60,"sku":"10202","name":"OWON HDS2102S Osciloscopio 100 MHz 2 Canales","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":598000,"disc":17,"stock":"bajo","nov":false},{"id":61,"sku":"11825","name":"Fuente Regulable Cuatro Canales JDOUNFMO MCH-3205 IV","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":1150000,"disc":17,"stock":"bajo","nov":false},{"id":62,"sku":"10135","name":"Torquímetro Digital ACDelco ARM313-2A 1/4 Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":800000,"disc":17,"stock":"bajo","nov":false},{"id":63,"sku":"12027","name":"ANENG AR01 Cámara Termográfica y Multímetro Digital","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":250000,"disc":17,"stock":"bajo","nov":false},{"id":64,"sku":"10247","name":"Medidor de Espesor de Pintura YOWEXA EC-500A Digital","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":275000,"disc":17,"stock":"bajo","nov":false},{"id":65,"sku":"11840","name":"Pistola de Calor FNIRSI SAG-55 550W para Soldadura","brand":"FNIRSI","cat":"Otras Herramientas","pvp":165000,"disc":18,"stock":"bajo","nov":false},{"id":66,"sku":"10940","name":"Termómetro Infrarrojo Industrial 1500 Grados Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":331658,"disc":17,"stock":"bajo","nov":false},{"id":67,"sku":"11777","name":"Multímetro Digital ANENG 626 Recargable Alta Precisión","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":54990,"disc":17,"stock":"bajo","nov":false},{"id":68,"sku":"11412","name":"Osciloscopio Digital FNIRSI 1C15 110MHz Portátil","brand":"FNIRSI","cat":"Otras Herramientas","pvp":150000,"disc":18,"stock":"bajo","nov":false},{"id":69,"sku":"11434","name":"Cámara Térmica UNI-T UTi120S para Inspección Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":575000,"disc":17,"stock":"bajo","nov":false},{"id":70,"sku":"11603","name":"Osciloscopio Portátil FNIRSI 2C53T 3 en 1 50MHz 2 Canales","brand":"FNIRSI","cat":"Otras Herramientas","pvp":165000,"disc":18,"stock":"bajo","nov":false},{"id":71,"sku":"11128","name":"Multímetro Digital FNIRSI S1 Inteligente True RMS","brand":"FNIRSI","cat":"Otras Herramientas","pvp":64990,"disc":18,"stock":"bajo","nov":false},{"id":72,"sku":"11411","name":"Osciloscopio Digital FNIRSI DPOX180H 180MHz 2 Canales","brand":"FNIRSI","cat":"Otras Herramientas","pvp":250000,"disc":18,"stock":"si","nov":false},{"id":73,"sku":"11127","name":"FNIRSI DMT-99 Multímetro Digital True RMS Recargable","brand":"FNIRSI","cat":"Otras Herramientas","pvp":80000,"disc":18,"stock":"si","nov":false},{"id":74,"sku":"11410","name":"FNIRSI 2C53P Osciloscopio Tablet 2 Canales 50MHz","brand":"FNIRSI","cat":"Otras Herramientas","pvp":225000,"disc":18,"stock":"si","nov":false},{"id":75,"sku":"11294","name":"FNIRSI HRM-10 Probador de Resistencia Interna Baterías","brand":"FNIRSI","cat":"Otras Herramientas","pvp":140000,"disc":18,"stock":"si","nov":false},{"id":76,"sku":"11409","name":"Decibelímetro Digital Medidor de Ruido 30 a 130dB","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":90000,"disc":17,"stock":"si","nov":false},{"id":77,"sku":"11350","name":"Pinza Amperimétrica ANENG ST212 True RMS con Capacímetro","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":78000,"disc":17,"stock":"si","nov":false},{"id":78,"sku":"10169","name":"Osciloscopio Digital FNIRSI 1013D 2 Canales 100MHz","brand":"FNIRSI","cat":"Otras Herramientas","pvp":335000,"disc":18,"stock":"si","nov":false},{"id":79,"sku":"11377","name":"Multímetro Digital ANENG 621A True RMS con Pantalla Táctil","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":57500,"disc":17,"stock":"si","nov":false},{"id":80,"sku":"11194","name":"Sonda para Osciloscopio FNIRSI P6100 100MHz X1/X10 BNC","brand":"FNIRSI","cat":"Otras Herramientas","pvp":12750,"disc":24,"stock":"si","nov":false},{"id":81,"sku":"30443","name":"Banco de Limpieza de Inyectores GDI Autool CT400","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":2050000,"disc":17,"stock":"si","nov":false},{"id":82,"sku":"12058","name":"AUTOOL ATF705 Cambio Automático de Aceite ATF","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":3750000,"disc":17,"stock":"si","nov":false},{"id":83,"sku":"30445","name":"OBDeleven 3 Scanner Bluetooth OBD2","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":575000,"disc":17,"stock":"si","nov":false},{"id":84,"sku":"30419","name":"Launch SmartLink B V2.0 | Diagnóstico Remoto Profesional","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":2100000,"disc":17,"stock":"si","nov":false},{"id":85,"sku":"30422","name":"Launch EVB 624 | Ecualizador de Celdas para Baterías EV","brand":"Otras Marcas","cat":"Testers de Baterías","pvp":5750000,"disc":17,"stock":"si","nov":true},{"id":86,"sku":"30233","name":"Launch SmartLink C V2.0 | Diagnóstico Remoto y J2534 PassThru","brand":"Launch","cat":"Escáneres Autos","pvp":2100000,"disc":15,"stock":"si","nov":false},{"id":87,"sku":"30421","name":"Launch ELP400 | Ciclador y Balanceador de Baterías EV","brand":"Launch","cat":"Testers de Baterías","pvp":4250000,"disc":15,"stock":"si","nov":false},{"id":88,"sku":"30424","name":"LAUNCH ELA320 – Fuente para baterías de alto voltaje EV","brand":"Launch","cat":"Testers de Baterías","pvp":2650000,"disc":15,"stock":"si","nov":false},{"id":89,"sku":"30417","name":"LAUNCH X-431 PRO3 LINK","brand":"Launch","cat":"Escáneres Autos","pvp":3150000,"disc":15,"stock":"si","nov":false},{"id":90,"sku":"30392","name":"Konnwei Sa500 Arrancador Bateria 12v","brand":"Konnwei","cat":"Testers de Baterías","pvp":175000,"disc":20,"stock":"si","nov":false},{"id":91,"sku":"30423","name":"LAUNCH EV ADD-ON KIT","brand":"Launch","cat":"Escáneres Autos","pvp":1450000,"disc":15,"stock":"si","nov":false},{"id":92,"sku":"30425","name":"LAUNCH CRP129S MT","brand":"Launch","cat":"Escáneres Motos","pvp":950000,"disc":15,"stock":"si","nov":false},{"id":93,"sku":"30430","name":"Banco de Prueba de Inyectores ANCEL JC200","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":525000,"disc":17,"stock":"si","nov":false},{"id":94,"sku":"30432","name":"Tester de Batería Automotriz BM310 12V","brand":"Otras Marcas","cat":"Testers de Baterías","pvp":11995,"disc":23,"stock":"si","nov":false},{"id":95,"sku":"30431","name":"Medidor Digital de Presión de Neumáticos (Manómetro Digital)","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":11750,"disc":23,"stock":"si","nov":false},{"id":96,"sku":"30428","name":"Probador de actuadores automotrices QDB-3A","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":190000,"disc":17,"stock":"si","nov":false},{"id":97,"sku":"30393","name":"KONNWEI MAXOBD SCANNER OBD2 Bluetooth","brand":"Konnwei","cat":"Escáneres Autos","pvp":53000,"disc":20,"stock":"si","nov":false},{"id":98,"sku":"30394","name":"Konnwei KW700 TESTER DE BATERÍA","brand":"Konnwei","cat":"Testers de Baterías","pvp":200000,"disc":20,"stock":"si","nov":false},{"id":99,"sku":"30395","name":"KONNWEI KW206 Pantalla OBD2 3.5” HUD","brand":"Konnwei","cat":"Escáneres Autos","pvp":135000,"disc":20,"stock":"si","nov":false},{"id":100,"sku":"30407","name":"LLAVE INTELIGENTE LCD Multimarca CF568","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":190000,"disc":17,"stock":"no","nov":false},{"id":101,"sku":"30426","name":"Recolector y Extractor de Aceite Usado","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":625000,"disc":17,"stock":"no","nov":false},{"id":102,"sku":"30408","name":"LLAVE INTELIGENTE LCD Multimarca CF920","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":190000,"disc":17,"stock":"no","nov":false},{"id":103,"sku":"30415","name":"Lámpara Estroboscópica Xenon","brand":"Otras Marcas","cat":"Puesta a Punto","pvp":95000,"disc":17,"stock":"no","nov":false},{"id":104,"sku":"30371","name":"CABLE EXTENSOR OBD2 – 16 PINES 60 CM","brand":"Otras Marcas","cat":"Adaptadores","pvp":85000,"disc":17,"stock":"no","nov":false},{"id":105,"sku":"30370","name":"CABLE EXTENSOR OBD2 – 16 PINES 20 CM","brand":"Otras Marcas","cat":"Adaptadores","pvp":44999,"disc":23,"stock":"no","nov":false},{"id":106,"sku":"30403","name":"KONNWEI KW851","brand":"Konnwei","cat":"Escáneres Autos","pvp":185000,"disc":20,"stock":"no","nov":false},{"id":107,"sku":"30411","name":"Banco De Inyectores Automotriz Prueba De Inyectores AUTOOL","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":800000,"disc":17,"stock":"no","nov":false},{"id":108,"sku":"30402","name":"Scanner KONNWEI KW590 OBD2","brand":"Konnwei","cat":"Escáneres Autos","pvp":130000,"disc":20,"stock":"no","nov":false},{"id":109,"sku":"30401","name":"Tester de Bateria KONNWEI KW218","brand":"Konnwei","cat":"Testers de Baterías","pvp":90000,"disc":20,"stock":"no","nov":false},{"id":110,"sku":"30400","name":"Scanner KONNWEI KW420 OBD2","brand":"Konnwei","cat":"Escáneres Autos","pvp":250000,"disc":20,"stock":"no","nov":false},{"id":111,"sku":"30272","name":"SCANNER MULTIMARCA JDIAG M100 Blue","brand":"JDiag","cat":"Escáneres Motos","pvp":415000,"disc":12,"stock":"no","nov":false},{"id":112,"sku":"30271","name":"SCANNER MULTIMARCA JDIAG M100 PRO","brand":"JDiag","cat":"Escáneres Motos","pvp":715000,"disc":12,"stock":"no","nov":false},{"id":113,"sku":"30282","name":"SCANNER MULTIMARCA JDIAG M100 PRO (Estándar versión)","brand":"JDiag","cat":"Escáneres Motos","pvp":815000,"disc":12,"stock":"no","nov":false},{"id":114,"sku":"30172","name":"SCANNER MULTIMARCA JDIAG M100 PRO TESTER BATERÍA FULL CABLES","brand":"JDiag","cat":"Escáneres Motos","pvp":875000,"disc":12,"stock":"no","nov":false},{"id":115,"sku":"30314","name":"JDiag M200 – Escáner Multimarca para Motos","brand":"JDiag","cat":"Escáneres Motos","pvp":850000,"disc":12,"stock":"no","nov":false},{"id":116,"sku":"30315","name":"JDiag M200Pro – Escáner Avanzado para Motos","brand":"JDiag","cat":"Escáneres Motos","pvp":925000,"disc":12,"stock":"no","nov":false},{"id":117,"sku":"30268","name":"JDIAG M300 SCANNER PARA MOTOS UNIVERSAL","brand":"JDiag","cat":"Escáneres Motos","pvp":875000,"disc":12,"stock":"no","nov":false},{"id":118,"sku":"30399","name":"Scanner KONNWEI KW350","brand":"Konnwei","cat":"Escáneres Autos","pvp":185000,"disc":20,"stock":"no","nov":false},{"id":119,"sku":"30397","name":"Escáner FCAR F7S-G Autos, Camiones y Agrícola","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":5500000,"disc":17,"stock":"no","nov":true},{"id":120,"sku":"30396","name":"Escaner Autophix 3210 PRO OBD2 SRS y ABS Bluetooth","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":350000,"disc":17,"stock":"no","nov":false},{"id":121,"sku":"30306","name":"Scanner OBD Eleven Diagnóstico OBD-II para Audi Volkswagen","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":475000,"disc":17,"stock":"no","nov":false},{"id":122,"sku":"30391","name":"BANCO DE PRUEBAS BDM LED KTAG KESS XPROG ACERO","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":275000,"disc":17,"stock":"no","nov":false},{"id":123,"sku":"30380","name":"KINGBOLEN YA100 - ESCÁNER AUTOMOTRIZ OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":75000,"disc":17,"stock":"no","nov":false},{"id":124,"sku":"30378","name":"Kingbolen S800 OBD2 Escáner Automotriz","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":785000,"disc":17,"stock":"no","nov":false},{"id":125,"sku":"30379","name":"KINGBOLEN K7 – Escáner Automotriz Bidireccional","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":1500000,"disc":17,"stock":"no","nov":false},{"id":126,"sku":"30377","name":"Foxwell NT630 Plus Scanner Automotriz","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":545000,"disc":17,"stock":"no","nov":false},{"id":127,"sku":"30375","name":"Probador de Bujías AUTOOL SPT101","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":120000,"disc":17,"stock":"no","nov":false},{"id":128,"sku":"30332","name":"Scanner Automotriz Vgate Maxiscan VS-890 — OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":185000,"disc":17,"stock":"no","nov":false},{"id":129,"sku":"30329","name":"Programador OdoMaster Obdstar Tableros Obd2 Diagnostico","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":2040000,"disc":17,"stock":"no","nov":false},{"id":130,"sku":"30373","name":"OBDSTAR D700 – Escáner náutico para fuera de borda y jetski","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":3325000,"disc":17,"stock":"bajo","nov":false},{"id":131,"sku":"30251","name":"Scanner ThinkScan Plus S4 OBD2 - 5 Servicios de reinicio","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":500000,"disc":17,"stock":"bajo","nov":false},{"id":132,"sku":"30252","name":"Scanner ThinkScan Plus S5 OBD2 - Lector de Códigos","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":500000,"disc":17,"stock":"bajo","nov":false},{"id":133,"sku":"30253","name":"Scanner ThinkScan Plus S6 OBD2 - 5 Servicios de reinicio","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":500000,"disc":17,"stock":"bajo","nov":false},{"id":134,"sku":"30236","name":"THINKCAR THINKSCAN S7 PLUS","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":625000,"disc":17,"stock":"bajo","nov":false},{"id":135,"sku":"30390","name":"TESTER DE BATERIA KONNWEI BK200 BLUETOOTH","brand":"Konnwei","cat":"Testers de Baterías","pvp":48750,"disc":26,"stock":"bajo","nov":false},{"id":136,"sku":"30242","name":"SCANNER KONNWEI KW906 BLUETOOTH OBD2","brand":"Konnwei","cat":"Escáneres Autos","pvp":50000,"disc":20,"stock":"bajo","nov":false},{"id":137,"sku":"30000","name":"AUTEL AL329 OBD2","brand":"Autel","cat":"Escáneres Autos","pvp":110000,"disc":12,"stock":"bajo","nov":false},{"id":138,"sku":"30001","name":"AUTEL AUTOLINK AL439","brand":"Autel","cat":"Escáneres Autos","pvp":257000,"disc":12,"stock":"bajo","nov":false},{"id":139,"sku":"30304","name":"AUTEL AL529HD","brand":"Autel","cat":"Para Línea Pesada","pvp":415000,"disc":12,"stock":"bajo","nov":false},{"id":140,"sku":"30307","name":"AUTEL AUTOLINK AL539B","brand":"Autel","cat":"Escáneres Autos","pvp":333000,"disc":12,"stock":"bajo","nov":false},{"id":141,"sku":"30006","name":"AUTEL AL549 OBD2","brand":"Autel","cat":"Escáneres Autos","pvp":293000,"disc":12,"stock":"bajo","nov":false},{"id":142,"sku":"30007","name":"SCANNER AUTEL MAXIDIAG MD808 OBD2","brand":"Autel","cat":"Escáneres Autos","pvp":490000,"disc":12,"stock":"bajo","nov":false},{"id":143,"sku":"30008","name":"AUTEL AL629 OBD2","brand":"Autel","cat":"Escáneres Autos","pvp":435750,"disc":12,"stock":"bajo","nov":false},{"id":144,"sku":"30317","name":"AUTEL MAXIDIAG MD909 PRO","brand":"Autel","cat":"Escáneres Autos","pvp":730000,"disc":12,"stock":"bajo","nov":false},{"id":145,"sku":"30010","name":"AUTEL MAXICHECK MX808S OBD2","brand":"Autel","cat":"Escáneres Autos","pvp":998000,"disc":12,"stock":"bajo","nov":false},{"id":146,"sku":"30230","name":"AUTEL MAXICHECK MX900","brand":"Autel","cat":"Escáneres Autos","pvp":1350000,"disc":12,"stock":"bajo","nov":false},{"id":147,"sku":"30308","name":"AUTEL MAXIDAS DS900 BT","brand":"Autel","cat":"Escáneres Autos","pvp":1828000,"disc":12,"stock":"bajo","nov":false},{"id":148,"sku":"30281","name":"AUTEL MAXISYS MS906 MAX","brand":"Autel","cat":"Escáneres Autos","pvp":3050000,"disc":12,"stock":"bajo","nov":false},{"id":149,"sku":"30410","name":"Autel MaxiSys MS908S3","brand":"Autel","cat":"Escáneres Autos","pvp":3490000,"disc":12,"stock":"bajo","nov":false},{"id":150,"sku":"30266","name":"SCANNER AUTEL MAXISYS MS908S Pro II","brand":"Autel","cat":"Escáneres Autos","pvp":5250000,"disc":12,"stock":"bajo","nov":true},{"id":151,"sku":"30295","name":"AUTEL MS909 S2","brand":"Autel","cat":"Escáneres Autos","pvp":5228000,"disc":12,"stock":"bajo","nov":true},{"id":152,"sku":"30296","name":"AUTEL MAXISYS MS919 S2+ OSCILOSCOPIO AUTEL","brand":"Autel","cat":"Escáneres Autos","pvp":6640000,"disc":12,"stock":"bajo","nov":true},{"id":153,"sku":"30297","name":"AUTEL MAXISYS ULTRA","brand":"Autel","cat":"Escáneres Autos","pvp":9250000,"disc":12,"stock":"bajo","nov":true},{"id":154,"sku":"30298","name":"AUTEL MAXIIM KM100","brand":"Autel","cat":"Cerrajería Automotriz","pvp":1160000,"disc":12,"stock":"bajo","nov":false},{"id":155,"sku":"30299","name":"AUTEL MAXIIM IM508S + GBOX3","brand":"Autel","cat":"Cerrajería Automotriz","pvp":2136750,"disc":12,"stock":"bajo","nov":false},{"id":156,"sku":"30305","name":"AUTEL IM608 PRO II + APB112 + IMPKA KIT","brand":"Autel","cat":"Cerrajería Automotriz","pvp":6856000,"disc":12,"stock":"bajo","nov":true},{"id":157,"sku":"30292","name":"AUTEL MAXIVCI200 INTERFAZ DE COMUNICACION BLUETOOTH","brand":"Autel","cat":"Adaptadores","pvp":650000,"disc":12,"stock":"bajo","nov":false},{"id":158,"sku":"30023","name":"ADAPTADOR AUTEL CAN FD","brand":"Autel","cat":"Adaptadores","pvp":235000,"disc":12,"stock":"bajo","nov":false},{"id":159,"sku":"30024","name":"AUTEL BT506 PROBADOR DE BATERÍAS","brand":"Autel","cat":"Testers de Baterías","pvp":367000,"disc":12,"stock":"bajo","nov":false},{"id":160,"sku":"30025","name":"AUTEL G-BOX2 PROGRAMACIÓN LLAVES","brand":"Autel","cat":"Cerrajería Automotriz","pvp":306000,"disc":12,"stock":"bajo","nov":false},{"id":161,"sku":"30026","name":"AUTEL APB112 EMULADOR DE LLAVES","brand":"Autel","cat":"Cerrajería Automotriz","pvp":785000,"disc":12,"stock":"bajo","nov":false},{"id":162,"sku":"30027","name":"AUTEL MAXIFLASH ELITE J2534","brand":"Autel","cat":"Otras Herramientas","pvp":1830000,"disc":12,"stock":"bajo","nov":false},{"id":163,"sku":"30028","name":"AUTEL KIT ADAPTADORES OBD1 OBD2","brand":"Autel","cat":"Adaptadores","pvp":320000,"disc":12,"stock":"bajo","nov":false},{"id":164,"sku":"30032","name":"AUTEL PS100 PUNTA LÓGICA","brand":"Autel","cat":"Otras Herramientas","pvp":235000,"disc":12,"stock":"bajo","nov":false},{"id":165,"sku":"30035","name":"AUTEL IMKPA KIT DE PROGRAMACION DE LLAVES","brand":"Autel","cat":"Adaptadores","pvp":430000,"disc":12,"stock":"bajo","nov":false},{"id":166,"sku":"30038","name":"AUTEL TBE200 SENSOR DE DESGASTE","brand":"Autel","cat":"TPMS","pvp":806000,"disc":12,"stock":"bajo","nov":false},{"id":167,"sku":"30039","name":"AUTEL TBE100 SENSOR DE DESGASTE","brand":"Autel","cat":"TPMS","pvp":708000,"disc":12,"stock":"bajo","nov":false},{"id":168,"sku":"30040","name":"AUTEL MAXIVIDEO MV105s BOROSCOPIO","brand":"Autel","cat":"Boroscopio","pvp":225000,"disc":12,"stock":"bajo","nov":false},{"id":169,"sku":"30041","name":"AUTEL MAXIVIDEO MV108S BOROSCOPIO","brand":"Autel","cat":"Boroscopio","pvp":224999,"disc":12,"stock":"bajo","nov":false},{"id":170,"sku":"30014","name":"AUTEL AP200 OBD2","brand":"Autel","cat":"Escáneres Autos","pvp":154700,"disc":12,"stock":"bajo","nov":false},{"id":171,"sku":"30002","name":"AUTEL AL529 SCANNER AUTOMOTRIZ","brand":"Autel","cat":"Escáneres Autos","pvp":190000,"disc":12,"stock":"bajo","nov":false},{"id":172,"sku":"30037","name":"AUTEL TS408 OBD2 TPMS","brand":"Autel","cat":"Escáneres Autos","pvp":405000,"disc":12,"stock":"si","nov":false},{"id":173,"sku":"30009","name":"AUTEL MD808 PRO OBD2 SCANNER","brand":"Autel","cat":"Escáneres Autos","pvp":475000,"disc":12,"stock":"si","nov":false},{"id":174,"sku":"30294","name":"AUTEL MS908 CV II","brand":"Autel","cat":"Para Línea Pesada","pvp":5000000,"disc":12,"stock":"si","nov":true},{"id":175,"sku":"30046","name":"AUTEL MAXIVIDEO MV480 BOROSCOPIO","brand":"Autel","cat":"Boroscopio","pvp":575000,"disc":12,"stock":"si","nov":false},{"id":176,"sku":"30311","name":"AUTEL MAXIVIDEO MV460 BOROSCOPIO","brand":"Autel","cat":"Boroscopio","pvp":450000,"disc":12,"stock":"si","nov":false},{"id":177,"sku":"30084","name":"LAUNCH CREADER 3001 OBD2 SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":85000,"disc":15,"stock":"si","nov":false},{"id":178,"sku":"30212","name":"LAUNCH CREADER 3008 PLUS SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":165000,"disc":15,"stock":"si","nov":false},{"id":179,"sku":"30258","name":"Scanner LAUNCH Creader 319","brand":"Launch","cat":"Escáneres Autos","pvp":85000,"disc":15,"stock":"si","nov":false},{"id":180,"sku":"30087","name":"LAUNCH CRP-123 SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":415000,"disc":15,"stock":"si","nov":false},{"id":181,"sku":"30376","name":"LAUNCH CRP123E- Scanner Automotriz","brand":"Launch","cat":"Escáneres Autos","pvp":535000,"disc":15,"stock":"si","nov":false},{"id":182,"sku":"30214","name":"LAUNCH CRP 129-E (Nuevo) SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":725000,"disc":15,"stock":"si","nov":false},{"id":183,"sku":"30089","name":"LAUNCH CRP 233 SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":600000,"disc":15,"stock":"si","nov":false},{"id":184,"sku":"30090","name":"LAUNCH CRP 239 SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":575000,"disc":15,"stock":"si","nov":false},{"id":185,"sku":"30091","name":"LAUNCH CRP 429C SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":875000,"disc":15,"stock":"si","nov":false},{"id":186,"sku":"30092","name":"LAUNCH CRP 479 SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":750000,"disc":15,"stock":"si","nov":false},{"id":187,"sku":"30382","name":"Launch Creader Professional 123S HD Pesados","brand":"Launch","cat":"Para Línea Pesada","pvp":815000,"disc":15,"stock":"si","nov":false},{"id":188,"sku":"30094","name":"LAUNCH CRP 359 SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":825000,"disc":15,"stock":"si","nov":false},{"id":189,"sku":"30276","name":"LAUNCH X-431 PRO SE eLITE SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":1650000,"disc":15,"stock":"si","nov":false},{"id":190,"sku":"30275","name":"LAUNCH X-431 PRO SE","brand":"Launch","cat":"Escáneres Autos","pvp":2500000,"disc":15,"stock":"si","nov":false},{"id":191,"sku":"30095","name":"LAUNCH X-431 PRO3 SE SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":2750000,"disc":15,"stock":"si","nov":false},{"id":192,"sku":"30097","name":"LAUNCH X-431 PAD V LINK SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":4850000,"disc":15,"stock":"si","nov":false},{"id":193,"sku":"30386","name":"LAUNCH X-431 PRO 3 LINK HD SCANNER","brand":"Launch","cat":"Para Línea Pesada","pvp":3750000,"disc":15,"stock":"si","nov":false},{"id":194,"sku":"111","name":"LAUNCH X-431 PRO3 SE + SMARTLINK HD VEHICULOS LIVIANOS Y PESADOS SCANNER","brand":"Launch","cat":"Escáneres Autos","pvp":5000000,"disc":15,"stock":"si","nov":true},{"id":195,"sku":"30104","name":"LAUNCH X-431 IMMO PAD PROGRAMACIÓN LLAVES","brand":"Launch","cat":"Otras Herramientas","pvp":5250000,"disc":15,"stock":"si","nov":true},{"id":196,"sku":"30388","name":"LAUNCH PAD 5 LINK HD OBD2 PESADOS SCANNER","brand":"Launch","cat":"Para Línea Pesada","pvp":5250000,"disc":15,"stock":"si","nov":true},{"id":197,"sku":"30099","name":"TESTER LAUNCH BST-360 BLUETOOTH","brand":"Launch","cat":"Testers de Baterías","pvp":175000,"disc":15,"stock":"si","nov":false},{"id":198,"sku":"30100","name":"TESTER DIGITAL LAUNCH BST-560","brand":"Launch","cat":"Testers de Baterías","pvp":225000,"disc":15,"stock":"si","nov":false},{"id":199,"sku":"30101","name":"LECTOR DE CODIGOS Y PROBADOR DE BATERIA LAUNCH BST-580D","brand":"Launch","cat":"Escáneres Autos","pvp":235000,"disc":15,"stock":"si","nov":false},{"id":200,"sku":"30102","name":"TESTER LAUNCH BST-860","brand":"Launch","cat":"Testers de Baterías","pvp":350000,"disc":15,"stock":"no","nov":false},{"id":201,"sku":"30103","name":"LECTOR DE CODIGOS Y PROBADOR DE BATERIA LAUNCH BST-880D","brand":"Launch","cat":"Escáneres Autos","pvp":525000,"disc":15,"stock":"no","nov":false},{"id":202,"sku":"30213","name":"Modulo Launch - Linea Pesada Full Kit Cummins Bosch Iveco","brand":"Launch","cat":"Para Línea Pesada","pvp":2250000,"disc":15,"stock":"no","nov":false},{"id":203,"sku":"30277","name":"Programador De Llaves Launch X-prog 3","brand":"Launch","cat":"Cerrajería Automotriz","pvp":1285000,"disc":15,"stock":"no","nov":false},{"id":204,"sku":"30385","name":"Launch X-431 Key Programmer","brand":"Launch","cat":"Cerrajería Automotriz","pvp":350000,"disc":15,"stock":"no","nov":false},{"id":205,"sku":"30278","name":"Osciloscopio Launch X-431 Automotriz 02-2 Scopebox Para X431","brand":"Launch","cat":"Osciloscopios","pvp":1500000,"disc":15,"stock":"no","nov":false},{"id":206,"sku":"30384-1","name":"Sensor TPMS Universal Launch LTR-03 x 10 unidades","brand":"Launch","cat":"TPMS","pvp":382500,"disc":15,"stock":"no","nov":false},{"id":207,"sku":"30384","name":"Sensor TPMS Universal Launch LTR-03","brand":"Launch","cat":"TPMS","pvp":42500,"disc":21,"stock":"no","nov":false},{"id":208,"sku":"30190","name":"SENSOR PRESION TPMS LAUNCH CRT-511","brand":"Launch","cat":"TPMS","pvp":425000,"disc":15,"stock":"no","nov":false},{"id":209,"sku":"30383","name":"Launch Tread Master Medidor de Neumaticos Profundimetro","brand":"Launch","cat":"Otras Herramientas","pvp":925000,"disc":15,"stock":"no","nov":false},{"id":210,"sku":"30108","name":"BOROSCOPIO LAUNCH VSP-600","brand":"Launch","cat":"Boroscopio","pvp":145000,"disc":15,"stock":"no","nov":false},{"id":211,"sku":"30110","name":"BOROSCOPIO LAUNCH VSP-808","brand":"Launch","cat":"Boroscopio","pvp":345000,"disc":15,"stock":"no","nov":false},{"id":212,"sku":"30274","name":"Boroscopio Con Lente Rotativa Launch Vsp-828","brand":"Launch","cat":"Boroscopio","pvp":425000,"disc":15,"stock":"no","nov":false},{"id":213,"sku":"30111","name":"KIT ADAPTADORES LAUNCH X431","brand":"Launch","cat":"Adaptadores","pvp":340000,"disc":15,"stock":"no","nov":false},{"id":214,"sku":"30309","name":"Elevador de Autos Launch TLT-635 AF","brand":"Launch","cat":"Otras Herramientas","pvp":8500000,"disc":15,"stock":"no","nov":true},{"id":215,"sku":"30279","name":"LAUNCH X-431 ADAS MOBILE PLUS Automotriz Portatil","brand":"Launch","cat":"Otras Herramientas","pvp":7250000,"disc":15,"stock":"no","nov":true},{"id":216,"sku":"30331","name":"Pantalla Medición Temperatura Ancel A202 Obd","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":135000,"disc":17,"stock":"no","nov":false},{"id":217,"sku":"30374","name":"MUCAR JS501 – Arrancador 12V + Escáner OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":385000,"disc":17,"stock":"no","nov":false},{"id":218,"sku":"30047","name":"SCANNER KONNWEI KW808 OBD2","brand":"Konnwei","cat":"Escáneres Autos","pvp":64900,"disc":20,"stock":"no","nov":false},{"id":219,"sku":"30240","name":"SCANNER AUTOMOTRIZ KONNWEI KW310","brand":"Konnwei","cat":"Escáneres Autos","pvp":50000,"disc":20,"stock":"no","nov":false},{"id":220,"sku":"30238","name":"KONNWEI SCANNER OBD2 PARA AUTOMOVIL KW320","brand":"Konnwei","cat":"Escáneres Autos","pvp":64990,"disc":20,"stock":"no","nov":false},{"id":221,"sku":"30051","name":"TESTER DE BATERIA KONNWEI KW600 12V","brand":"Konnwei","cat":"Testers de Baterías","pvp":75000,"disc":20,"stock":"no","nov":false},{"id":222,"sku":"30239","name":"SCANNER AUTOMOTRIZ KONNWEI KW860","brand":"Konnwei","cat":"Escáneres Autos","pvp":115000,"disc":20,"stock":"no","nov":false},{"id":223,"sku":"30241","name":"SCANNER AUTOMOTRIZ KONNWEI KDIAG","brand":"Konnwei","cat":"Escáneres Autos","pvp":99900,"disc":20,"stock":"no","nov":false},{"id":224,"sku":"30050","name":"SCANNER KONNWEI KW850 OBD2","brand":"Konnwei","cat":"Escáneres Autos","pvp":99000,"disc":20,"stock":"no","nov":false},{"id":225,"sku":"30389","name":"Scanner Konnwei Kw880 Obd2 + Tester de batería","brand":"Konnwei","cat":"Escáneres Autos","pvp":175000,"disc":20,"stock":"no","nov":false},{"id":226,"sku":"30250","name":"KONNWEI KW681 SCANNER UNIVERSAL + TESTER DE BATERIA","brand":"Konnwei","cat":"Escáneres Autos","pvp":150000,"disc":20,"stock":"no","nov":false},{"id":227,"sku":"30237","name":"KONNWEI KW870 OBD2 SCANNER","brand":"Konnwei","cat":"Escáneres Autos","pvp":150000,"disc":20,"stock":"no","nov":false},{"id":228,"sku":"30247","name":"Escáner de Diagnóstico Completo KONNWEI KW450","brand":"Konnwei","cat":"Escáneres Autos","pvp":175000,"disc":20,"stock":"no","nov":false},{"id":229,"sku":"30248","name":"KONNWEI KW470 SCANNER DE DIAGNOSTICO COMPLETO","brand":"Konnwei","cat":"Escáneres Autos","pvp":165000,"disc":20,"stock":"no","nov":false},{"id":230,"sku":"30249","name":"KONNWEI KW480 SCANNER DIAGNOSTICO COMPLETO BMW","brand":"Konnwei","cat":"Escáneres Autos","pvp":155000,"disc":20,"stock":"bajo","nov":false},{"id":231,"sku":"30398","name":"Scanner KONNWEI KW360","brand":"Konnwei","cat":"Escáneres Autos","pvp":185000,"disc":20,"stock":"bajo","nov":false},{"id":232,"sku":"30053","name":"TESTER CARGADOR DE BATERÍA KONNWEI KW510 OBD2","brand":"Konnwei","cat":"Testers de Baterías","pvp":110000,"disc":20,"stock":"bajo","nov":false},{"id":233,"sku":"30243","name":"SCANNER KONNWEI RC10 Cargador Batería","brand":"Konnwei","cat":"Testers de Baterías","pvp":95000,"disc":20,"stock":"bajo","nov":false},{"id":234,"sku":"30246","name":"TESTER DE BATERIA KONNWEI KW720 CON IMPRESORA","brand":"Konnwei","cat":"Testers de Baterías","pvp":275000,"disc":20,"stock":"bajo","nov":false},{"id":235,"sku":"30244","name":"TESTER CARGADOR DE BATERIAS KONNWEI KW520","brand":"Konnwei","cat":"Testers de Baterías","pvp":145000,"disc":20,"stock":"bajo","nov":false},{"id":236,"sku":"10241","name":"Medidor de Espesor de Pintura Gain Express E04-025","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":48500,"disc":23,"stock":"bajo","nov":false},{"id":237,"sku":"11602","name":"Protector Auditivo 3M Peltor Optime III","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":150000,"disc":17,"stock":"bajo","nov":false},{"id":238,"sku":"30313","name":"ThinkDiag2 OBD2 Bluetooth – Escáner Automotriz","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":615000,"disc":17,"stock":"bajo","nov":false},{"id":239,"sku":"30312","name":"ThinkDiag OBD2 Bluetooth Dongle – Escáner Automotriz","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":300000,"disc":17,"stock":"bajo","nov":false},{"id":240,"sku":"30310","name":"DPA5 Bluetooth – Escáner para Camiones y Maquinaria Diesel","brand":"Otras Marcas","cat":"Para Línea Pesada","pvp":725000,"disc":17,"stock":"bajo","nov":false},{"id":241,"sku":"30267","name":"Programador USB TL866II Plus","brand":"Otras Marcas","cat":"Programadores","pvp":250000,"disc":17,"stock":"bajo","nov":false},{"id":242,"sku":"30293","name":"MDXT-600 Tester de Bateria","brand":"Otras Marcas","cat":"Testers de Baterías","pvp":65001,"disc":17,"stock":"bajo","nov":false},{"id":243,"sku":"30283","name":"FNIRSI FD10 OBD2 Bluetooth V5.1 Premium","brand":"FNIRSI","cat":"Escáneres Autos","pvp":15000,"disc":24,"stock":"bajo","nov":false},{"id":244,"sku":"10711","name":"Osciloscopio Digital FNIRSI 1014D 2 Canales 100MHz","brand":"FNIRSI","cat":"Osciloscopios","pvp":325000,"disc":18,"stock":"bajo","nov":false},{"id":245,"sku":"11126","name":"FNIRSI 2C23T Osciloscopio Multímetro Generador 2 Canales","brand":"FNIRSI","cat":"Osciloscopios","pvp":150000,"disc":18,"stock":"bajo","nov":false},{"id":246,"sku":"10167","name":"Osciloscopio Digital Portátil FNIRSI 5012H 100MHz USB","brand":"FNIRSI","cat":"Osciloscopios","pvp":135000,"disc":18,"stock":"bajo","nov":false},{"id":247,"sku":"11259","name":"Multimetro Automotriz Multifuncion Profesional Cem At-9945","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":170500,"disc":17,"stock":"bajo","nov":false},{"id":248,"sku":"10628","name":"Tester Multímetro Digital Proskit Mt-1270","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":68310,"disc":17,"stock":"bajo","nov":false},{"id":249,"sku":"10147","name":"Torquimetro Digital EC2250 Encastre 3/8 Pulgadas 3kg","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":456500,"disc":17,"stock":"bajo","nov":false},{"id":250,"sku":"10139","name":"ACDelco ARM601-3 Torquímetro Digital 3/8\u0026#8243; 5-50Nm","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":445000,"disc":17,"stock":"bajo","nov":false},{"id":251,"sku":"30229","name":"Probador Detector De Fugas Humo Automotriz Evap","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":325000,"disc":17,"stock":"bajo","nov":false},{"id":252,"sku":"30188","name":"Probador Detector De Fugas Humo EVAP","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":475000,"disc":17,"stock":"bajo","nov":false},{"id":253,"sku":"30260","name":"ESTEREO 1 DIN CARPLAY Y ANDROID AUTO INALAMBRICO","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":299000,"disc":17,"stock":"bajo","nov":false},{"id":254,"sku":"30269","name":"POWER PROBE PP ECT 3000","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":800000,"disc":17,"stock":"bajo","nov":false},{"id":255,"sku":"30255","name":"Power Probe PPKIT04","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":1500000,"disc":17,"stock":"bajo","nov":false},{"id":256,"sku":"30273","name":"Arrancador De Batería Portatil 3000a 24000mah Ews Usb","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":325000,"disc":17,"stock":"bajo","nov":false},{"id":257,"sku":"30259","name":"ARRANCADOR DE BATERIA PORTATIL CON COMPRESOR 3500A 150 PSI","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":485000,"disc":17,"stock":"bajo","nov":false},{"id":258,"sku":"30227","name":"Programador Ck-100 Codificador De Llaves Automotriz","brand":"Otras Marcas","cat":"Programadores","pvp":522000,"disc":17,"stock":"bajo","nov":false},{"id":259,"sku":"30264","name":"SCANNER FOXWELL NT301 CAN OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":225000,"disc":17,"stock":"bajo","nov":false},{"id":260,"sku":"30257","name":"SCANNER CATERPILLAR CAT ET4 MAQUINAS VIALES","brand":"Otras Marcas","cat":"Para Línea Pesada","pvp":1250000,"disc":17,"stock":"bajo","nov":false},{"id":261,"sku":"30194","name":"PROBADOR AUTOMOTRIZ ECU OBD2 12V GODIAG GT-100","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":190000,"disc":17,"stock":"bajo","nov":false},{"id":262,"sku":"30120","name":"SCANNER FOXWELL NT201 CAN OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":165000,"disc":17,"stock":"bajo","nov":false},{"id":263,"sku":"30116","name":"SCANNER CATERPILLAR CAT ET3 MAQUINAS VIALES","brand":"Otras Marcas","cat":"Para Línea Pesada","pvp":690000,"disc":17,"stock":"bajo","nov":false},{"id":264,"sku":"30185","name":"SCANNER OBDSTAR MS70 MOTOS MULTIMARCA","brand":"Otras Marcas","cat":"Escáneres Motos","pvp":2640000,"disc":17,"stock":"bajo","nov":false},{"id":265,"sku":"","name":"Scanner VIDENT iLink440 OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":950000,"disc":17,"stock":"bajo","nov":false},{"id":266,"sku":"","name":"SCANNER VIDENT iAuto704 OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":595000,"disc":17,"stock":"bajo","nov":false},{"id":267,"sku":"","name":"VIDENT iSMART 600 MAX OBDII","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":475000,"disc":17,"stock":"bajo","nov":false},{"id":268,"sku":"30263","name":"VIDENT iSMARTDiag 510 PRO VCI Bluetooth","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":400000,"disc":17,"stock":"bajo","nov":false},{"id":269,"sku":"30225","name":"Carcasa Llave Chevrolet Spin Tracker S10 Spark 2 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":12000,"disc":23,"stock":"bajo","nov":false},{"id":270,"sku":"30216","name":"ADAPTADOR UNIVERSAL HONDA 3 PIN A OBD2","brand":"Otras Marcas","cat":"Adaptadores","pvp":30000,"disc":23,"stock":"bajo","nov":false},{"id":271,"sku":"30142","name":"PROBADOR LIQUIDO DE FRENOS WT06","brand":"Otras Marcas","cat":"Líquido de Frenos","pvp":400000,"disc":17,"stock":"bajo","nov":false},{"id":272,"sku":"30167","name":"SCANNER CHEVROLET OP COM 1.99 OPEL MERCOSUR","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":60000,"disc":17,"stock":"si","nov":false},{"id":273,"sku":"30204","name":"Carcasa Llave Peugeot 307 407 Citroen C3 C4 C5","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":13750,"disc":23,"stock":"si","nov":false},{"id":274,"sku":"30206","name":"Carcasa Llave Volkswagen Vw Gol Trend Cross Fox Suran Voyage","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":10750,"disc":23,"stock":"si","nov":false},{"id":275,"sku":"30207","name":"Carcasa Llave Volkswagen Vw Amarok Saveiro Suran Fox 2 Boton","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":10750,"disc":23,"stock":"si","nov":false},{"id":276,"sku":"30208","name":"Carcasa Llave Renault Kangoo Stepway Duster Sandero Clio","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":8750,"disc":23,"stock":"si","nov":false},{"id":277,"sku":"30220","name":"PROBADOR UNIVERSAL DE CHISPA","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":8950,"disc":23,"stock":"si","nov":false},{"id":278,"sku":"30217","name":"KIT DE ADAPTADORES PARA SOPORTE BDM KTAG KESS","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":140000,"disc":17,"stock":"si","nov":false},{"id":279,"sku":"30193","name":"EMULADOR BREAK OUT BOX DIAGÓSTICO OBD2","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":200000,"disc":17,"stock":"si","nov":false},{"id":280,"sku":"30219","name":"SCANNER PROFESIONAL PARA MOTOS BMW GS-911","brand":"Otras Marcas","cat":"Escáneres Motos","pvp":225000,"disc":17,"stock":"si","nov":false},{"id":281,"sku":"30160","name":"PROGRAMADOR KESS V2 ECU CHIP TUNING","brand":"Otras Marcas","cat":"Programadores","pvp":180000,"disc":17,"stock":"si","nov":false},{"id":282,"sku":"30174","name":"PROGRAMADOR KTAG 7.020 Ultima Version 2.25","brand":"Otras Marcas","cat":"Programadores","pvp":185000,"disc":17,"stock":"si","nov":false},{"id":283,"sku":"30197","name":"SCANNER TOYOTA MINI VCI J2534","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":64990,"disc":17,"stock":"si","nov":false},{"id":284,"sku":"30171","name":"SCANNER HEX V2 ROSS TECH VAG COM 22.3+ VW AUDI","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":450000,"disc":17,"stock":"si","nov":false},{"id":285,"sku":"30158","name":"SCANNER VAS6154 WIFI VW AUDI SKODA SEAT","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":465000,"disc":17,"stock":"si","nov":false},{"id":286,"sku":"30157","name":"SCANNER VAS5054 BLUETOOTH VW AUDI SKODA SEAT","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":442000,"disc":17,"stock":"si","nov":false},{"id":287,"sku":"30165","name":"SCANNER VCM2 FORD MAZDA CHIP FULL","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":522900,"disc":17,"stock":"si","nov":false},{"id":288,"sku":"30164","name":"SCANNER NEXIQ 2 DIESEL CUMMINS NEW HOLLAND ALLISON","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":582000,"disc":17,"stock":"si","nov":false},{"id":289,"sku":"30115","name":"SCANNER OBD LINK LX 427201 OBD2","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":350000,"disc":17,"stock":"si","nov":false},{"id":290,"sku":"30163","name":"PROGRAMADOR DIGIPROG 3 CORRECCIÓN CHIP + KIT DE CABLES FULL","brand":"Otras Marcas","cat":"Programadores","pvp":451000,"disc":17,"stock":"si","nov":false},{"id":291,"sku":"30162","name":"SCANNER CAMIONES SCANIA VCI3 ULTIMA VERSION","brand":"Otras Marcas","cat":"Escáneres Autos","pvp":472000,"disc":17,"stock":"si","nov":false},{"id":292,"sku":"30154","name":"PROBADOR CARGADOR DE BATERÍA CAT100 BLUETOOTH 12V","brand":"Otras Marcas","cat":"Testers de Baterías","pvp":171000,"disc":17,"stock":"si","nov":false},{"id":293,"sku":"30149","name":"PROBADOR DETECTOR DE CORTOCIRCUITOS AUTOMOTRIZ EM415 PRO","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":62990,"disc":17,"stock":"si","nov":false},{"id":294,"sku":"30148","name":"ESTETOSCOPIO AUTOMOTRIZ CON SONDA ALLOSUN EM410","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":142500,"disc":17,"stock":"si","nov":false},{"id":295,"sku":"30147","name":"MULTIMETRO PROBADOR DE BATERÍA DIGITAL AE310 12V","brand":"Otras Marcas","cat":"Testers de Baterías","pvp":99990,"disc":17,"stock":"si","nov":false},{"id":296,"sku":"30166","name":"PROGRAMADOR DE LLAVES AK90+ BMW","brand":"Otras Marcas","cat":"Programadores","pvp":120000,"disc":17,"stock":"si","nov":false},{"id":297,"sku":"30173","name":"PROGRAMADOR CODIFICADOR LLAVES T300 VERSION FULL+ CABLES","brand":"Otras Marcas","cat":"Programadores","pvp":489000,"disc":17,"stock":"si","nov":false},{"id":298,"sku":"30132","name":"PUNTA LÓGICA POWERTEST PT150","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":325000,"disc":17,"stock":"si","nov":false},{"id":299,"sku":"30134","name":"SENSOR DE PRESIÓN DE NEUMÁTICOS TPMS KINGBOLEN 50449 - FORD","brand":"Otras Marcas","cat":"TPMS","pvp":60000,"disc":17,"stock":"si","nov":false},{"id":300,"sku":"30133","name":"SENSOR DE PRESIÓN DE NEUMÁTICOS TPMS KINGBOLEN 50448 - CHEVROLET","brand":"Otras Marcas","cat":"TPMS","pvp":60000,"disc":17,"stock":"no","nov":false},{"id":301,"sku":"30135","name":"MEDIDOR DE PROFUNDIDAD DE GOMAS PRECIVA","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":45000,"disc":23,"stock":"no","nov":false},{"id":302,"sku":"30137","name":"MEDIDOR DE ACEITE AUTOMOTRIZ MO6001","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":70000,"disc":17,"stock":"no","nov":false},{"id":303,"sku":"30138","name":"MEDIDOR DE ACEITE AUTOMOTRIZ OT100","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":135000,"disc":17,"stock":"no","nov":false},{"id":304,"sku":"30192","name":"PROBADOR LIQUIDO DE FRENOS HT662","brand":"Otras Marcas","cat":"Líquido de Frenos","pvp":27500,"disc":23,"stock":"no","nov":false},{"id":305,"sku":"30136","name":"PROBADOR LIQUIDO DE FRENOS KINGBOLEN BF-200","brand":"Otras Marcas","cat":"Líquido de Frenos","pvp":62500,"disc":17,"stock":"no","nov":false},{"id":306,"sku":"30141","name":"PROBADOR LIQUIDO DE FRENOS WT01","brand":"Otras Marcas","cat":"Líquido de Frenos","pvp":80000,"disc":17,"stock":"no","nov":false},{"id":307,"sku":"30130","name":"LAMPARA DE PUESTA A PUNTO OBDMonster","brand":"Otras Marcas","cat":"Puesta a Punto","pvp":119000,"disc":17,"stock":"no","nov":false},{"id":308,"sku":"30128","name":"LAMPARA DE PUESTA A PUNTO INNOVA 3551","brand":"Otras Marcas","cat":"Puesta a Punto","pvp":185000,"disc":17,"stock":"no","nov":false},{"id":309,"sku":"30126","name":"LAMPARA DE PUESTA A PUNTO INNOVA 3568","brand":"Otras Marcas","cat":"Puesta a Punto","pvp":400000,"disc":17,"stock":"no","nov":false},{"id":310,"sku":"30127","name":"LAMPARA DE PUESTA A PUNTO INNOVA 5568","brand":"Otras Marcas","cat":"Puesta a Punto","pvp":485000,"disc":17,"stock":"no","nov":false},{"id":311,"sku":"30176","name":"Adaptador Universal Fiat 3 Pin A Obd2 Ficha","brand":"Otras Marcas","cat":"Otras Herramientas","pvp":19990,"disc":23,"stock":"no","nov":false},{"id":312,"sku":"30289","name":"Llavero Ford con Mosquetón Cromado y cuero negro","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":18750,"disc":23,"stock":"no","nov":false},{"id":313,"sku":"30288","name":"Llavero Toyota con Mosquetón Cromado y cuero negro","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":18750,"disc":23,"stock":"no","nov":false},{"id":314,"sku":"30287","name":"Llavero Volkswagen con Mosquetón Cromado y cuero negro","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":18750,"disc":23,"stock":"no","nov":false},{"id":315,"sku":"30290","name":"Llavero Chevrolet con Mosquetón Cromado y cuero negro","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":18750,"disc":23,"stock":"no","nov":false},{"id":316,"sku":"30030","name":"CONECTOR ADAPTADOR FCA CHRYSLER 12+8","brand":"Otras Marcas","cat":"Adaptadores","pvp":60000,"disc":17,"stock":"no","nov":false},{"id":317,"sku":"30175","name":"Adaptador Universal Iveco 38 Pin A Obd2","brand":"Otras Marcas","cat":"Adaptadores","pvp":35000,"disc":23,"stock":"no","nov":false},{"id":318,"sku":"30177","name":"ADAPTADOR MERCEDES-BENZ DE 14 PIN A OBD2","brand":"Otras Marcas","cat":"Adaptadores","pvp":17500,"disc":23,"stock":"no","nov":false},{"id":319,"sku":"30182","name":"Adaptador Universal Chevrolet 10 Pin A Obd2","brand":"Otras Marcas","cat":"Adaptadores","pvp":15950,"disc":23,"stock":"no","nov":false},{"id":320,"sku":"30215","name":"ADAPTADOR CUMMINS 6 Y 9 PIN","brand":"Otras Marcas","cat":"Adaptadores","pvp":49500,"disc":23,"stock":"no","nov":false},{"id":321,"sku":"30181","name":"Adaptador Universal Mazda 17 Pin A Obd2","brand":"Otras Marcas","cat":"Adaptadores","pvp":15000,"disc":23,"stock":"no","nov":false},{"id":322,"sku":"30183","name":"Adaptador Universal Chevrolet 12 Pin A Obd2","brand":"Otras Marcas","cat":"Adaptadores","pvp":14000,"disc":23,"stock":"no","nov":false},{"id":323,"sku":"30180","name":"Adaptador Universal Mercedes 38 Pin A Obd2","brand":"Otras Marcas","cat":"Adaptadores","pvp":35000,"disc":23,"stock":"no","nov":false},{"id":324,"sku":"30184","name":"Adaptador Universal Toyota 22 Pin A Obd2","brand":"Otras Marcas","cat":"Adaptadores","pvp":16500,"disc":23,"stock":"no","nov":false},{"id":325,"sku":"30179","name":"ADAPTADOR BMW 20 PIN A OBD2","brand":"Otras Marcas","cat":"Adaptadores","pvp":27500,"disc":23,"stock":"no","nov":false},{"id":326,"sku":"30286","name":"Funda Cubre Llave Silicona Peugeot 307 408 3 Botones Navaja","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":10000,"disc":23,"stock":"no","nov":false},{"id":327,"sku":"30201","name":"Carcasa Llave Renault Clio Sandero Stepway Duster Kangoo","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":8750,"disc":23,"stock":"no","nov":false},{"id":328,"sku":"30345","name":"CARCASA PARA LLAVE CHEVROLET PRESENCIA – 3 BOTONES","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":35000,"disc":23,"stock":"no","nov":false},{"id":329,"sku":"30321","name":"Carcasa Bmw Presencia 3 Botones Con Llave Con Logo","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":60000,"disc":17,"stock":"no","nov":false},{"id":330,"sku":"30224","name":"Carcasa Llave Chevrolet Prisma Cruze Astra Onix 3 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":10500,"disc":23,"stock":"bajo","nov":false},{"id":331,"sku":"30284","name":"Carcasa Tarjeta Renault Fluence y Mégane III – 4 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":60000,"disc":17,"stock":"bajo","nov":false},{"id":332,"sku":"30285","name":"Carcasa Llave Fiat Toro Argo Cronos 5 Botones Con Logo","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":50000,"disc":17,"stock":"bajo","nov":false},{"id":333,"sku":"30202","name":"Carcasa Llave Peugeot 307 308 Ce0536 Hu83 2 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":15000,"disc":23,"stock":"bajo","nov":false},{"id":334,"sku":"30205","name":"Carcasa Llave Volkswagen Vw Golf Passat Polo Bora Mk5","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":10750,"disc":23,"stock":"bajo","nov":false},{"id":335,"sku":"30320","name":"Carcasa Llave Presencia Citroen – 3 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":50000,"disc":17,"stock":"bajo","nov":false},{"id":336,"sku":"30210","name":"Carcasa Llave Para Citroen C4 Con logo 3 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":10750,"disc":23,"stock":"bajo","nov":false},{"id":337,"sku":"30360","name":"Carcasa Mando Presencia Ds 3 Botones Con Logo","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":72500,"disc":17,"stock":"bajo","nov":false},{"id":338,"sku":"30359","name":"Carcasa Llave Citroen 3 Botones CE0536","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":9990,"disc":23,"stock":"bajo","nov":false},{"id":339,"sku":"30223","name":"Carcasa Llave Chevrolet Astra Agile Celta Vectra 2 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":6750,"disc":23,"stock":"bajo","nov":false},{"id":340,"sku":"30200","name":"Carcasa Llave Ford Focus Mondeo Fiesta Max Hu101","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":11750,"disc":23,"stock":"bajo","nov":false},{"id":341,"sku":"30203","name":"Carcasa Llave Peugeot 206 207 Citroen C1 C2 C3 C4 2 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":13750,"disc":23,"stock":"bajo","nov":false},{"id":342,"sku":"30344","name":"CARCASA LLAVE CHEVROLET PRESENCIA- 4 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":35000,"disc":23,"stock":"bajo","nov":false},{"id":343,"sku":"30335","name":"Carcasa Llave Control Nissan Versa Sentral Kicks 3 Botones","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":25000,"disc":23,"stock":"bajo","nov":false},{"id":344,"sku":"30343","name":"Carcasa Chevrolet Prisma Cruze Spin Tracker 3 Botones Con logo","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":37500,"disc":23,"stock":"bajo","nov":false},{"id":345,"sku":"30209","name":"Carcasa Llave Citroen C3 2 Botones con logo","brand":"Otras Marcas","cat":"Carcasas Llaves","pvp":9990,"disc":23,"stock":"bajo","nov":false},{"id":346,"sku":"30052","name":"TESTER DE BATERÍA KONNWEI KW208 OBD2","brand":"Konnwei","cat":"Testers de Baterías","pvp":55000,"disc":20,"stock":"bajo","nov":false},{"id":347,"sku":"30054","name":"TESTER DE BATERÍA KONNWEI KW650 OBD2","brand":"Konnwei","cat":"Testers de Baterías","pvp":80000,"disc":20,"stock":"bajo","nov":false},{"id":348,"sku":"30056","name":"TESTER DE BATERIA KONNWEI KW710 OBD2","brand":"Konnwei","cat":"Testers de Baterías","pvp":225000,"disc":20,"stock":"bajo","nov":false},{"id":349,"sku":"30245","name":"TESTER DE BATERIA KONNWEI BK100 BLUETOOTH","brand":"Konnwei","cat":"Testers de Baterías","pvp":36500,"disc":26,"stock":"bajo","nov":false},{"id":350,"sku":"30029","name":"AUTEL AKL 8A TOYOTA KIT PROGRAMACIÓN","brand":"Autel","cat":"Adaptadores","pvp":150000,"disc":12,"stock":"bajo","nov":false},{"id":351,"sku":"30088","name":"SCANNER LAUNCH CRP 129","brand":"Launch","cat":"Escáneres Autos","pvp":472500,"disc":15,"stock":"bajo","nov":false},{"id":352,"sku":"30093","name":"SCANNER LAUNCH CRP 349","brand":"Launch","cat":"Escáneres Autos","pvp":750000,"disc":15,"stock":"bajo","nov":false},{"id":353,"sku":"30381","name":"LAUNCH CRP919 MAX SCANNER AUTOMOTRIZ PROFESIONAL","brand":"Launch","cat":"Escáneres Autos","pvp":1150000,"disc":15,"stock":"bajo","nov":false},{"id":354,"sku":"30098","name":"SCANNER LAUNCH X-431 PAD VII LINK","brand":"Launch","cat":"Escáneres Autos","pvp":6165000,"disc":15,"stock":"bajo","nov":true},{"id":355,"sku":"30105","name":"SCANNER LAUNCH X-431 IMMO PRO PPROGRAMACIÓN LLAVES","brand":"Launch","cat":"Cerrajería Automotriz","pvp":2850000,"disc":15,"stock":"bajo","nov":false},{"id":356,"sku":"30256","name":"Programador TPMS Launch X431 i-TPMS Android","brand":"Launch","cat":"TPMS","pvp":415000,"disc":15,"stock":"bajo","nov":false},{"id":357,"sku":"30107","name":"LECTOR Y PROGRAMADOR TPMS LAUNCH X-431 TSGUN","brand":"Launch","cat":"TPMS","pvp":337500,"disc":15,"stock":"bajo","nov":false},{"id":358,"sku":"30109","name":"BOROSCOPIO LAUNCH VSP-800","brand":"Launch","cat":"Boroscopio","pvp":160000,"disc":15,"stock":"bajo","nov":false}];
+P.forEach(p=>{ p.one=Math.round(p.pvp*0.85/50)*50; p.four=Math.round(p.pvp*0.80/50)*50; p.eight=Math.round(p.pvp*0.75/50)*50; });
+const IVA_OPTS=[10.5,21,0,27];
+
+const SECTIONS=[
+  {id:"dashboard",label:"Dashboard",icon:'<path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-5H4z"/>'},
+  {id:"catalog",label:"Catálogo",icon:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>'},
+  {id:"products",label:"Productos y precios",icon:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'},
+  {id:"clients",label:"Clientes",icon:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5"/><path d="M16 11a3 3 0 0 0 0-6"/><path d="M21 20c0-2.4-1.6-4.3-4-4.8"/>'},
+  {id:"quotes",label:"Cotizaciones",icon:'<path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13h6M9 17h4"/>'},
+  {id:"billing",label:"Facturación",icon:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>'},
+  {id:"logistics",label:"Logística",icon:'<path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8z"/><circle cx="6" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/>'},
+  {id:"settings",label:"Configuración",icon:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'}
+];
+const SECTIONS_BY_ROLE={
+  superadmin:["dashboard","catalog","products","clients","quotes","billing","logistics","settings"],
+  sales_billing:["dashboard","catalog","products","clients","quotes","billing","logistics","settings"],
+  administration:["billing"],
+  logistics:["logistics"]
+};
+const ROLE_LABEL={superadmin:"Superadmin",sales_billing:"Ventas / Facturación",administration:"Administración",logistics:"Logística"};
+
+const fmt=n=>"$ "+Math.round(n).toLocaleString("es-AR");
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const glyphBox='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8"/><polyline points="7 11 9.5 11 11 8 13 14 14.5 11 17 11"/></svg>';
+
+let ROLE="superadmin";
+let CUR="dashboard";
+
+/* ---- mock data ---- */
+const PENDING=[
+  {name:"Taller Diesel Norte",email:"compras@dieselnorte.com.ar",date:"27/07/2026"},
+  {name:"AutoScan Rosario",email:"info@autoscanros.com",date:"27/07/2026"},
+  {name:"Electromecánica Cuyo",email:"ventas@emcuyo.com.ar",date:"26/07/2026"}
+];
+const CLIENTS=[
+  {code:"CL-10428",email:"compras@sanjorge.com.ar",name:"Franco Andrino",empresa:"Electromecánica San Jorge S.R.L.",role:"client",status:"approved",alta:"12/03/2026",last:"28/07/2026"},
+  {code:"CL-10455",email:"info@rpmdiag.com",name:"Diego Paz",empresa:"RPM Diagnóstico",role:"client",status:"approved",alta:"02/05/2026",last:"27/07/2026"},
+  {code:"CL-10501",email:"compras@dieselnorte.com.ar",name:"Marta Ríos",empresa:"Taller Diesel Norte",role:"client",status:"pending",alta:"27/07/2026",last:"—"},
+  {code:"CL-10344",email:"valansi.matias@patagoniatools.com.ar",name:"Matías Valansi",empresa:"Patagonia Tools",role:"sales_billing",status:"approved",alta:"01/02/2026",last:"28/07/2026"},
+  {code:"CL-10345",email:"guillermo.distasio1@gmail.com",name:"Guillermo Di Stasio",empresa:"Patagonia Tools",role:"administration",status:"approved",alta:"01/02/2026",last:"28/07/2026"},
+  {code:"CL-10346",email:"joaquin.guerri@patagoniatools.com.ar",name:"Joaquín Guerri",empresa:"Patagonia Tools (Depósito)",role:"logistics",status:"approved",alta:"10/06/2026",last:"28/07/2026"},
+  {code:"CL-10470",email:"info@autoscanros.com",name:"Luis Vega",empresa:"AutoScan Rosario",role:"client",status:"pending",alta:"27/07/2026",last:"—"},
+  {code:"CL-10120",email:"taller@mecanicaelcruce.com",name:"Sergio Molina",empresa:"Mecánica El Cruce",role:"client",status:"rejected",alta:"18/04/2026",last:"—"}
+];
+const QUOTES=[
+  {n:"A-104883",cliente:"Electromecánica San Jorge",estado:"cotizacion",total:null,fecha:"28/07/2026"},
+  {n:"A-104510",cliente:"Electromecánica San Jorge",estado:"enviada",total:1885000,fecha:"09/07/2026"},
+  {n:"A-104502",cliente:"RPM Diagnóstico",estado:"cotizacion",total:null,fecha:"08/07/2026"},
+  {n:"A-104388",cliente:"Electromecánica San Jorge",estado:"orden",total:2850000,fecha:"02/07/2026"},
+  {n:"A-104355",cliente:"AutoScan Rosario",estado:"despachado",total:640000,fecha:"30/06/2026"},
+  {n:"A-104201",cliente:"Mecánica El Cruce",estado:"cancelado",total:null,fecha:"24/06/2026"}
+];
+const QLABEL={cotizacion:"Cotización",enviada:"Cotización enviada",orden:"Orden de venta",despachado:"Despachado",cancelado:"Cancelado"};
+const QPILL={cotizacion:"neutral",enviada:"warn",orden:"info",despachado:"ok",cancelado:"neutral"};
+const BILLING=[
+  {n:"A-104882",cliente:"Electromecánica San Jorge",code:"CL-10428",estado:"a_cobrar",facturado:4860000,cobrado:2010000},
+  {n:"A-104655",cliente:"Electromecánica San Jorge",code:"CL-10428",estado:"pagada",facturado:3640000,cobrado:3640000},
+  {n:"A-104388",cliente:"Electromecánica San Jorge",code:"CL-10428",estado:"sin_facturar",facturado:0,cobrado:0},
+  {n:"A-104501",cliente:"RPM Diagnóstico",code:"CL-10455",estado:"vencida",facturado:980000,cobrado:0},
+  {n:"A-104355",cliente:"AutoScan Rosario",code:"CL-10470",estado:"parcial",facturado:640000,cobrado:300000}
+];
+const BLABEL={sin_facturar:"Sin facturar",a_cobrar:"A cobrar",parcial:"Pago parcial",vencida:"Vencida",pagada:"Pagada"};
+const BPILL={sin_facturar:"neutral",a_cobrar:"warn",parcial:"blue",vencida:"info",pagada:"ok"};
+const LOGI=[
+  {n:"A-104882",cliente:"Electromecánica San Jorge",items:4,estado:"por_preparar"},
+  {n:"A-104655",cliente:"Electromecánica San Jorge",items:2,estado:"preparado"},
+  {n:"A-104501",cliente:"RPM Diagnóstico",items:3,estado:"por_preparar"},
+  {n:"A-104355",cliente:"AutoScan Rosario",items:1,estado:"despachado"}
+];
+const LLABEL={por_preparar:"Por preparar",preparado:"Preparado",despachado:"Despachado"};
+const LPILL={por_preparar:"warn",preparado:"blue",despachado:"ok"};
+const AUDIT=[
+  {a:"quote.proforma.sent",e:"quote",t:"hace 12 min",who:"M. Valansi"},
+  {a:"price.update",e:"product",t:"hace 40 min",who:"F. Andrino"},
+  {a:"user.update",e:"user",t:"hace 1 h",who:"F. Andrino"},
+  {a:"product.reorder",e:"catalog",t:"hace 2 h",who:"F. Andrino"},
+  {a:"quote.item.add",e:"quote",t:"hace 3 h",who:"M. Valansi"},
+  {a:"invoice.create",e:"invoice",t:"ayer",who:"G. Di Stasio"},
+  {a:"product.create",e:"product",t:"ayer",who:"F. Andrino"},
+  {a:"user.create",e:"user",t:"ayer",who:"F. Andrino"}
+];
+
+/* ---- nav / role ---- */
+function renderNav(){
+  document.getElementById("adminNav").innerHTML=SECTIONS.map(s=>{
+    const badge=s.id==="clients"?PENDING.length:(s.id==="quotes"?QUOTES.filter(q=>q.estado==="cotizacion").length:0);
+    return `<button class="navitem" data-sec="${s.id}" onclick="goSec('${s.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${s.icon}</svg>${s.label}${badge?`<span class="nb">${badge}</span>`:""}</button>`;
+  }).join("");
+  applyRoleNav();
+}
+function applyRoleNav(){
+  const allowed=SECTIONS_BY_ROLE[ROLE];
+  document.querySelectorAll(".navitem").forEach(n=>n.classList.toggle("hidden",!allowed.includes(n.dataset.sec)));
+  if(!allowed.includes(CUR)) goSec(allowed[0]);
+  else goSec(CUR);
+}
+function setRole(r){
+  ROLE=r;
+  document.getElementById("roleChip").textContent=ROLE_LABEL[r];
+  document.getElementById("uRole").textContent=ROLE_LABEL[r];
+  applyRoleNav();
+}
+function goSec(id){
+  CUR=id;
+  document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+  document.getElementById("sec-"+id).classList.add("active");
+  document.querySelectorAll(".navitem").forEach(n=>n.classList.toggle("active",n.dataset.sec===id));
+  document.getElementById("secTitle").textContent=SECTIONS.find(s=>s.id===id).label;
+  document.getElementById("side").classList.remove("open"); document.getElementById("scrim").classList.remove("show");
+  renderSection(id);
+}
+function renderSection(id){
+  ({dashboard:renderDashboard,catalog:renderCatalog,products:renderProductsTable,clients:renderClients,quotes:renderQuotes,billing:renderBilling,logistics:renderLogistics,settings:renderSettings}[id]||(()=>{}))();
+}
+
+/* ---- dashboard ---- */
+function renderDashboard(){
+  document.getElementById("topActions").innerHTML="";
+  const nCon=P.filter(p=>p.stock==="si").length, nSin=P.filter(p=>p.stock==="no").length;
+  const low=P.filter(p=>p.stock!=="si").slice(0,7);
+  document.getElementById("sec-dashboard").innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><span class="stripe" style="background:var(--dark)"></span><div class="k">Productos</div><div class="v num">${P.length}</div><div class="d">activos en el portal</div></div>
+      <div class="kpi"><span class="stripe" style="background:var(--green)"></span><div class="k">Con stock</div><div class="v num">${nCon}</div></div>
+      <div class="kpi"><span class="stripe" style="background:var(--out-fg)"></span><div class="k">Sin stock</div><div class="v num">${nSin}</div></div>
+      <div class="kpi"><span class="stripe" style="background:var(--low-fg)"></span><div class="k">Cotiz. pendientes</div><div class="v num">${QUOTES.filter(q=>q.estado==="cotizacion").length}</div></div>
+      <div class="kpi"><span class="stripe" style="background:var(--red)"></span><div class="k">Clientes pendientes</div><div class="v num">${PENDING.length}</div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel"><div class="ph"><h3>Clientes pendientes de aprobación</h3></div><div class="tscroll"><table>
+        <thead><tr><th>Empresa</th><th>Email</th><th>Alta</th><th class="r">Acción</th></tr></thead>
+        <tbody>${PENDING.map((u,i)=>`<tr><td><b>${esc(u.name)}</b></td><td class="small">${esc(u.email)}</td><td class="small">${u.date}</td>
+          <td class="r"><div class="rowact"><button class="icononly g" title="Aprobar" onclick="toast('Cliente aprobado ✓')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg></button><button class="icononly" title="Rechazar" onclick="toast('Cliente rechazado')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></td></tr>`).join("")}</tbody>
+      </table></div></div>
+      <div class="panel"><div class="ph"><h3>Últimas cotizaciones</h3></div><div class="tscroll"><table>
+        <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="r">Total</th></tr></thead>
+        <tbody>${QUOTES.slice(0,6).map(q=>`<tr><td class="mono"><b>${q.n}</b></td><td class="small">${esc(q.cliente)}</td><td><span class="pill ${QPILL[q.estado]}"><span class="dot"></span>${QLABEL[q.estado]}</span></td><td class="r num">${q.total!=null?fmt(q.total):'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody>
+      </table></div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel"><div class="ph"><h3>Bajo / sin stock</h3><div class="spacer"></div><span class="small muted">cantidad exacta — solo admin</span></div><div class="tscroll"><table class="simple">
+        <thead><tr><th>Producto</th><th>Marca</th><th class="c">Estado</th></tr></thead>
+        <tbody>${low.map(p=>`<tr><td class="small"><b>${esc(p.name.slice(0,42))}</b></td><td class="small">${p.brand}</td><td class="c">${p.stock==="no"?'<span class="pill neutral">Sin stock</span>':'<span class="pill warn">Poco stock</span>'}</td></tr>`).join("")}</tbody>
+      </table></div></div>
+      <div class="panel"><div class="ph"><h3>Actividad reciente (auditoría)</h3></div><div class="pad">
+        ${AUDIT.map(a=>`<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--border)"><span class="mono small" style="color:var(--red)">${a.a}</span><span class="small muted">${a.e}</span><span class="spacer" style="flex:1"></span><span class="small">${a.who}</span><span class="small muted">· ${a.t}</span></div>`).join("")}
+      </div></div>
+    </div>`;
+}
+
+/* ---- catalog editor ---- */
+function renderCatalog(){
+  document.getElementById("topActions").innerHTML=`
+    <button class="btn btn-ghost btn-sm" onclick="openTaxonomy()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/></svg>Marcas / categorías</button>
+    <button class="btn btn-ghost btn-sm" onclick="openBrandLogos()">Logos de marca</button>
+    <button class="btn btn-red btn-sm" onclick="openProduct()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nuevo producto</button>`;
+  const list=P.slice(0,24);
+  document.getElementById("sec-catalog").innerHTML=`
+    <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h16M4 16h16"/><path d="M8 4v16"/></svg>Editor visual: arrastrá ⠿ para reordenar cómo lo ve el cliente, ojito para mostrar/ocultar, y editá cada producto.</div>
+    <div class="toolbar">
+      <div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar producto…"></div>
+      <select class="inp" style="width:auto;height:38px"><option>Todas las marcas</option><option>Launch</option><option>Autel</option><option>Konnwei</option></select>
+      <select class="inp" style="width:auto;height:38px"><option>Todas las categorías</option><option>Escáneres Autos</option><option>Testers de Baterías</option></select>
+      <div class="spacer"></div>
+      <span class="small muted">Mostrando 24 de ${P.length}</span>
+    </div>
+    <div class="cgrid">${list.map(p=>`
+      <div class="ccard ${p.stock==="no"?'':''}" id="cc${p.id}">
+        <div class="cth">${glyphBox}<span class="drag">⠿</span><input class="chk" type="checkbox"></div>
+        <div class="cb">
+          <div class="cn">${esc(p.name)}</div>
+          <div class="cm">#${p.sku} · ${p.brand}</div>
+          <div class="cp num">1u ${fmt(p.one)}</div>
+          <div class="ca">
+            <button class="eye on" title="Visible" onclick="this.classList.toggle('on');this.classList.toggle('off');toast('Visibilidad actualizada')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            <button class="icononly" title="Editar" onclick="openProduct(${p.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+            <button class="icononly" title="Borrar" onclick="toast('Producto dado de baja (recuperable)')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+          </div>
+        </div>
+      </div>`).join("")}</div>`;
+}
+
+/* ---- products table ---- */
+function renderProductsTable(){
+  document.getElementById("topActions").innerHTML=`<button class="btn btn-red btn-sm" onclick="openProduct()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nuevo producto</button>`;
+  const list=P.slice(0,30);
+  document.getElementById("sec-products").innerHTML=`
+    <div class="toolbar"><div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar por nombre o SKU…"></div><div class="spacer"></div><span class="small muted">30 de ${P.length} · PVP es de solo lectura (viene de Supabase)</span></div>
+    <div class="panel"><div class="tscroll"><table class="min">
+      <thead><tr><th style="width:54px">Orden</th><th>SKU</th><th>Producto</th><th>Marca</th><th style="width:80px">IVA</th><th class="r">PVP</th><th class="r">1u</th><th class="r">4u</th><th class="r">8u</th><th class="c">Visible</th><th class="r">Acción</th></tr></thead>
+      <tbody>${list.map((p,i)=>`<tr>
+        <td><input class="inp ord" value="${(i+1)*10}"></td>
+        <td class="mono small">${p.sku}</td>
+        <td class="small"><b>${esc(p.name.slice(0,40))}</b></td>
+        <td class="small">${p.brand}</td>
+        <td><select class="inp">${IVA_OPTS.map(o=>`<option ${o===10.5?'selected':''}>${o}</option>`).join("")}</select></td>
+        <td class="r num muted">${fmt(p.pvp)}</td>
+        <td><input class="inp mini num" value="${p.one}"></td>
+        <td><input class="inp mini num" value="${p.four}"></td>
+        <td><input class="inp mini num" value="${p.eight}"></td>
+        <td class="c"><button class="eye on" onclick="this.classList.toggle('on');this.classList.toggle('off')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></td>
+        <td class="r"><div class="rowact"><button class="icononly g" title="Guardar" onclick="toast('Fila guardada ✓')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg></button><button class="icononly" title="Borrar" onclick="toast('Producto dado de baja')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></div></td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>`;
+}
+
+/* ---- clients ---- */
+function renderClients(){
+  document.getElementById("topActions").innerHTML=`<button class="btn btn-red btn-sm" onclick="openClient()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Alta de cliente</button>`;
+  const roleSelDisabled = ROLE!=="superadmin";
+  document.getElementById("sec-clients").innerHTML=`
+    ${roleSelDisabled?'<div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>Cambiar el rol de un usuario es exclusivo de <b>Superadmin</b> (protección anti-escalada). El resto lo ve deshabilitado.</div>':''}
+    <div class="toolbar"><div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Buscar cliente…"></div>
+      <select class="inp" style="width:auto;height:38px"><option>Todos los estados</option><option>Pendiente</option><option>Aprobado</option><option>Rechazado</option></select>
+      <div class="spacer"></div></div>
+    <div class="panel"><div class="tscroll"><table class="min">
+      <thead><tr><th>Código</th><th>Email</th><th>Empresa</th><th style="width:150px">Rol</th><th>Estado</th><th>Último login</th><th class="r">Acciones</th></tr></thead>
+      <tbody>${CLIENTS.map(c=>`<tr>
+        <td class="mono small">${c.code}</td>
+        <td class="small">${esc(c.email)}</td>
+        <td class="small"><b>${esc(c.empresa)}</b></td>
+        <td><select class="inp" ${roleSelDisabled?'disabled':''} onchange="toast('Rol actualizado a '+this.value)">
+          <option value="client" ${c.role==="client"?'selected':''}>Cliente</option>
+          <option value="sales_billing" ${c.role==="sales_billing"?'selected':''}>Ventas/Facturación</option>
+          <option value="administration" ${c.role==="administration"?'selected':''}>Administración</option>
+          <option value="logistics" ${c.role==="logistics"?'selected':''}>Logística</option>
+          <option value="superadmin" ${c.role==="superadmin"?'selected':''}>Superadmin</option></select></td>
+        <td>${c.status==="approved"?'<span class="pill ok"><span class="dot"></span>Aprobado</span>':c.status==="pending"?'<span class="pill warn"><span class="dot"></span>Pendiente</span>':'<span class="pill neutral"><span class="dot"></span>Rechazado</span>'}</td>
+        <td class="small">${c.last}</td>
+        <td class="r"><div class="rowact">
+          ${c.status==="pending"?'<button class="icononly g" title="Aprobar" onclick="toast(\'Cliente aprobado ✓\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg></button>':''}
+          <button class="icononly" title="Ver compras / estado" onclick="openClientOrders('${c.code}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+          <button class="icononly" title="Datos fiscales / envío" onclick="openClient('${c.code}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+          <button class="icononly" title="Eliminar" onclick="toast('Requiere confirmación — elimina el cliente y sus cotizaciones')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+        </div></td></tr>`).join("")}</tbody>
+    </table></div></div>`;
+}
+
+/* ---- quotes ---- */
+function renderQuotes(){
+  document.getElementById("topActions").innerHTML=`<button class="btn btn-red btn-sm" onclick="toast('Alta manual: buscar cliente y crear cotización vacía')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nueva cotización</button>`;
+  document.getElementById("sec-quotes").innerHTML=`
+    <div class="toolbar"><select class="inp" style="width:auto;height:38px"><option>Todos los estados</option>${Object.values(QLABEL).map(l=>`<option>${l}</option>`).join("")}</select><div class="spacer"></div></div>
+    <div class="panel"><div class="tscroll"><table class="min">
+      <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="r">Total</th><th>Enviada</th><th class="r">Acción</th></tr></thead>
+      <tbody>${QUOTES.map(q=>`<tr>
+        <td class="mono"><b>${q.n}</b></td><td>${esc(q.cliente)}</td>
+        <td><span class="pill ${QPILL[q.estado]}"><span class="dot"></span>${QLABEL[q.estado]}</span></td>
+        <td class="r num">${q.total!=null?fmt(q.total):'<span class="muted">a cotizar</span>'}</td>
+        <td class="small">${q.fecha}</td>
+        <td class="r"><button class="btn btn-ghost btn-xs" onclick="openQuote('${q.n}','${q.estado}')">Abrir</button></td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>`;
+}
+
+/* ---- billing ---- */
+function renderBilling(){
+  document.getElementById("topActions").innerHTML="";
+  document.getElementById("sec-billing").innerHTML=`
+    <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Módulo financiero (feature flag). Administración entra <b>solo</b> a esta sección; la cotización se ve en modo lectura y las secciones financieras habilitadas.</div>
+    <div class="toolbar"><select class="inp" style="width:auto;height:38px"><option>Todos</option><option>Por cobrar</option><option>Pagados</option></select><div class="spacer"></div></div>
+    <div class="panel"><div class="tscroll"><table class="min">
+      <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="r">Facturado</th><th class="r">Cobrado</th><th class="r">Saldo</th><th class="r">Acción</th></tr></thead>
+      <tbody>${BILLING.map(b=>`<tr>
+        <td class="mono"><b>${b.n}</b></td><td><b>${esc(b.cliente)}</b><br><span class="small mono muted">${b.code}</span></td>
+        <td><span class="pill ${BPILL[b.estado]}"><span class="dot"></span>${BLABEL[b.estado]}</span></td>
+        <td class="r num">${fmt(b.facturado)}</td><td class="r num" style="color:var(--green)">${fmt(b.cobrado)}</td>
+        <td class="r num"><b>${fmt(b.facturado-b.cobrado)}</b></td>
+        <td class="r"><button class="btn btn-ghost btn-xs" onclick="openBillingDetail('${b.n}','${b.cliente}')">Gestionar</button></td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>`;
+}
+
+/* ---- logistics ---- */
+function renderLogistics(){
+  document.getElementById("topActions").innerHTML="";
+  document.getElementById("sec-logistics").innerHTML=`
+    <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8z"/></svg>Depósito ve pedidos <b>autorizados</b> para preparar, <b>sin datos financieros</b>. Carga de números de serie por unidad.</div>
+    <div class="panel"><div class="tscroll"><table class="min">
+      <thead><tr><th>#</th><th>Cliente</th><th class="c">Ítems</th><th>Estado</th><th class="r">Acción</th></tr></thead>
+      <tbody>${LOGI.map(l=>`<tr>
+        <td class="mono"><b>${l.n}</b></td><td>${esc(l.cliente)}</td><td class="c">${l.items}</td>
+        <td><span class="pill ${LPILL[l.estado]}"><span class="dot"></span>${LLABEL[l.estado]}</span></td>
+        <td class="r"><button class="btn btn-ghost btn-xs" onclick="openLogi('${l.n}','${l.cliente}')">Preparar</button></td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>`;
+}
+
+/* ---- settings ---- */
+function renderSettings(){
+  document.getElementById("topActions").innerHTML=`<button class="btn btn-red btn-sm" onclick="toast('Configuración guardada ✓')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg>Guardar</button>`;
+  document.getElementById("sec-settings").innerHTML=`
+    <div class="panel"><div class="ph"><h3>Perfil de la empresa</h3></div><div class="pad">
+      <div class="frow">
+        <div class="fld"><label>Nombre comercial</label><input class="fld-in" value="Autodiagnóstico"></div>
+        <div class="fld"><label>Razón social</label><input value="Patagonia Tools S.A."></div>
+        <div class="fld full"><label>Dirección</label><input value="Av. Corrientes 1234 — C.A.B.A."></div>
+        <div class="fld"><label>Teléfono</label><input value="+54 11 5555-1200"></div>
+        <div class="fld"><label>Email</label><input value="ventas@patagoniatools.com.ar"></div>
+        <div class="fld"><label>Sitio web</label><input value="autodiagnostico.com.ar"></div>
+        <div class="fld"><label>CUIT</label><input value="30-71234567-9"></div>
+        <div class="fld"><label>Casilla del depósito</label><input value="joaquin.guerri@patagoniatools.com.ar"></div>
+        <div class="fld"><label>Validez de la pre-compra (días)</label><input type="number" value="7"></div>
+        <div class="fld full"><label>Texto al pie de la pre-compra</label><textarea rows="2">Cotización sujeta a confirmación de stock y precios. Válida por los días indicados.</textarea></div>
+      </div>
+    </div></div>
+    <div class="panel"><div class="ph"><h3>Notificaciones automáticas por email</h3></div><div class="pad">
+      <div class="fld" style="margin-bottom:14px;max-width:440px"><label>Copia siempre a (CC / CCO)</label><input value="ventas@patagoniatools.com.ar"></div>
+      <div class="tscroll"><table class="min">
+        <thead><tr><th>Evento</th><th>Se envía a</th><th class="c">Activo</th></tr></thead>
+        <tbody>
+          <tr><td class="small"><b>Cotización enviada</b></td><td><input class="inp" value="Cliente + copia"></td><td class="c"><input type="checkbox" checked style="width:16px;height:16px;accent-color:var(--red)"></td></tr>
+          <tr><td class="small"><b>Orden de venta confirmada</b></td><td><input class="inp" value="Cliente + Depósito + copia"></td><td class="c"><input type="checkbox" checked style="width:16px;height:16px;accent-color:var(--red)"></td></tr>
+          <tr><td class="small"><b>Pago recibido</b></td><td><input class="inp" value="Cliente + Administración + copia"></td><td class="c"><input type="checkbox" checked style="width:16px;height:16px;accent-color:var(--red)"></td></tr>
+          <tr><td class="small"><b>Despachado</b></td><td><input class="inp" value="Cliente + copia"></td><td class="c"><input type="checkbox" checked style="width:16px;height:16px;accent-color:var(--red)"></td></tr>
+        </tbody></table></div>
+      <div class="small muted" style="margin-top:10px">Definí a quién le llega cada aviso automático. En cada envío manual podés sumar o quitar destinatarios en el compositor.</div>
+    </div></div>
+    <div class="panel"><div class="ph"><h3>Integraciones</h3></div><div class="pad small">
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span>Gmail del vendedor (envío de Pre-compra)</span><span class="pill ok"><span class="dot"></span>Conectado</span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span>Google Drive (documentos)</span><span class="pill ok"><span class="dot"></span>Conectado</span></div>
+      <div style="display:flex;justify-content:space-between;padding:8px 0"><span>Supabase (stock / PVP en vivo)</span><span class="pill ok"><span class="dot"></span>OK</span></div>
+    </div></div>`;
+}
+
+/* ---- modals ---- */
+function openModal(html,wide){ const b=document.getElementById("modalBox"); b.className="modal-box"+(wide===true?" wide":wide?(" "+wide):""); b.innerHTML=html; document.getElementById("modal").classList.add("open"); }
+function closeModal(){ document.getElementById("modal").classList.remove("open"); }
+document.getElementById("modal").addEventListener("click",e=>{ if(e.target.id==="modal") closeModal(); });
+const mhead=t=>`<div class="mh"><h3>${t}</h3><button class="x" onclick="closeModal()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
+
+function openProduct(id){
+  const p=id?P.find(x=>x.id===id):null;
+  openModal(`${mhead(p?"Editar producto":"Nuevo producto")}
+    <div class="modal-body">
+      <div class="frow"><div class="fld"><label>SKU</label><input value="${p?p.sku:''}"></div><div class="fld"><label>Nombre</label><input value="${p?esc(p.name):''}"></div></div>
+      <div class="frow three"><div class="fld"><label>Marca</label><input value="${p?p.brand:''}"></div><div class="fld"><label>Categoría</label><input value="${p?p.cat:''}"></div><div class="fld"><label>IVA</label><select>${IVA_OPTS.map(o=>`<option ${o===10.5?'selected':''}>${o}</option>`).join("")}</select></div></div>
+      <div class="modal-sec">Precios por tramo (PVP viene de Supabase, solo lectura)</div>
+      <div class="frow three"><div class="fld"><label>1u</label><input class="num" value="${p?p.one:''}"></div><div class="fld"><label>4u</label><input class="num" value="${p?p.four:''}"></div><div class="fld"><label>8u</label><input class="num" value="${p?p.eight:''}"></div></div>
+      <div class="frow"><div class="fld"><label>URL de foto</label><input placeholder="https://…"></div><div class="fld"><label>URL de publicación</label><input placeholder="https://autodiagnostico.com.ar/…"></div></div>
+      <div class="fld full"><label>Nota</label><input placeholder="Ej. incluye maletín y adaptadores"></div>
+      <div class="fld full"><label>Visible en catálogo</label><select><option>Sí</option><option>No</option></select></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-red btn-sm" onclick="closeModal();toast('Producto guardado ✓')">Guardar</button></div>`);
+}
+function openClient(code){
+  const c=code?CLIENTS.find(x=>x.code===code):null;
+  openModal(`${mhead(c?"Datos del cliente":"Alta de cliente")}
+    <div class="modal-body">
+      <div class="modal-sec">Datos fiscales</div>
+      <div class="frow"><div class="fld"><label>Razón social</label><input value="${c?esc(c.empresa):''}"></div><div class="fld"><label>Email</label><input value="${c?esc(c.email):''}"></div></div>
+      <div class="frow three"><div class="fld"><label>Condición IVA</label><select><option>Responsable Inscripto</option><option>Monotributo</option><option>Exento</option><option>Consumidor Final</option></select></div><div class="fld"><label>Tipo doc</label><select><option>CUIT</option><option>DNI</option></select></div><div class="fld"><label>Número</label><input value="30-70987654-3"></div></div>
+      <div class="modal-sec">Dirección de entrega (Andreani)</div>
+      <div class="frow three"><div class="fld"><label>Calle</label><input value="Av. Warnes"></div><div class="fld"><label>Número</label><input value="1247"></div><div class="fld"><label>CP</label><input value="C1416"></div></div>
+      <div class="frow three"><div class="fld"><label>Localidad</label><input value="C.A.B.A."></div><div class="fld"><label>Provincia</label><input value="Buenos Aires"></div><div class="fld"><label>Teléfono</label><input value="11 4555-1200"></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-red btn-sm" onclick="closeModal();toast('Datos guardados ✓')">Guardar</button></div>`);
+}
+function openTaxonomy(){ openModal(`${mhead("Marcas y categorías")}<div class="modal-body"><p class="small muted">Editá el nombre para renombrar; si el destino existe, se fusionan. Arrastrá ⠿ para ordenar cómo lo ve el cliente.</p>
+  <div class="modal-sec">Marcas</div>${["Launch","Autel","Konnwei","JDiag","FNIRSI","Otras Marcas"].map(b=>`<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted">⠿</span><input class="inp" value="${b}" style="flex:1"><span class="small muted">productos</span></div>`).join("")}
+  </div><div class="modal-foot"><button class="btn btn-red btn-sm" onclick="closeModal();toast('Orden guardado ✓')">Cerrar</button></div>`); }
+function openBrandLogos(){ openModal(`${mhead("Logos de marca")}<div class="modal-body"><p class="small muted">Una URL de logo por marca (si falla, el cliente ve las iniciales).</p>
+  ${["Launch","Autel","Konnwei","JDiag","FNIRSI"].map(b=>`<div class="fld"><label>${b}</label><input placeholder="https://…logo-${b.toLowerCase()}.png"></div>`).join("")}
+  </div><div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancelar</button><button class="btn btn-red btn-sm" onclick="closeModal();toast('Logos guardados ✓')">Guardar</button></div>`); }
+
+function quoteStepper(estado){
+  if(estado==="cancelado") return '<div class="stepper"><span class="st done">Cotización</span><span class="st done">Cotización enviada</span><span class="st" style="background:var(--red);color:#fff;border-color:var(--red)">Cancelado</span></div>';
+  const steps=["Cotización","Cotización enviada","Orden de venta","Despachado"];
+  const idx = {cotizacion:0,enviada:1,orden:2,despachado:3}[estado] ?? 0;
+  return '<div class="stepper">'+steps.map((s,i)=>`<span class="st ${i<idx?'done':''} ${i===idx?'cur':''}">${s}</span>`).join("")+'</div>';
+}
+const QCHATTER=[
+  {who:"Franco Andrino",time:"14:27",type:"change",field:"Total",from:"$ 0",to:"$ 2.850.000"},
+  {who:"Franco Andrino",time:"14:20",type:"msg",text:"Te paso la cotización con el descuento acordado. Cualquier duda avisame.",att:"Pre-compra - A-104510.pdf"},
+  {who:"Matías Valansi",time:"14:04",type:"change",field:"Estado",from:"Cotización",to:"Cotización enviada"},
+  {who:"Sistema",sys:true,time:"13:50",type:"event",text:"Solicitud recibida del cliente (portal)"}
+];
+function initials(name){ return name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(); }
+function chatterHTML(entries){
+  const clip='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9.5 9.5a3.5 3.5 0 0 1-5-5L16 3a2.5 2.5 0 0 1 3.5 3.5L10 16"/></svg>';
+  const clock='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  const file='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>';
+  const comp=`
+    <div class="cbar"><button class="btn btn-dark btn-xs">Enviar mensaje</button><button class="btn btn-ghost btn-xs">Registrar nota</button><button class="btn btn-ghost btn-xs" onclick="toast('Planificar actividad: recordatorio / llamada / tarea')">Actividad</button></div>
+    <div class="composer"><textarea placeholder="Escribí un mensaje..."></textarea>
+      <div class="ctools">
+        <button class="icononly" title="Adjuntar archivo" onclick="toast('Adjuntar archivo al mensaje')">${clip}</button>
+        <button class="icononly" title="Programar envío" onclick="toast('Programar el envío para más tarde')">${clock}</button>
+        <span class="spacer"></span><button class="btn btn-red btn-xs" onclick="toast('Mensaje enviado')">Enviar</button>
+      </div></div>
+    <div class="daysep">Hoy</div>`;
+  const tl=entries.map(e=>{
+    const av=e.sys?'<div class="av sys">i</div>':`<div class="av">${initials(e.who)}</div>`;
+    let c="";
+    if(e.type==="change") c=`<div class="chg"><span class="k">${e.field}:</span> <span class="from">${e.from}</span> &rarr; <span class="to">${e.to}</span></div>`;
+    else if(e.type==="msg") c=`<div class="msg">${esc(e.text)}${e.att?`<div class="attach-chip" style="margin-top:7px">${file}${esc(e.att)}</div>`:""}</div>`;
+    else c=`<div class="evc">${esc(e.text)}</div>`;
+    return `<div class="ev">${av}<div class="evb"><div class="evh"><b>${esc(e.who)}</b> · ${e.time}</div>${c}</div></div>`;
+  }).join("");
+  return `<div class="chatter">${comp}<div class="tl">${tl}</div></div>`;
+}
+function openQuote(n,estado){
+  const items=[P[3],P[10],P[7]];
+  const term=(estado==="orden"||estado==="despachado")?"Compra":"Pre-compra";
+  openModal(`${mhead("Cotización "+n)}
+    <div class="modal-body">
+      <div class="qlayout">
+        <div class="qmain">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">${quoteStepper(estado)}<div class="spacer" style="flex:1"></div><span class="small muted">Doc: <b>${term}</b></span></div>
+          <div class="panel" style="margin:0 0 8px"><div class="tscroll"><table>
+            <thead><tr><th style="width:74px">Cant.</th><th>Producto</th><th style="width:74px">IVA</th><th class="r">Unitario</th><th class="r">Importe</th><th></th></tr></thead>
+            <tbody>
+              <tr style="background:var(--surface-2)"><td></td><td class="small" colspan="5"><b>Escáneres</b> <span class="muted">— sección</span></td></tr>
+              ${items.map((p,i)=>`<tr><td><input class="inp ord" value="${[1,4,8][i]}"></td><td class="small"><b>${esc(p.name.slice(0,30))}</b></td><td><select class="inp"><option>10.5</option><option>21</option></select></td><td><input class="inp mini num" value="${[p.one,p.four,p.eight][i]}"></td><td class="r num">${fmt([p.one,p.four,p.eight][i]*[1,4,8][i])}</td><td class="c"><button class="icononly" onclick="toast('Ítem quitado')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></td></tr>`).join("")}
+              <tr><td></td><td colspan="5" class="small muted" style="font-style:italic">Nota: equipos con garantía oficial 12 meses.</td></tr>
+            </tbody></table></div>
+            <div style="display:flex;gap:16px;padding:9px 12px;font-size:12.5px;border-top:1px solid var(--border)">
+              <a onclick="toast('Agregar producto')" style="color:var(--red);cursor:pointer;font-weight:600">+ Producto</a>
+              <a onclick="toast('Agregar sección')" style="color:var(--red);cursor:pointer;font-weight:600">+ Sección</a>
+              <a onclick="toast('Agregar nota')" style="color:var(--red);cursor:pointer;font-weight:600">+ Nota</a>
+            </div>
+          </div>
+          <div class="frow three" style="margin-top:10px"><div class="fld"><label>Descuento</label><input placeholder="0"></div><div class="fld"><label>Términos de pago</label><select><option>30 días</option><option>Contado</option><option>15 días</option><option>60 días</option></select></div><div class="fld"><label>Vencimiento</label><input type="date"></div></div>
+          <div class="fld full" style="margin-top:10px"><label>Notas públicas (aparecen en la ${term})</label><textarea rows="2" placeholder="Ej. incluye envío por Andreani…"></textarea></div>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="toast('Abriendo ${term} imprimible…')">Ver ${term}</button>
+            <button class="btn btn-ghost btn-sm" onclick="toast('Hoja de armado enviada al depósito')">Enviar a depósito</button>
+            <button class="btn btn-red btn-sm" onclick="openSendEmail('${n}','${term}')">Enviar ${term}</button>
+          </div>
+        </div>
+        ${chatterHTML(QCHATTER)}
+      </div>
+    </div>`,"xwide");
+}
+/* Config de destinatarios de los avisos automáticos (editable en Configuración) */
+const EMAIL_CONFIG={
+  alwaysCc:["ventas@patagoniatools.com.ar"],
+  templates:{
+    cotizacion:{extra:[]},
+    orden:{extra:["joaquin.guerri@patagoniatools.com.ar"]},
+    pago:{extra:["guillermo.distasio1@gmail.com"]},
+    despacho:{extra:["joaquin.guerri@patagoniatools.com.ar"]}
+  }
+};
+let emailTo=[], emailCc=[], emailClient="compras@sanjorge.com.ar";
+function chipRow(arr,kind){ return arr.map((e,i)=>`<span class="attach-chip">${esc(e)}<span class="rm" onclick="emailRm('${kind}',${i})">✕</span></span>`).join(""); }
+function renderEmailChips(){ var t=document.getElementById("emTo"); if(t) t.innerHTML=chipRow(emailTo,"to"); var c=document.getElementById("emCc"); if(c) c.innerHTML=chipRow(emailCc,"cc"); }
+function emailRm(kind,i){ (kind==="to"?emailTo:emailCc).splice(i,1); renderEmailChips(); }
+function emailAdd(kind){ var el=document.getElementById(kind==="to"?"emToInput":"emCcInput"); var v=(el.value||"").trim(); if(v){ (kind==="to"?emailTo:emailCc).push(v); el.value=""; renderEmailChips(); } }
+function applyTemplate(sel){ var cfg=EMAIL_CONFIG.templates[sel.value]||{extra:[]}; emailTo=[emailClient]; emailCc=EMAIL_CONFIG.alwaysCc.concat(cfg.extra); renderEmailChips(); }
+function openSendEmail(n,term){
+  term=term||"Pre-compra";
+  emailClient="compras@sanjorge.com.ar"; emailTo=[emailClient]; emailCc=EMAIL_CONFIG.alwaysCc.slice();
+  const clip='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9.5 9.5a3.5 3.5 0 0 1-5-5L16 3a2.5 2.5 0 0 1 3.5 3.5L10 16"/></svg>';
+  const file='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>';
+  const plus='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>';
+  openModal(`${mhead("Enviar "+term+" — "+n)}
+    <div class="modal-body">
+      <div class="fld full"><label>Plantilla</label><select onchange="applyTemplate(this)"><option value="cotizacion">Ventas: enviar cotización</option><option value="orden">Ventas: confirmación de orden</option><option value="pago">Ventas: pago recibido</option><option value="despacho">Ventas: despacho</option></select></div>
+      <div class="fld full"><label>Para (destinatarios)</label><div class="chipbox"><span id="emTo"></span><input id="emToInput" class="chipin" placeholder="Agregar email y Enter…" onkeydown="if(event.key==='Enter'){event.preventDefault();emailAdd('to')}"><button class="btn btn-ghost btn-xs" onclick="emailAdd('to')">${plus}Agregar</button></div></div>
+      <div class="fld full"><label>Copia (CC / CCO)</label><div class="chipbox"><span id="emCc"></span><input id="emCcInput" class="chipin" placeholder="Agregar email y Enter…" onkeydown="if(event.key==='Enter'){event.preventDefault();emailAdd('cc')}"><button class="btn btn-ghost btn-xs" onclick="emailAdd('cc')">${plus}Agregar</button></div></div>
+      <div class="fld full"><label>Asunto</label><input value="Autodiagnóstico — ${term} ${n}"></div>
+      <div class="fld full"><label>Mensaje</label><textarea rows="4">Hola, te paso la ${term} ${n} para revisar. Cualquier duda, avisame.</textarea></div>
+      <div class="fld full"><label>Adjuntos</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="attach-chip">${file}${term} - ${n}.pdf <span class="rm" onclick="this.parentElement.remove()">✕</span></span>
+          <button class="btn btn-ghost btn-xs" onclick="toast('Seleccionar archivo para adjuntar')">${clip}Adjuntar archivo</button>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" onchange="document.getElementById('schedWrap').style.display=this.checked?'flex':'none'"> Programar el envío para más tarde</label>
+      <div class="sched" id="schedWrap" style="display:none"><span class="muted">Enviar el</span><input type="datetime-local"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Descartar</button><button class="btn btn-red btn-sm" onclick="closeModal();toast('${term} — enviada a '+(emailTo.length+emailCc.length)+' destinatarios ✓')">Enviar</button></div>`,true);
+  renderEmailChips();
+}
+function purchaseStepper(estado){ return quoteStepper(estado); }
+function openClientOrders(code){
+  const c=CLIENTS.find(x=>x.code===code); const name=c?c.empresa:"Cliente";
+  let list=QUOTES.filter(q=>name.toLowerCase().includes(q.cliente.toLowerCase().split(" ")[0]));
+  if(!list.length) list=QUOTES.slice(0,3);
+  const total=list.reduce((s,q)=>s+(q.total||0),0);
+  openModal(`${mhead("Compras de "+name)}
+    <div class="modal-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <span class="stat" style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:5px 12px;font-size:12px">${list.length} pedidos</span>
+        <span class="stat" style="background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:5px 12px;font-size:12px">Facturado: <b>${fmt(total)}</b></span>
+      </div>
+      <div class="panel" style="margin:0"><div class="tscroll"><table class="min">
+        <thead><tr><th>#</th><th>Fecha</th><th>Estado</th><th>Progreso</th><th class="r">Total</th><th class="r"></th></tr></thead>
+        <tbody>${list.map(q=>`<tr>
+          <td class="mono"><b>${q.n}</b></td><td class="small">${q.fecha}</td>
+          <td><span class="pill ${QPILL[q.estado]}"><span class="dot"></span>${QLABEL[q.estado]}</span></td>
+          <td>${purchaseStepper(q.estado)}</td>
+          <td class="r num">${q.total!=null?fmt(q.total):'<span class="muted">a cotizar</span>'}</td>
+          <td class="r"><button class="btn btn-ghost btn-xs" onclick="openQuote('${q.n}','${q.estado}')">Abrir</button></td>
+        </tr>`).join("")}</tbody>
+      </table></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cerrar</button></div>`,"xwide");
+}
+function openBillingDetail(n,cli){
+  openModal(`${mhead("Facturación · "+n)}
+    <div class="modal-body">
+      <div class="small muted" style="margin-bottom:4px">${esc(cli)}</div>
+      <div class="finblock"><div class="fbh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l5 5v15H6z"/></svg>Facturas</div><div class="fbb">
+        <table class="simple"><thead><tr><th>Comprobante</th><th>Fecha</th><th class="r">Total</th><th class="c">Cuotas</th></tr></thead><tbody><tr><td class="mono small">FA A 0004-00013180</td><td class="small">22/07</td><td class="r num">$ 4.860.000</td><td class="c">2</td></tr></tbody></table>
+        <button class="btn btn-ghost btn-xs" style="margin-top:8px" onclick="toast('Nueva factura')">+ Factura</button>
+      </div></div>
+      <div class="finblock"><div class="fbh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20v10H2z"/><path d="M2 11h20"/></svg>Pagos</div><div class="fbb">
+        <table class="simple"><thead><tr><th>Método</th><th class="r">Monto</th><th class="c">Estado</th><th></th></tr></thead><tbody><tr><td class="small">Transferencia</td><td class="r num">$ 2.010.000</td><td class="c"><span class="pill warn">Informado</span></td><td class="c"><button class="btn btn-xs btn-ghost" onclick="toast('Pago confirmado ✓')">Confirmar</button></td></tr></tbody></table>
+      </div></div>
+      <div class="finblock"><div class="fbh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h12"/></svg>Cuenta corriente</div><div class="fbb small">Saldo del cliente: <b>$ 4.860.000</b> · <button class="btn btn-xs btn-ghost" onclick="toast('Estado de cuenta imprimible')">Estado de cuenta</button> <button class="btn btn-xs btn-ghost" onclick="toast('Ajuste manual débito/crédito')">Ajuste</button></div></div>
+      <div class="finblock"><div class="fbh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7v10M20 7v10M4 12h16"/></svg>eCheqs</div><div class="fbb small">1 eCheq en cartera · $ 1.800.000 · <span class="pill blue">A acreditar</span></div></div>
+      <div class="finblock"><div class="fbh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>Autorización a Logística</div><div class="fbb small">Pedido no autorizado. <button class="btn btn-xs btn-red" onclick="toast('Pedido autorizado a preparación ✓')">Autorizar a depósito</button></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal()">Cerrar</button></div>`,true);
+}
+function openLogi(n,cli){
+  const items=[P[0],P[5],P[12]];
+  openModal(`${mhead("Preparar pedido · "+n)}
+    <div class="modal-body">
+      <div class="small muted">${esc(cli)} · sin datos financieros</div>
+      <div class="modal-sec">Ítems a preparar + números de serie (por unidad, opcionales)</div>
+      ${items.map((p,i)=>`<div class="finblock"><div class="fbh">${esc(p.name.slice(0,40))} <span class="small muted" style="margin-left:auto">${[1,2,1][i]} u.</span></div><div class="fbb">
+        ${Array.from({length:[1,2,1][i]}).map((_,u)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span class="small muted" style="width:54px">Unidad ${u+1}</span><input class="inp" placeholder="N° de serie (opcional)"></div>`).join("")}
+      </div></div>`).join("")}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" onclick="closeModal();toast('Seriales guardados')">Guardar seriales</button><button class="btn btn-red btn-sm" onclick="closeModal();toast('Pedido marcado como despachado ✓')">Marcar despachado</button></div>`,true);
+}
+
+function toast(msg){ const w=document.getElementById("toasts"); const t=document.createElement("div"); t.className="toast"; t.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg><span>${esc(msg)}</span>`; w.appendChild(t); setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(8px)"; setTimeout(()=>t.remove(),200); },2500); }
+
+/* init */
+renderNav(); renderDashboard();
+</script>
+</body>
+</html>
