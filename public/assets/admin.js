@@ -155,7 +155,7 @@ async function loadRecentQuotes() {
         </div>`
       )
       .join("") || '<div class="empty-row">Todavía no hay cotizaciones.</div>';
-  return quotes.filter((q) => q.status === "submitted").length;
+  return quotes.filter((q) => normStatus(q.status) === "cotizacion" && !q.assigned_admin_id).length;
 }
 
 async function loadAudit() {
@@ -1063,8 +1063,41 @@ document.getElementById("newClientBtn").addEventListener("click", () => {
 
 // ==================== Cotizaciones ====================
 
-const QUOTE_STATUS = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
-const QUOTE_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotizada", accepted: "Aceptada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+// Modelo simplificado de 5 estados (guía §11.2). El select de edición ofrece los
+// 5 nuevos; el mapa de labels mantiene además las claves viejas por si la DB aún
+// no migró (lectura robusta). 'despachado' lo dispara Logística.
+const QUOTE_STATUS = ["cotizacion", "enviada", "orden", "despachado", "cancelado"];
+const QUOTE_STATUS_LABEL = {
+  cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
+  submitted: "Cotización", reviewing: "Cotización", quoted: "Cotización enviada", accepted: "Orden de venta", rejected: "Cancelado", expired: "Cancelado", cancelled: "Cancelado"
+};
+// Normaliza estados viejos → nuevos (por si se lee data sin migrar todavía).
+const STATUS_OLD_TO_NEW = { submitted: "cotizacion", reviewing: "cotizacion", quoted: "enviada", accepted: "orden", rejected: "cancelado", expired: "cancelado", cancelled: "cancelado" };
+function normStatus(s) { return STATUS_OLD_TO_NEW[s] || s; }
+// Estados que corresponden al documento "Compra" (vs "Pre-compra").
+const STATUS_COMPRA = new Set(["orden", "despachado", "accepted"]);
+// Ribbon progresivo de la venta; 'cancelado' se muestra aparte en rojo (estilo Odoo).
+const STEPPER_STEPS = [
+  { key: "cotizacion", label: "Cotización" },
+  { key: "enviada", label: "Cotización enviada" },
+  { key: "orden", label: "Orden de venta" },
+  { key: "despachado", label: "Despachado" }
+];
+// Estados que el admin puede setear a mano en el editor. 'despachado' NO está:
+// lo dispara Logística al despachar (evita desincronizar con logistics_status).
+const QUOTE_STATUS_MANUAL = ["cotizacion", "enviada", "orden", "cancelado"];
+function statusPillClass(status) {
+  const s = normStatus(status);
+  return s === "cotizacion" ? "pending" : (s === "cancelado" ? "rejected" : "approved");
+}
+function quoteStepper(status) {
+  const st = normStatus(status);
+  if (st === "cancelado") return `<div class="stepper"><span class="st cancel">Cancelado</span></div>`;
+  const idx = STEPPER_STEPS.findIndex((x) => x.key === st);
+  return `<div class="stepper">${STEPPER_STEPS
+    .map((x, i) => `<span class="st ${i < idx ? "done" : (i === idx ? "cur" : "")}">${x.label}</span>`)
+    .join("")}</div>`;
+}
 
 let currentQuoteId = null;
 
@@ -1097,7 +1130,7 @@ async function loadQuotes() {
         (q) => `<tr data-id="${q.id}" class="quote-row${q.id === currentQuoteId ? " active" : ""}" style="cursor:pointer">
           <td><strong>#${q.request_number}</strong></td>
           <td>${esc(q.display_name || q.email)}${q.company_name ? `<br><span style="color:var(--muted);font-size:11.5px">${esc(q.company_name)}</span>` : ""}</td>
-          <td><span class="status-pill ${q.status === "submitted" ? "pending" : "approved"}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span></td>
+          <td><span class="status-pill ${statusPillClass(q.status)}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span></td>
           <td class="num tabular">${money(q.quoted_total ?? q.displayed_subtotal)}</td>
           <td>${timeAgo(q.submitted_at)}</td>
           <td><button class="link-btn ghost" data-action="del-quote" title="Eliminar cotización">🗑</button></td>
@@ -1187,8 +1220,8 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   const { quote, items } = await fetchJson(`/api/admin/quotes/${id}`);
   const cur = quote.currency || "ARS";
   const dtype = quote.discount_type || "nominal";
-  // Mientras es cotización = "Pre-compra"; confirmada (aceptada) = "Compra".
-  const docTerm = quote.status === "accepted" ? "Compra" : "Pre-compra";
+  // Mientras es cotización/enviada = "Pre-compra"; orden o despachado = "Compra".
+  const docTerm = STATUS_COMPRA.has(quote.status) ? "Compra" : "Pre-compra";
 
   const itemRows = items
     .map(
@@ -1229,11 +1262,13 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${canEditQuote
-          ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${QUOTE_STATUS.map((s) => `<option value="${s}"${quote.status === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
+          ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${(normStatus(quote.status) === "despachado" ? [...QUOTE_STATUS_MANUAL, "despachado"] : QUOTE_STATUS_MANUAL).map((s) => `<option value="${s}"${normStatus(quote.status) === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
           : `<span class="status-pill approved">${QUOTE_STATUS_LABEL[quote.status] || quote.status}</span>`}
         <button class="btn-primary" id="proformaBtn">Ver ${docTerm.toLowerCase()}</button>
       </div>
     </div>
+
+    ${quoteStepper(quote.status)}
 
     ${quote.customer_notes ? `<p style="font-size:12.5px;color:var(--muted);margin-top:10px"><b>Notas del cliente:</b> ${esc(quote.customer_notes)}</p>` : ""}
 
@@ -2334,7 +2369,7 @@ function renderBillingTable() {
       return `<tr data-bill="${o.id}" class="quote-row" style="cursor:pointer">
         <td><b>#${o.request_number}</b></td>
         <td>${esc(o.company_name || o.display_name || "")}${o.client_code ? ` <span style="color:var(--muted);font-size:11px">(${esc(o.client_code)})</span>` : ""}</td>
-        <td><span class="status-pill ${o.status === "accepted" ? "approved" : "pending"}">${QUOTE_STATUS_LABEL[o.status] || o.status}</span></td>
+        <td><span class="status-pill ${statusPillClass(o.status)}">${QUOTE_STATUS_LABEL[o.status] || o.status}</span></td>
         <td class="num tabular">${o.invoice_count ? money(o.total_invoiced) : "-"}</td>
         <td class="num tabular">${o.total_paid ? money(o.total_paid) : "-"}</td>
         <td class="num tabular">${o.invoice_count ? money(o.balance) : "-"}</td>

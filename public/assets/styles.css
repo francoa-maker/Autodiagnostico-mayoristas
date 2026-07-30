@@ -337,6 +337,12 @@ a{color:inherit}
 .req-badge.reviewing{background:var(--info-soft);color:#1e40af}
 .req-badge.quoted,.req-badge.accepted{background:var(--success-soft);color:#166534}
 .req-badge.rejected,.req-badge.cancelled,.req-badge.expired{background:var(--danger-soft);color:#991b1b}
+/* Modelo simplificado de 5 estados (guía §11.2) */
+.req-badge.cotizacion{background:#eef0f3;color:#475569}
+.req-badge.enviada{background:var(--warning-soft);color:#9a3412}
+.req-badge.orden{background:var(--info-soft);color:#1e40af}
+.req-badge.despachado{background:var(--success-soft);color:#166534}
+.req-badge.cancelado{background:var(--danger-soft);color:#991b1b}
 .req-hint{font-size:10.5px;color:var(--muted);margin-top:3px}
 .btn-primary.sm{padding:6px 12px;font-size:12px}
 
@@ -504,6 +510,13 @@ details.collapsible > div{padding:0 18px 18px}
 .quotes-list-panel{max-height:calc(100vh - 160px);overflow-y:auto}
 .quote-row.active{background:var(--brand-red-soft,#fff0f2)}
 .quote-row.active td:first-child{box-shadow:inset 3px 0 var(--brand-red,#c8102e)}
+
+/* Stepper/ribbon de estado de venta (5 estados, guía §11.2) */
+.stepper{display:flex;flex-wrap:wrap;gap:5px;margin:14px 0 4px}
+.stepper .st{font-size:12px;font-weight:600;color:var(--muted,#888);background:#f1f1f4;padding:6px 14px;border-radius:20px;white-space:nowrap}
+.stepper .st.done{background:var(--catalog-dark,#111);color:#fff}
+.stepper .st.cur{background:var(--brand-red,#c8102e);color:#fff}
+.stepper .st.cancel{background:var(--danger-soft,#fee2e2);color:#991b1b}
 
 /* Buscador para agregar productos a la cotización */
 .add-results{display:flex;flex-wrap:wrap;gap:6px;width:100%}

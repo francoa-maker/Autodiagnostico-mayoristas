@@ -905,8 +905,19 @@ profileForm.addEventListener("submit", async (e) => {
 
 // ==================== Mis solicitudes / Mis cotizaciones ====================
 const requestsOverlay = document.getElementById("requestsOverlay");
-const REQ_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotización emitida", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
-const REQ_STATUS_HINT = { submitted: "Esperando revisión de un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización lista para ver", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+// Modelo simplificado de 5 estados (guía §11.2). Se mantienen las claves viejas
+// mapeadas al mismo label para que la vista no se rompa si la DB aún no migró.
+const REQ_STATUS_LABEL = {
+  cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
+  submitted: "Cotización", reviewing: "Cotización", quoted: "Cotización enviada", accepted: "Orden de venta", rejected: "Cancelado", expired: "Cancelado", cancelled: "Cancelado"
+};
+const REQ_STATUS_HINT = {
+  cotizacion: "Recibida, la está revisando un administrador", enviada: "Cotización enviada, esperando tu confirmación", orden: "Confirmada como compra", despachado: "Pedido despachado", cancelado: "Cancelada",
+  submitted: "Recibida, la está revisando un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización enviada, esperando tu confirmación", accepted: "Confirmada como compra", rejected: "Cancelada", expired: "Cancelada", cancelled: "Cancelada"
+};
+// Estados a partir de los cuales existe documento "enviado"/compra.
+const REQ_SENT = new Set(["enviada", "orden", "despachado", "quoted", "accepted"]);
+const REQ_COMPRA = new Set(["orden", "despachado", "accepted"]);
 
 let finState = {};
 async function accountBanner() {
@@ -933,7 +944,7 @@ async function openRequests(mode) {
   body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>';
   try {
     const { quotes: all } = await fetchJson("/api/quotes");
-    const quotes = onlyQuoted ? all.filter((q) => q.quoted_at) : all;
+    const quotes = onlyQuoted ? all.filter((q) => REQ_SENT.has(q.status) || q.quoted_at) : all;
     const banner = await accountBanner();
     if (!quotes.length) {
       body.innerHTML = banner + `<div style="text-align:center;color:var(--muted);padding:30px">${onlyQuoted ? "Todavía no tenés cotizaciones emitidas." : "Todavía no hiciste ninguna solicitud."}</div>`;
@@ -948,7 +959,7 @@ async function openRequests(mode) {
               <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
               <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
               <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-              <td style="white-space:nowrap">${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">${q.status === "accepted" ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
             </tr>`
           )
           .join("")}</tbody></table></div>`;

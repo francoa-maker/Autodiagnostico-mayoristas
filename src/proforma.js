@@ -146,8 +146,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
     : `<div class="logo-text">Auto<span>diagnostico</span></div>`;
 
   const dateStr = new Date(quote.submitted_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  // Mientras es cotización = "Pre-compra"; cuando queda confirmada (aceptada) = "Compra".
-  const docTerm = quote.status === "accepted" ? "Compra" : "Pre-compra";
+  // Mientras es cotización/enviada = "Pre-compra"; orden o despachado = "Compra".
+  const docTerm = ["orden", "despachado"].includes(quote.status) ? "Compra" : "Pre-compra";
   const addr = addressLines(quote);
 
   const signatureBlock = signer

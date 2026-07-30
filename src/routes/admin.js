@@ -30,7 +30,8 @@ const canClients = requireCapability("clients.manage");
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const USER_STATUSES = ["pending", "approved", "rejected", "blocked"];
 const USER_ROLES = ROLES; // superadmin/sales_billing/administration/logistics/client
-const QUOTE_STATUSES = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
+// Modelo simplificado de 5 estados (guía §11.2). 'despachado' lo setea Logística.
+const QUOTE_STATUSES = ["cotizacion", "enviada", "orden", "despachado", "cancelado"];
 const PRICE_STATES = ["value", "consult", "hidden", "unavailable", "custom"];
 
 // Reject a malformed :id / :itemId with a clean 400 before it reaches
@@ -714,11 +715,12 @@ router.get("/admin/quotes/months", async (req, res) => {
 });
 
 // Alta manual de una cotización vacía para un cliente existente (a diferencia
-// de POST /api/quotes, que la arma el propio cliente desde su carrito). Queda
-// en 'reviewing' -no 'submitted'- para marcar que la está armando el admin,
-// no que la pidió el cliente desde el catálogo. Sin items al crearse: el
-// admin los agrega desde el editor de detalle (mismo POST .../items que ya
-// usa para sumar productos a una cotización existente).
+// de POST /api/quotes, que la arma el propio cliente desde su carrito). Nace en
+// 'cotizacion' pero con assigned_admin_id seteado, para distinguir "la está
+// armando el admin" de las que pide el cliente (esas quedan sin admin asignado);
+// así el contador de "cotizaciones nuevas por revisar" no las cuenta. Sin items
+// al crearse: el admin los agrega desde el editor de detalle (mismo POST
+// .../items que ya usa para sumar productos a una cotización existente).
 router.post("/admin/quotes", canQuotes, async (req, res) => {
   const { userId } = req.body || {};
   if (!userId || !UUID_RE.test(String(userId))) return res.status(400).json({ error: "invalid_user_id" });
@@ -727,7 +729,7 @@ router.post("/admin/quotes", canQuotes, async (req, res) => {
 
   const result = await pool.query(
     `insert into portal.quote_requests (user_id, status, assigned_admin_id)
-     values ($1, 'reviewing', $2)
+     values ($1, 'cotizacion', $2)
      returning *`,
     [userId, req.user.id]
   );
@@ -756,7 +758,7 @@ router.get("/admin/summary", async (req, res) => {
   const r = await pool.query(`
     select
       (select count(*)::int from portal.users where status = 'pending') as pending_users,
-      (select count(*)::int from portal.quote_requests where status = 'submitted') as pending_quotes,
+      (select count(*)::int from portal.quote_requests where status = 'cotizacion' and assigned_admin_id is null) as pending_quotes,
       (select count(*)::int from portal.quote_requests) as total_quotes,
       (select count(*)::int from portal.users) as total_users,
       (select max(created_at) from portal.users) as latest_user_at,
@@ -819,9 +821,9 @@ router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
     const result = await withTransaction(async (client) => {
       const before = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
       if (!before.rows[0]) throw Object.assign(new Error("not_found"), { statusCode: 404 });
-      // "Firma" del vendedor: al pasar la cotización a 'quoted' queda
-      // registrado quién la cotizó (quoted_by_user_id + quoted_at).
-      const nowQuoting = status === "quoted";
+      // "Firma" del vendedor: al pasar la cotización a 'enviada' (cotización
+      // enviada) queda registrado quién la cotizó (quoted_by_user_id + quoted_at).
+      const nowQuoting = status === "enviada";
       await client.query(
         `update portal.quote_requests set
            status = coalesce($2, status),
@@ -1043,7 +1045,7 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
   // the signature and the recomputed totals.
   await withTransaction(async (client) => {
     await client.query(
-      `update portal.quote_requests set status = 'quoted', quoted_at = coalesce(quoted_at, now()),
+      `update portal.quote_requests set status = 'enviada', quoted_at = coalesce(quoted_at, now()),
          quoted_by_user_id = $2, assigned_admin_id = coalesce(assigned_admin_id, $2), updated_at = now()
        where id = $1`,
       [req.params.id, req.user.id]
@@ -1056,7 +1058,7 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
 
   const to = (req.body?.to && String(req.body.to).trim()) || ctx.quote.email;
   const html = renderProformaHtml({ ...ctx, forEmail: true });
-  const term = ctx.quote.status === "accepted" ? "Compra" : "Pre-compra";
+  const term = ["orden", "despachado"].includes(ctx.quote.status) ? "Compra" : "Pre-compra";
   const subject = `${term} #${ctx.quote.request_number} - ${ctx.company.name}`;
 
   try {

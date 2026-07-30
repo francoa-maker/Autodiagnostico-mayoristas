@@ -52,6 +52,29 @@ router.patch("/logistics/order-items/:itemId/prepared", requireFlag("serialNumbe
   }
 });
 
+// Marcar despachado: unifica el eje logístico (logistics_status='dispatched') con
+// el estado de venta (status='despachado', modelo de 5 estados §11.2). A partir de
+// acá los seriales quedan bloqueados (LOCKED_STATES) salvo para Superadmin.
+router.post("/logistics/orders/:id/dispatch", requireFlag("serialNumbers"), requireCapability("logistics.prepare"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: "invalid_id" });
+  const before = (await pool.query(
+    `select id, status, logistics_status from portal.quote_requests where id = $1`, [req.params.id]
+  )).rows[0];
+  if (!before) return res.status(404).json({ error: "not_found" });
+  const r = await pool.query(
+    `update portal.quote_requests
+        set logistics_status = 'dispatched', status = 'despachado', updated_at = now()
+      where id = $1
+      returning id, request_number, status, logistics_status`,
+    [req.params.id]
+  );
+  await recordAudit({
+    actorUserId: req.user.id, action: "order.dispatch", entityType: "quote_request", entityId: req.params.id,
+    before: { status: before.status, logistics_status: before.logistics_status }, after: r.rows[0]
+  });
+  res.json({ order: r.rows[0] });
+});
+
 async function orderLocked(orderItemId) {
   const r = await pool.query(
     `select q.logistics_status from portal.quote_items qi join portal.quote_requests q on q.id = qi.quote_request_id where qi.id = $1`, [orderItemId]
