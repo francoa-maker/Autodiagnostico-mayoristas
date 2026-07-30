@@ -863,6 +863,7 @@ async function loadClients() {
           <td>${timeAgo(u.last_login_at)}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="link-btn" data-action="edit-profile">Datos</button>
+            <button class="link-btn" data-action="view-orders">Ver compras</button>
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
             <button class="link-btn ghost" data-action="delete-user" title="Eliminar cliente">🗑</button>
@@ -875,6 +876,32 @@ async function loadClients() {
 document.getElementById("clientStatusFilter").addEventListener("change", loadClients);
 document.getElementById("clientMonthFilter").addEventListener("change", loadClients);
 
+// "Ver compras" (guía §11.1): modal con los pedidos del cliente + pill de estado
+// y el stepper Cotización→…→Despachado por cada uno (reusa quoteStepper/pills).
+async function openClientOrders(userId, email) {
+  openModal(`
+    <div class="modal-head"><h3>Compras · ${esc(email)}</h3><button class="modal-x" data-close>&times;</button></div>
+    <div id="clientOrdersBody"><div class="empty-row">Cargando...</div></div>`);
+  const body = document.getElementById("clientOrdersBody");
+  try {
+    const { quotes } = await fetchJson(`/api/admin/quotes?userId=${encodeURIComponent(userId)}`);
+    if (!quotes.length) { body.innerHTML = '<div class="empty-row">Este cliente todavía no tiene cotizaciones.</div>'; return; }
+    body.innerHTML = quotes.map((q) => `
+      <div style="border:1px solid var(--border,#e0e0e0);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div><b>#${q.request_number}</b> <span style="color:var(--muted);font-size:12px">${new Date(q.submitted_at).toLocaleDateString("es-AR")}</span></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="status-pill ${statusPillClass(q.status)}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span>
+            <b class="tabular">${money(q.quoted_total ?? q.displayed_subtotal ?? 0)}</b>
+          </div>
+        </div>
+        ${quoteStepper(q.status)}
+      </div>`).join("");
+  } catch (error) {
+    body.innerHTML = `<div class="empty-row" style="color:var(--danger,#c8102e)">No se pudieron cargar: ${esc(error.body?.detail || error.message)}</div>`;
+  }
+}
+
 document.getElementById("clientsBody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
@@ -883,6 +910,11 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
 
   if (btn.dataset.action === "edit-profile") {
     openClientProfileModal(id, row.dataset.email);
+    return;
+  }
+
+  if (btn.dataset.action === "view-orders") {
+    openClientOrders(id, row.dataset.email);
     return;
   }
 
@@ -1208,6 +1240,63 @@ function previewTotals({ items, discount, discountType, shipping }) {
   return { itemsGross, discountAmount, ivaGroups, total };
 }
 
+// Chatter (guía §11.1): timeline de actividad + notas internas, alimentado por
+// portal.audit_log (endpoint /admin/quotes/:id/audit y POST .../note).
+const CHATTER_ACTION_LABEL = {
+  "quote.create": "creó la cotización",
+  "order.dispatch": "marcó el pedido como despachado"
+};
+function chatterEventText(e) {
+  if (e.action === "quote.update") {
+    if (e.metadata && e.metadata.statusChanged && e.before_data && e.after_data) {
+      const from = QUOTE_STATUS_LABEL[e.before_data.status] || e.before_data.status || "—";
+      const to = QUOTE_STATUS_LABEL[e.after_data.status] || e.after_data.status || "—";
+      return `Estado: <b>${esc(from)}</b> → <b>${esc(to)}</b>`;
+    }
+    return "Editó la cotización";
+  }
+  return esc(CHATTER_ACTION_LABEL[e.action] || e.action);
+}
+async function loadQuoteChatter(id, canEdit) {
+  const tl = document.getElementById("quoteTimeline");
+  if (!tl) return;
+  try {
+    const { entries } = await fetchJson(`/api/admin/quotes/${id}/audit`);
+    if (!entries.length) {
+      tl.innerHTML = '<div class="empty-row">Sin actividad todavía.</div>';
+    } else {
+      tl.innerHTML = entries.slice().reverse().map((e) => {
+        const who = esc(e.actor_name || e.actor_email || "Sistema");
+        const when = new Date(e.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const initial = esc((e.actor_name || e.actor_email || "S").trim().charAt(0).toUpperCase() || "S");
+        if (e.action === "quote.note") {
+          return `<div class="ev"><div class="av">${initial}</div><div class="evb"><div class="evh">${who} <span>· ${when}</span></div><div class="msg">${esc(e.metadata?.text || "")}</div></div></div>`;
+        }
+        return `<div class="ev"><div class="av sys">${initial}</div><div class="evb"><div class="evh">${who} <span>· ${when}</span></div><div class="evc">${chatterEventText(e)}</div></div></div>`;
+      }).join("");
+    }
+  } catch {
+    tl.innerHTML = '<div class="empty-row" style="color:var(--danger,#c8102e)">No se pudo cargar la actividad.</div>';
+  }
+  if (canEdit) {
+    const btn = document.getElementById("chatterSend");
+    const input = document.getElementById("chatterInput");
+    const msg = document.getElementById("chatterMsg");
+    if (btn && input) btn.addEventListener("click", async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      try {
+        await postJson(`/api/admin/quotes/${id}/note`, { text });
+        input.value = "";
+        await loadQuoteChatter(id, canEdit);
+      } catch (err) {
+        if (msg) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = err.body?.detail || err.message; }
+      } finally { btn.disabled = false; }
+    });
+  }
+}
+
 async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   const canEditQuote = CAN_MANAGE_QUOTES; // ventas/superadmin editan; administración: solo finanzas (lectura)
   // Sólo un editor a la vez: limpio el otro contenedor para no dejar IDs duplicados.
@@ -1452,6 +1541,15 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
       <div id="docsList" style="font-size:12.5px;color:var(--muted)">Cargando documentos...</div>
     </div>
+
+    <div id="quoteChatter" class="chatter" style="margin-top:14px">
+      <div class="cbar">Actividad</div>
+      <div class="tl" id="quoteTimeline"><div class="empty-row">Cargando actividad…</div></div>
+      ${canEditQuote ? `<div class="composer">
+        <textarea id="chatterInput" rows="2" placeholder="Escribí una nota interna (no la ve el cliente)…"></textarea>
+        <div class="ctools"><button class="btn-primary sm" id="chatterSend" type="button">Agregar nota</button><span id="chatterMsg" style="font-size:12px"></span></div>
+      </div>` : ""}
+    </div>
   `;
 
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -1459,6 +1557,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   document.getElementById("qIvaBreakdown").innerHTML = staticTotals.ivaGroups
     .map((g) => `<div><span>Neto ${g.rate}%</span><b>${money(r2(g.neto), cur)}</b></div><div><span>IVA ${g.rate}%</span><b>${money(r2(g.iva), cur)}</b></div>`)
     .join("");
+  loadQuoteChatter(id, canEditQuote);
 
   document.getElementById("proformaBtn").addEventListener("click", () => window.open(`/api/admin/quotes/${id}/proforma`, "_blank"));
 

@@ -693,6 +693,11 @@ router.get("/admin/quotes", async (req, res) => {
     params.push(req.query.month);
     conditions.push(`to_char(q.submitted_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') = $${params.length}`);
   }
+  if (req.query.userId) {
+    if (!UUID_RE.test(String(req.query.userId))) return res.status(400).json({ error: "invalid_user_id" });
+    params.push(req.query.userId);
+    conditions.push(`q.user_id = $${params.length}`);
+  }
   const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await pool.query(
     `select q.*, u.email, u.display_name, u.company_name
@@ -748,6 +753,35 @@ router.delete("/admin/quotes/:id", canQuotes, async (req, res) => {
 router.get("/admin/audit", async (req, res) => {
   const result = await pool.query(`select * from portal.audit_log order by created_at desc limit 200`);
   res.json({ entries: result.rows });
+});
+
+// Chatter (guía §11.1): timeline de actividad de una cotización + notas internas.
+// Reusa portal.audit_log (sin tabla nueva): las notas se guardan como
+// action='quote.note' con metadata.text. Devuelve create/update/note/dispatch, etc.
+router.get("/admin/quotes/:id/audit", async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: "invalid_id" });
+  const r = await pool.query(
+    `select a.id, a.action, a.before_data, a.after_data, a.metadata, a.created_at,
+            u.display_name as actor_name, u.email as actor_email
+       from portal.audit_log a
+       left join portal.users u on u.id = a.actor_user_id
+      where a.entity_type = 'quote_request' and a.entity_id = $1
+      order by a.created_at asc
+      limit 200`,
+    [req.params.id]
+  );
+  res.json({ entries: r.rows });
+});
+
+router.post("/admin/quotes/:id/note", canQuotes, async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: "invalid_id" });
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "empty_note" });
+  if (text.length > 2000) return res.status(400).json({ error: "note_too_long" });
+  const exists = await pool.query(`select 1 from portal.quote_requests where id = $1`, [req.params.id]);
+  if (!exists.rows[0]) return res.status(404).json({ error: "not_found" });
+  await recordAudit({ actorUserId: req.user.id, action: "quote.note", entityType: "quote_request", entityId: req.params.id, metadata: { text } });
+  res.status(201).json({ ok: true });
 });
 
 // Resumen liviano para el auto-refresh del panel: contadores + marca de
@@ -846,9 +880,13 @@ router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
       );
       const totals = await recomputeQuoteTotals(client, req.params.id);
       const after = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
-      return { quote: after.rows[0], totals };
+      return { quote: after.rows[0], totals, beforeStatus: before.rows[0].status };
     });
-    await recordAudit({ actorUserId: req.user.id, action: "quote.update", entityType: "quote_request", entityId: req.params.id, after: result.quote });
+    await recordAudit({
+      actorUserId: req.user.id, action: "quote.update", entityType: "quote_request", entityId: req.params.id,
+      before: { status: result.beforeStatus }, after: { status: result.quote.status },
+      metadata: { statusChanged: result.beforeStatus !== result.quote.status }
+    });
     res.json(result);
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
