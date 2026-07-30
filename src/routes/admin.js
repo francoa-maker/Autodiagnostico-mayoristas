@@ -843,7 +843,7 @@ router.put("/admin/quotes/:id/items/order", canQuotes, async (req, res) => {
 // Header-level edits: status, adjustments (discount/shipping/surcharge/tax),
 // notes. Totals are recomputed from the adjustments in the same transaction.
 router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
-  const { status, discount, discountType, shipping, surcharge, adminNotes, publicNotes, currency } = req.body || {};
+  const { status, discount, discountType, shipping, surcharge, adminNotes, publicNotes, currency, paymentTerms, dueDate } = req.body || {};
   if (discountType !== undefined && !["nominal", "percent"].includes(discountType)) {
     return res.status(400).json({ error: "invalid_discount_type" });
   }
@@ -871,12 +871,15 @@ router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
            quoted_at = case when $10 then now() else quoted_at end,
            quoted_by_user_id = case when $10 then $11 else quoted_by_user_id end,
            assigned_admin_id = coalesce(assigned_admin_id, $11),
+           payment_terms = coalesce($12, payment_terms),
+           due_date = coalesce($13, due_date),
            updated_at = now()
          where id = $1`,
         [req.params.id, status || null,
          discount === undefined ? null : Number(discount), discountType || null,
          shipping === undefined ? null : Number(shipping), surcharge === undefined ? null : Number(surcharge),
-         adminNotes ?? null, publicNotes ?? null, currency || null, nowQuoting, req.user.id]
+         adminNotes ?? null, publicNotes ?? null, currency || null, nowQuoting, req.user.id,
+         paymentTerms === undefined ? null : String(paymentTerms), dueDate ? String(dueDate) : null]
       );
       const totals = await recomputeQuoteTotals(client, req.params.id);
       const after = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);

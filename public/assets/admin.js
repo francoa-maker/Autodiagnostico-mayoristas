@@ -1394,7 +1394,11 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
     </div>
 
-    ${canEditQuote ? `<label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la pre-compra)
+    ${canEditQuote ? `<div class="form-grid" style="margin-top:14px">
+      <label>Términos de pago<input id="qPaymentTerms" value="${esc(quote.payment_terms || "")}" placeholder="Ej: 30 días" class="admin-search"></label>
+      <label>Vencimiento<input id="qDueDate" type="date" value="${quote.due_date ? String(quote.due_date).slice(0, 10) : ""}" class="admin-search"></label>
+    </div>
+    <label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la pre-compra)
       <textarea id="qPublicNotes" rows="2" class="admin-search" style="width:100%;margin-top:4px">${esc(quote.public_notes || "")}</textarea>
     </label>
 
@@ -2148,7 +2152,9 @@ async function saveQuoteHeader(id) {
       discount: Number(document.getElementById("qDiscount").value || 0),
       discountType: document.getElementById("qDiscountType").value,
       shipping: Number(document.getElementById("qShipping").value || 0),
-      publicNotes: document.getElementById("qPublicNotes").value
+      publicNotes: document.getElementById("qPublicNotes").value,
+      paymentTerms: document.getElementById("qPaymentTerms")?.value ?? "",
+      dueDate: document.getElementById("qDueDate")?.value || null
     });
     msg.textContent = "Guardado ✓";
     setTimeout(() => (msg.textContent = ""), 1800);
@@ -2215,7 +2221,9 @@ function sendProforma(id, clientEmail) {
         discount: Number(document.getElementById("qDiscount").value || 0),
         discountType: document.getElementById("qDiscountType").value,
         shipping: Number(document.getElementById("qShipping").value || 0),
-        publicNotes: document.getElementById("qPublicNotes").value
+        publicNotes: document.getElementById("qPublicNotes").value,
+        paymentTerms: document.getElementById("qPaymentTerms")?.value ?? "",
+        dueDate: document.getElementById("qDueDate")?.value || null
       });
       await postJson(`/api/admin/quotes/${id}/send-proforma`, { to, cc });
       closeModal();

@@ -192,6 +192,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
           <div>Fecha: <b>${esc(dateStr)}</b></div>
           <div>Moneda: <b>${esc(currency)}</b></div>
           ${company.proformaValidityDays ? `<div>Validez: <b>${Number(company.proformaValidityDays)} días</b></div>` : ""}
+          ${quote.payment_terms ? `<div>Términos de pago: <b>${esc(quote.payment_terms)}</b></div>` : ""}
+          ${quote.due_date ? `<div>Vencimiento: <b>${esc(String(quote.due_date).slice(0, 10).split("-").reverse().join("/"))}</b></div>` : ""}
         </div>
       </div>
     </div>
