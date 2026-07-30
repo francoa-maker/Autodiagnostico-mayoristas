@@ -1297,6 +1297,34 @@ async function loadQuoteChatter(id, canEdit) {
   }
 }
 
+// Agrega una línea de sección o nota a la cotización (pide el texto y re-render).
+async function addQuoteLine(id, type) {
+  const text = prompt(type === "section" ? "Título de la sección:" : "Texto de la nota:");
+  if (!text || !text.trim()) return;
+  try {
+    await postJson(`/api/admin/quotes/${id}/lines`, { type, text: text.trim() });
+    await renderQuoteEditor(id);
+  } catch (e) {
+    alert("No se pudo agregar: " + (e.body?.detail || e.message));
+  }
+}
+
+// Fila de SECCIÓN o NOTA en el editor de cotización (guía §11.1). No es un
+// producto: no tiene cantidad/precio y no cuenta en los totales. Lleva data-item
+// para poder quitarla, pero el recálculo la ignora (no tiene input de cantidad).
+function annotationRow(it, canEdit) {
+  const inner = it.line_type === "section"
+    ? `<b>${esc(it.product_name_snapshot)}</b>`
+    : `<span style="color:var(--muted)">📝 ${esc(it.product_name_snapshot)}</span>`;
+  return canEdit
+    ? `<tr data-item="${it.id}" class="qline-${it.line_type}">
+        <td class="q-handle-cell"><span class="q-handle" title="Arrastrar para reordenar" aria-hidden="true">⠿</span></td>
+        <td colspan="5">${inner}</td>
+        <td><button class="link-btn ghost" data-action="del-item">Quitar</button></td>
+      </tr>`
+    : `<tr class="qline-${it.line_type}"><td colspan="5">${inner}</td></tr>`;
+}
+
 async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   const canEditQuote = CAN_MANAGE_QUOTES; // ventas/superadmin editan; administración: solo finanzas (lectura)
   // Sólo un editor a la vez: limpio el otro contenedor para no dejar IDs duplicados.
@@ -1314,7 +1342,9 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
 
   const itemRows = items
     .map(
-      (it) => canEditQuote
+      (it) => (it.line_type === "section" || it.line_type === "note")
+        ? annotationRow(it, canEditQuote)
+        : canEditQuote
         ? `<tr data-item="${it.id}">
         <td class="q-handle-cell"><span class="q-handle" title="Arrastrar para reordenar" aria-hidden="true">⠿</span></td>
         <td><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted)">${esc(it.sku_snapshot)}</span><br>${esc(it.product_name_snapshot)}</td>
@@ -1338,7 +1368,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
     .join("");
 
   const staticTotals = previewTotals({
-    items: items.map((it) => ({ quantity: it.quantity, unit: itemUnit(it), rate: itemRate(it) })),
+    items: items.filter((it) => (it.line_type || "product") === "product").map((it) => ({ quantity: it.quantity, unit: itemUnit(it), rate: itemRate(it) })),
     discount: quote.discount, discountType: dtype, shipping: quote.shipping
   });
   const gmailConnected = currentUser?.gmail_connected;
@@ -1370,7 +1400,9 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
 
     ${canEditQuote ? `<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
       <input type="search" id="addProductSearch" class="admin-search" placeholder="Buscar producto para agregar..." style="flex:1;min-width:200px">
-      <div id="addProductResults" class="add-results"></div>
+      <button class="link-btn" id="addSectionBtn" type="button">+ Sección</button>
+      <button class="link-btn" id="addNoteBtn" type="button">+ Nota</button>
+      <div id="addProductResults" class="add-results" style="flex-basis:100%"></div>
     </div>` : ""}
 
     <div class="quote-totals">
@@ -1567,7 +1599,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
 
   if (canEditQuote) {
     const recalc = () => {
-      const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].map((r) => ({
+      const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].filter((r) => r.querySelector('[data-f="quantity"]')).map((r) => ({
         quantity: Number(r.querySelector('[data-f="quantity"]').value) || 0,
         unit: r.querySelector('[data-f="unitPrice"]').value === "" ? null : Number(r.querySelector('[data-f="unitPrice"]').value),
         rate: Number(r.querySelector('[data-f="ivaRate"]').value)
@@ -1592,6 +1624,8 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
     document.getElementById("saveQuoteBtn").addEventListener("click", () => saveQuoteHeader(id));
     document.getElementById("sendProformaBtn").addEventListener("click", () => sendProforma(id, quote.email));
     document.getElementById("sendWarehouseBtn").addEventListener("click", () => sendWarehouse(id));
+    document.getElementById("addSectionBtn").addEventListener("click", () => addQuoteLine(id, "section"));
+    document.getElementById("addNoteBtn").addEventListener("click", () => addQuoteLine(id, "note"));
     wireQuoteItemActions(id);
     wireQuoteItemsDnD(id);
     wireAddProduct(id);

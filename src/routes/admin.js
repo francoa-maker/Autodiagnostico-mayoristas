@@ -63,7 +63,7 @@ function tierForQuantity(qty) {
 // computed IVA as tax, and the gross total as quoted_total.
 async function recomputeQuoteTotals(client, quoteId) {
   const items = await client.query(
-    `select quantity, quoted_unit_price, displayed_price_snapshot, iva_rate from portal.quote_items where quote_request_id = $1`,
+    `select quantity, quoted_unit_price, displayed_price_snapshot, iva_rate from portal.quote_items where quote_request_id = $1 and line_type = 'product'`,
     [quoteId]
   );
   const q = await client.query(
@@ -951,6 +951,40 @@ router.post("/admin/quotes/:id/items", canQuotes, async (req, res) => {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error(error);
     res.status(500).json({ error: "quote_item_add_failed" });
+  }
+});
+
+// Agrega una línea de SECCIÓN o NOTA a la cotización (guía §11.1, estilo Odoo).
+// Se guardan como filas de quote_items con line_type='section'/'note' y el texto
+// en product_name_snapshot; NO cuentan en los totales ni van a Logística (ambos
+// filtran line_type='product'). Campos NOT NULL rellenados con placeholders.
+router.post("/admin/quotes/:id/lines", canQuotes, async (req, res) => {
+  const type = req.body?.type;
+  const text = String(req.body?.text || "").trim();
+  if (!["section", "note"].includes(type)) return res.status(400).json({ error: "invalid_line_type" });
+  if (!text) return res.status(400).json({ error: "empty_text" });
+  if (text.length > 500) return res.status(400).json({ error: "text_too_long" });
+  try {
+    const item = await withTransaction(async (client) => {
+      const q = await client.query(`select id from portal.quote_requests where id = $1`, [req.params.id]);
+      if (!q.rows[0]) throw Object.assign(new Error("not_found"), { statusCode: 404 });
+      const inserted = await client.query(
+        `insert into portal.quote_items
+           (quote_request_id, product_id, sku_snapshot, product_name_snapshot, quantity,
+            displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, iva_rate, line_type, sort_order)
+         values ($1, null, '', $2, 1, '{"state":"hidden"}'::jsonb, null, 'in_stock', 0, $3,
+            (select coalesce(max(sort_order), -1) + 1 from portal.quote_items where quote_request_id = $1))
+         returning *`,
+        [req.params.id, text, type]
+      );
+      return inserted.rows[0];
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "quote.line.add", entityType: "quote_item", entityId: item.id, metadata: { type } });
+    res.status(201).json({ item });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ error: "quote_line_add_failed" });
   }
 });
 

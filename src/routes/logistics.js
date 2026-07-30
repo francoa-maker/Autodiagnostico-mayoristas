@@ -35,7 +35,7 @@ router.get("/logistics/orders/:id", requireFlag("serialNumbers"), requireCapabil
   const items = (await pool.query(
     `select qi.id, qi.sku_snapshot, qi.product_name_snapshot, qi.quantity, qi.prepared_quantity, qi.product_id,
             (select count(*)::int from portal.order_item_serial_numbers s where s.order_item_id = qi.id and s.status = 'assigned') as serial_count
-     from portal.quote_items qi where qi.quote_request_id = $1 order by qi.sort_order nulls last, qi.created_at`, [req.params.id]
+     from portal.quote_items qi where qi.quote_request_id = $1 and qi.line_type = 'product' order by qi.sort_order nulls last, qi.created_at`, [req.params.id]
   )).rows;
   const serials = await listSerialsByOrder(req.params.id);
   res.json({ order: q, items, serials });

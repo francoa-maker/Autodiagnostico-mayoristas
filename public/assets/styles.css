@@ -534,6 +534,10 @@ details.collapsible > div{padding:0 18px 18px}
 .chatter .composer textarea{width:100%;border:1px solid var(--border,#e0e0e0);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical}
 .chatter .composer .ctools{display:flex;gap:10px;align-items:center;margin-top:8px}
 
+/* Líneas de sección / nota en el editor de cotización (guía §11.1) */
+#quoteItemsBody tr.qline-section > td{background:#f4f4f4}
+#quoteItemsBody tr.qline-note > td{background:#fcfcfc}
+
 /* Buscador para agregar productos a la cotización */
 .add-results{display:flex;flex-wrap:wrap;gap:6px;width:100%}
 .add-result{background:#f5f5f5;border:1px solid var(--border,#e0e0e0);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;text-align:left}

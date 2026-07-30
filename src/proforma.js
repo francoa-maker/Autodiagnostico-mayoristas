@@ -110,6 +110,9 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 
   const rows = items
     .map((it) => {
+      // Líneas de sección/nota (guía §11.1): encabezado o aclaración, sin precio.
+      if (it.line_type === "section") return `<tr><td></td><td colspan="5" style="font-weight:700;background:#f4f4f4;padding-top:10px">${esc(it.product_name_snapshot)}</td></tr>`;
+      if (it.line_type === "note") return `<tr><td></td><td colspan="5" style="color:#555;font-style:italic">${esc(it.product_name_snapshot)}</td></tr>`;
       const unit = resolveItemUnit(it);
       const lineTotal = unit != null ? unit * Number(it.quantity) : null;
       const rate = resolveItemRate(it);
@@ -250,6 +253,7 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 // dirección de entrega lista para Andreani.
 export function renderWarehouseHtml({ quote, items, company }) {
   const rows = items
+    .filter((it) => (it.line_type || "product") === "product")
     .map((it) => {
       const thumb = it.image_url ? `<img class="thumb" src="${esc(it.image_url)}" alt="">` : `<div class="thumb-empty"></div>`;
       return `<tr>
