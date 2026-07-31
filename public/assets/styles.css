@@ -451,6 +451,14 @@ tr:last-child td{border-bottom:none}
 .empty-row{text-align:center;color:var(--muted);padding:24px}
 
 .bottom-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.audit-item{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f0f1f3}
+.audit-item:last-child{border-bottom:none}
+.audit-icon{width:30px;height:30px;border-radius:6px;background:var(--brand-red-soft);color:var(--brand-red);display:grid;place-items:center;font-size:14px;font-weight:800}
+.audit-copy{min-width:0}
+.audit-copy strong,.audit-copy span{display:block}
+.audit-copy strong{color:var(--admin-heading);font-size:12.5px;line-height:1.35}
+.audit-copy span{margin-top:2px;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.audit-item time{color:var(--muted);font-size:11px;white-space:nowrap}
 
 @media (max-width:1180px){
   .kpi-row{grid-template-columns:repeat(3,1fr)}
@@ -712,12 +720,12 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
 
 /* ---------- Portal distribuidor ---------- */
 .client-topbar{background:var(--brand-red);color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.075em;text-transform:uppercase}
-.client-topbar-inner{max-width:1420px;height:28px;margin:0 auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.client-topbar-inner{max-width:1880px;height:28px;margin:0 auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:20px}
 .client-topbar-meta{display:flex;align-items:center;gap:7px;opacity:.94}
 .client-topbar-meta i{width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.2)}
 
 .cat-header{
-  height:64px;padding:0 max(24px,calc((100vw - 1420px)/2 + 28px));gap:26px;
+  height:64px;padding:0 max(24px,calc((100vw - 1880px)/2 + 28px));gap:26px;
   background:#111;box-shadow:none;border-bottom:1px solid #292929;
 }
 .cat-logo{display:flex;align-items:center;gap:9px;letter-spacing:-.045em}
@@ -740,7 +748,7 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
 .cat-avatar{background:#f3f3f3;color:#171717}
 
 .catalog-utilbar{position:sticky;top:64px;z-index:90;background:#fff;border-bottom:1px solid var(--border);box-shadow:0 5px 16px rgba(0,0,0,.035)}
-.catalog-utilbar-inner{max-width:1420px;height:54px;margin:0 auto;padding:0 28px;display:flex;align-items:center;gap:24px}
+.catalog-utilbar-inner{max-width:1880px;height:54px;margin:0 auto;padding:0 28px;display:flex;align-items:center;gap:24px}
 .catalog-utilbar .cat-search{max-width:620px;margin:0}
 .catalog-utilbar .cat-search input{
   height:36px;padding-left:38px;background:#f5f5f3;color:var(--catalog-dark);border:1px solid #e2e2df;border-radius:5px
@@ -751,7 +759,7 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
 .catalog-util-note{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--muted);white-space:nowrap}
 .catalog-util-kicker{color:var(--brand-red);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 
-.cat-main-wrap{max-width:1420px;padding:24px 28px 52px}
+.cat-main-wrap{max-width:1880px;padding:24px 28px 52px}
 .hero{
   position:relative;overflow:hidden;background:#fff;border:1px solid var(--border);border-radius:10px;
   padding:24px 26px;box-shadow:var(--shadow-card)
@@ -859,8 +867,8 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
 .admin-user div span,.admin-user a{color:#85858d}
 .admin-user a:hover{color:var(--brand-red)}
 
-.admin-main{padding:0 28px 64px}
-.admin-section{max-width:1500px;margin:0 auto}
+.admin-main{padding:0 clamp(24px,2vw,42px) 64px}
+.admin-section{width:100%;max-width:1920px;margin:0 auto}
 .admin-topline{
   position:sticky;top:0;z-index:20;margin:0 -28px 24px;padding:18px 28px;min-height:74px;
   align-items:center;background:rgba(255,255,255,.96);border-bottom:1px solid var(--border);backdrop-filter:blur(10px)
@@ -904,6 +912,14 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
 .cat-card .cc-side{grid-column:3;grid-row:2;justify-content:flex-start;gap:5px}
 .cc-name{font-size:12.5px}
 .cc-meta,.cc-prices{font-size:10.5px}
+
+@media (min-width:1600px){
+  .catalog-body{grid-template-columns:240px minmax(0,1fr) 330px;gap:22px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .dash-grid{grid-template-columns:minmax(0,1.15fr) minmax(380px,.85fr);gap:20px}
+  .bottom-grid{grid-template-columns:minmax(0,1.55fr) minmax(420px,1fr);gap:20px}
+  .panel{padding:18px}
+}
 
 @media (max-width:1260px){
   .catalog-body{grid-template-columns:220px minmax(0,1fr)}
