@@ -721,7 +721,10 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
   background:#111;box-shadow:none;border-bottom:1px solid #292929;
 }
 .cat-logo{display:flex;align-items:center;gap:9px;letter-spacing:-.045em}
-.cat-logo-mark,.admin-brand-mark{
+.cat-logo-image{
+  width:42px;height:42px;display:block;object-fit:contain;filter:invert(1);
+}
+.admin-brand-mark{
   width:32px;height:32px;border-radius:5px 11px 5px 11px;background:var(--brand-red);color:#fff!important;
   display:grid;place-items:center;font-size:15px;font-weight:900;font-style:italic;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)
 }
@@ -754,7 +757,6 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
   padding:24px 26px;box-shadow:var(--shadow-card)
 }
 .hero:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--brand-red)}
-.hero:after{content:"A";position:absolute;right:32px;top:-42px;font-size:160px;line-height:1;font-weight:900;font-style:italic;color:#f4f4f2;z-index:0}
 .hero>*{position:relative;z-index:1}
 .hero h1{font-size:28px}
 .hero-sub{max-width:660px}
@@ -929,14 +931,13 @@ button{transition:background-color .16s,border-color .16s,color .16s,transform .
   .client-topbar-meta{display:none}
   .cat-header{height:58px;padding:0 14px;flex-wrap:nowrap}
   .cat-logo-word{font-size:16px}
-  .cat-logo-mark{width:29px;height:29px}
+  .cat-logo-image{width:36px;height:36px}
   .catalog-utilbar{top:58px}
   .catalog-utilbar-inner{height:50px;padding:0 14px}
   .catalog-util-note{display:none}
   .catalog-utilbar .cat-search{max-width:none}
   .cat-main-wrap{padding:14px 12px 36px}
   .hero{padding:20px 18px}
-  .hero:after{right:10px;font-size:120px}
   .hero h1{font-size:23px}
   .quick-access{grid-template-columns:repeat(2,1fr)}
   .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
