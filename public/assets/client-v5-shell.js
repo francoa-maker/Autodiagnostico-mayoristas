@@ -1,4 +1,4 @@
-import { fetchJson, money } from "./api.js";
+import { fetchJson } from "./api.js";
 
 const q = (selector, root = document) => root.querySelector(selector);
 const qa = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -47,7 +47,8 @@ function installToastChannel() {
   window.v5Toast = (message, type = "") => {
     const toast = document.createElement("div");
     toast.className = `v5-toast ${type}`.trim();
-    toast.innerHTML = `<span aria-hidden="true">${type === "error" ? "!" : "✓"}</span><div>${String(message)}</div><button type="button" aria-label="Cerrar">×</button>`;
+    toast.innerHTML = `<span aria-hidden="true">${type === "error" ? "!" : "✓"}</span><div></div><button type="button" aria-label="Cerrar">×</button>`;
+    toast.children[1].textContent = String(message);
     toast.querySelector("button").addEventListener("click", () => toast.remove());
     stack.appendChild(toast);
     setTimeout(() => toast.remove(), 4800);
@@ -225,7 +226,8 @@ function improveCartCopy() {
   const title = q(".cart-head h3");
   if (title) title.textContent = "Mi solicitud";
   const request = q("#cartBtn .rb-line1");
-  if (request) request.childNodes[0].textContent = "Mi solicitud · ";
+  const textNode = request ? [...request.childNodes].find((node) => node.nodeType === Node.TEXT_NODE) : null;
+  if (textNode) textNode.textContent = "Mi solicitud · ";
 }
 
 function boot() {
