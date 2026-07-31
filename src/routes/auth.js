@@ -12,8 +12,11 @@ import {
   parseCookies
 } from "../auth.js";
 import { pool } from "../db.js";
+import { ROLES, isAdminStaff, isSuperadmin } from "../permissions.js";
 
 const router = express.Router();
+const DEV_LOGIN_ROLES = new Set([...ROLES, "admin", "customer"]);
+const DEV_LOGIN_STATUSES = new Set(["pending", "approved", "rejected", "blocked"]);
 
 function appBaseUrl() {
   return process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -100,7 +103,7 @@ function gmailSecure() {
 }
 
 router.get("/auth/google/gmail", (req, res) => {
-  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  if (!req.user || !isAdminStaff(req.user.role)) return res.redirect("/login");
   if (!googleConfigured()) return res.redirect("/?gmail=not_configured");
   const state = crypto.randomBytes(24).toString("base64url");
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -118,7 +121,7 @@ router.get("/auth/google/gmail", (req, res) => {
 });
 
 router.get("/auth/google/gmail/callback", async (req, res) => {
-  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  if (!req.user || !isAdminStaff(req.user.role)) return res.redirect("/login");
   const { code, state } = req.query;
   const cookieState = parseCookies(req.headers.cookie)[GMAIL_STATE_COOKIE];
   if (!state || state !== cookieState) return res.redirect("/?gmail=invalid_state");
@@ -169,7 +172,7 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_STATE_COOKIE = "portal_drive_state";
 
 router.get("/auth/google/drive", (req, res) => {
-  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  if (!req.user || !isSuperadmin(req.user.role)) return res.redirect("/login");
   if (!googleConfigured()) return res.redirect("/?drive=not_configured");
   const state = crypto.randomBytes(24).toString("base64url");
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -188,7 +191,7 @@ router.get("/auth/google/drive", (req, res) => {
 });
 
 router.get("/auth/google/drive/callback", async (req, res) => {
-  if (!req.user || req.user.role !== "admin") return res.redirect("/login");
+  if (!req.user || !isSuperadmin(req.user.role)) return res.redirect("/login");
   const { code, state } = req.query;
   const cookieState = parseCookies(req.headers.cookie)[DRIVE_STATE_COOKIE];
   const secure = appBaseUrl().startsWith("https://") ? "; Secure" : "";
@@ -248,8 +251,21 @@ if (process.env.NODE_ENV !== "production") {
   router.post("/auth/dev-login", async (req, res) => {
     if (!pool) return res.status(503).json({ error: "db_unavailable" });
     const email = String(req.body?.email || "dev@example.com").toLowerCase();
-    const role = req.body?.role === "admin" ? "admin" : "customer";
-    const status = req.body?.status || "approved";
+    const role = String(req.body?.role ?? "client");
+    const status = String(req.body?.status ?? "approved");
+
+    if (!DEV_LOGIN_ROLES.has(role)) {
+      return res.status(400).json({
+        error: "invalid_role",
+        allowedRoles: [...DEV_LOGIN_ROLES]
+      });
+    }
+    if (!DEV_LOGIN_STATUSES.has(status)) {
+      return res.status(400).json({
+        error: "invalid_status",
+        allowedStatuses: [...DEV_LOGIN_STATUSES]
+      });
+    }
 
     const user = await findOrCreateUser({ googleSub: `dev:${email}`, email, displayName: req.body?.name || email });
     await pool.query(`update portal.users set role = $2, status = $3 where id = $1`, [user.id, role, status]);
