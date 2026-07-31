@@ -20,9 +20,7 @@ export function normalizeRole(role) {
   return role || "client";
 }
 
-// Capabilities por rol. superadmin = "*" (todo). Estas capabilities todavía no
-// se consumen por rutas financieras (no existen aún); se definen acá para que
-// las tandas siguientes las usen. En Tanda 0 lo que manda es isAdminStaff (abajo).
+// Capabilities por rol. superadmin = "*" (todo).
 const ROLE_CAPABILITIES = {
   superadmin: ["*"],
   sales_billing: [
@@ -51,28 +49,38 @@ const ROLE_CAPABILITIES = {
   ]
 };
 
-// ¿El usuario tiene esta capability? Considera el rol + grants por usuario
-// (users.extra_permissions, ej. {"orders.authorize": true} o {"grant": [...]}).
-export function can(user, capability) {
-  if (!user) return false;
+// Lista efectiva para la UI y otros consumidores. Considera rol, legacy y
+// grants por usuario. Superadmin conserva el wildcard para no tener que
+// enumerar capacidades futuras.
+export function capabilitiesFor(user) {
+  if (!user) return [];
   const role = normalizeRole(user.role);
-  const caps = ROLE_CAPABILITIES[role] || [];
-  if (caps.includes("*")) return true;
-  if (caps.includes(capability)) return true;
+  const base = ROLE_CAPABILITIES[role] || [];
+  if (base.includes("*")) return ["*"];
+
+  const granted = [];
   const extra = user.extra_permissions;
   if (extra && typeof extra === "object") {
-    if (extra[capability] === true) return true;
-    if (Array.isArray(extra.grant) && extra.grant.includes(capability)) return true;
+    for (const [capability, enabled] of Object.entries(extra)) {
+      if (capability !== "grant" && enabled === true) granted.push(capability);
+    }
+    if (Array.isArray(extra.grant)) granted.push(...extra.grant.filter((item) => typeof item === "string"));
   }
-  return false;
+  return [...new Set([...base, ...granted])].sort();
+}
+
+// ¿El usuario tiene esta capability? Considera el rol + grants por usuario.
+export function can(user, capability) {
+  const caps = capabilitiesFor(user);
+  return caps.includes("*") || caps.includes(capability);
 }
 
 // Todo lo que no es cliente (personal interno).
 export function isStaff(role) {
   return normalizeRole(role) !== "client";
 }
-// Personal con acceso al PANEL admin. Logística tendrá su propia vista más
-// adelante (Tanda 8); por ahora no entra al panel general.
+// Personal con acceso al PANEL admin. Logística usa el mismo panel unificado,
+// pero sus rutas continúan protegidas por capabilities.
 export function isAdminStaff(role) {
   const r = normalizeRole(role);
   return r === "superadmin" || r === "sales_billing" || r === "administration";

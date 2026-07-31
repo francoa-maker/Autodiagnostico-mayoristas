@@ -12,7 +12,7 @@ import {
   parseCookies
 } from "../auth.js";
 import { pool } from "../db.js";
-import { ROLES, isAdminStaff, isSuperadmin } from "../permissions.js";
+import { ROLES, capabilitiesFor, isAdminStaff, isSuperadmin } from "../permissions.js";
 
 const router = express.Router();
 const DEV_LOGIN_ROLES = new Set([...ROLES, "admin", "customer"]);
@@ -140,11 +140,7 @@ router.get("/auth/google/gmail/callback", async (req, res) => {
     });
     if (!tokenResponse.ok) return res.redirect("/?gmail=token_failed");
     const token = await tokenResponse.json();
-    if (!token.refresh_token) {
-      // Google only returns a refresh_token with prompt=consent; if the user
-      // had already granted it and Google skipped it, ask them to reconnect.
-      return res.redirect("/?gmail=no_refresh_token");
-    }
+    if (!token.refresh_token) return res.redirect("/?gmail=no_refresh_token");
     let gmailAddress = req.user.email;
     try {
       const prof = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { authorization: `Bearer ${token.access_token}` } });
@@ -164,10 +160,6 @@ router.get("/auth/google/gmail/callback", async (req, res) => {
 });
 
 // --- Autorización de Google Drive (solo admin) ----------------------------
-// Pide el scope drive.file (la app SOLO ve/crea sus propios archivos) con
-// access_type=offline para obtener un refresh_token. El token NO se guarda en
-// la base: se muestra una única vez para que se pegue en la variable de entorno
-// GOOGLE_DRIVE_REFRESH_TOKEN de Render (las credenciales van solo en el entorno).
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_STATE_COOKIE = "portal_drive_state";
 
@@ -214,7 +206,6 @@ router.get("/auth/google/drive/callback", async (req, res) => {
     const token = await tokenResponse.json();
     if (!token.refresh_token) return res.redirect("/?drive=no_refresh_token");
 
-    // Se muestra una sola vez para copiarlo a la env var. No se persiste.
     const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
     res.setHeader("set-cookie", clear);
     res.set("Content-Type", "text/html; charset=utf-8").send(`<!doctype html><meta charset="utf-8">
@@ -239,9 +230,15 @@ router.get("/auth/logout", async (req, res) => {
   res.redirect("/login");
 });
 
-// No gating - a pending user must be able to see their own status.
+// No gating - a pending user must be able to see their own status. La UI del
+// panel recibe también la lista efectiva de capabilities, incluida cualquier
+// concesión extra por usuario.
 router.get("/api/me", (req, res) => {
-  res.json({ user: req.user, googleConfigured: googleConfigured() });
+  res.json({
+    user: req.user,
+    capabilities: capabilitiesFor(req.user),
+    googleConfigured: googleConfigured()
+  });
 });
 
 // Local-only shortcut so the full login -> pending -> approve -> catalog ->
@@ -255,16 +252,10 @@ if (process.env.NODE_ENV !== "production") {
     const status = String(req.body?.status ?? "approved");
 
     if (!DEV_LOGIN_ROLES.has(role)) {
-      return res.status(400).json({
-        error: "invalid_role",
-        allowedRoles: [...DEV_LOGIN_ROLES]
-      });
+      return res.status(400).json({ error: "invalid_role", allowedRoles: [...DEV_LOGIN_ROLES] });
     }
     if (!DEV_LOGIN_STATUSES.has(status)) {
-      return res.status(400).json({
-        error: "invalid_status",
-        allowedStatuses: [...DEV_LOGIN_STATUSES]
-      });
+      return res.status(400).json({ error: "invalid_status", allowedStatuses: [...DEV_LOGIN_STATUSES] });
     }
 
     const user = await findOrCreateUser({ googleSub: `dev:${email}`, email, displayName: req.body?.name || email });
