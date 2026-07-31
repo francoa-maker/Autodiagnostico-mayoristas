@@ -9,6 +9,7 @@ import { createPayment, confirmPayment, applyPayment, reversePayment, listPaymen
 import { createEcheq, acceptEcheq, accreditEcheq, rejectEcheq, listEcheqs } from "../finance/echeq.js";
 import { getOrderFinancialSummary, authorizeOrder, AUTHORIZATION_REASONS } from "../finance/orders.js";
 import { renderAccountStatementHtml } from "../finance/statement.js";
+import { isAdminStaff } from "../permissions.js";
 
 async function buildStatementHtml(clientId) {
   const client = (await pool.query(`select id, email, display_name, company_name, client_code, tax_cuit from portal.users where id = $1`, [clientId])).rows[0];
@@ -365,7 +366,7 @@ router.get("/orders/:orderId/invoices", requireFlag("financial"), requireApprove
   if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
   const own = await pool.query(`select user_id from portal.quote_requests where id = $1`, [req.params.orderId]);
   if (!own.rows[0]) return res.status(404).json({ error: "not_found" });
-  if (own.rows[0].user_id !== req.user.id && req.user.role !== "admin" && req.user.role !== "superadmin") {
+  if (own.rows[0].user_id !== req.user.id && !isAdminStaff(req.user.role)) {
     return res.status(403).json({ error: "forbidden" });
   }
   const invoices = await listInvoices({ orderId: req.params.orderId, onlyVisible: true });
