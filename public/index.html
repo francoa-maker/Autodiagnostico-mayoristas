@@ -38,12 +38,9 @@
     <header class="cat-header">
       <div class="cat-header-inner">
         <button class="cat-logo" id="logoBtn" type="button" aria-label="Ir al inicio del catálogo">
-          <span class="cat-logo-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l2-6 4 14 2-6h6"/></svg>
-          </span>
+          <span class="cat-logo-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l2-6 4 14 2-6h6"/></svg></span>
           <span class="cat-logo-word">Auto<span>diagnostico</span></span>
         </button>
-
         <nav class="cat-nav" aria-label="Navegación principal">
           <button class="cn-link active" data-nav="catalogo" type="button">Catálogo</button>
           <button class="shell-request-link" id="requestNavBtn" type="button">Solicitud <span class="cart-badge" id="headerCartBadge">0</span></button>
@@ -60,27 +57,11 @@
           </div>
           <button class="shell-nav-link" id="featuredBtn" type="button">Destacados</button>
         </nav>
-
-        <button class="request-btn" id="cartBtn" type="button" aria-label="Ver mi solicitud actual">
-          <span class="rb-ico" aria-hidden="true">▤</span>
-          <span class="rb-txt"><span class="rb-line1">Solicitud · <span id="cartCount">0</span> prod.</span><span class="rb-line2" id="cartEstLine">Total estimado: $ 0</span></span>
-        </button>
+        <button class="request-btn" id="cartBtn" type="button" aria-label="Ver mi solicitud actual"><span class="rb-ico" aria-hidden="true">▤</span><span class="rb-txt"><span class="rb-line1">Solicitud · <span id="cartCount">0</span> prod.</span><span class="rb-line2" id="cartEstLine">Total estimado: $ 0</span></span></button>
       </div>
     </header>
 
-    <div class="catalog-utilbar">
-      <div class="catalog-utilbar-inner">
-        <div class="cat-search">
-          <span class="si" aria-hidden="true">⌕</span>
-          <input type="search" id="searchInput" aria-label="Buscar en el catálogo" placeholder="Buscar producto, marca, categoría o código…">
-        </div>
-        <div class="account-mini" id="accountMini">
-          <div><span>Saldo (deuda)</span><b id="miniDebt">$ 0</b></div>
-          <div><span>A favor</span><b id="miniCredit">$ 0</b></div>
-        </div>
-        <div class="cutoff-mini"><span class="clock-ring" aria-hidden="true">◷</span><div><span>Cierre 18:00</span><b>Faltan <span id="cutoffTimer">--:--:--</span></b></div></div>
-      </div>
-    </div>
+    <div class="catalog-utilbar"><div class="catalog-utilbar-inner"><div class="cat-search"><span class="si" aria-hidden="true">⌕</span><input type="search" id="searchInput" aria-label="Buscar en el catálogo" placeholder="Buscar producto, marca, categoría o código…"></div><div class="account-mini" id="accountMini"><div><span>Saldo (deuda)</span><b id="miniDebt">$ 0</b></div><div><span>A favor</span><b id="miniCredit">$ 0</b></div></div><div class="cutoff-mini"><span class="clock-ring" aria-hidden="true">◷</span><div><span>Cierre 18:00</span><b>Faltan <span id="cutoffTimer">--:--:--</span></b></div></div></div></div>
 
     <main class="cat-main-wrap">
       <section class="catalog-page" id="catalogPage">
@@ -90,66 +71,20 @@
             <div class="filters-head"><h3>Filtros</h3><button class="filters-clear-head" id="clearFilters" type="button">Limpiar</button><button class="filters-close" id="filtersClose" type="button" aria-label="Cerrar filtros">×</button></div>
             <div class="filter-group"><div class="fg-title">Marca</div><div id="brandFilterList" class="fg-body"></div></div>
             <div class="filter-group"><div class="fg-title">Categoría</div><input type="search" id="catSearchInput" class="fg-search" placeholder="Buscar categoría…" aria-label="Buscar categoría"><div id="catFilterList" class="fg-body"></div><button class="fg-more" id="catMoreBtn" type="button" hidden>Ver más</button></div>
-            <div class="filter-group"><div class="fg-title">Disponibilidad</div><div class="fg-body" id="availFilterList">
-              <label class="fg-check"><input type="checkbox" value="in_stock"><span>Con stock</span><span class="n" id="cnt_in_stock">0</span></label>
-              <label class="fg-check"><input type="checkbox" value="low_stock"><span>Últimos en stock</span><span class="n" id="cnt_low_stock">0</span></label>
-              <label class="fg-check"><input type="checkbox" value="out_of_stock"><span>Sin stock</span><span class="n" id="cnt_out_of_stock">0</span></label>
-            </div></div>
+            <div class="filter-group"><div class="fg-title">Disponibilidad</div><div class="fg-body" id="availFilterList"><label class="fg-check"><input type="checkbox" value="in_stock"><span>Con stock</span><span class="n" id="cnt_in_stock">0</span></label><label class="fg-check"><input type="checkbox" value="low_stock"><span>Últimos en stock</span><span class="n" id="cnt_low_stock">0</span></label><label class="fg-check"><input type="checkbox" value="out_of_stock"><span>Sin stock</span><span class="n" id="cnt_out_of_stock">0</span></label></div></div>
             <div class="filter-group"><div class="fg-title">Precio estimado (ARS)</div><div class="price-range"><input type="number" id="priceMin" class="price-in" placeholder="Mín" min="0"><span>—</span><input type="number" id="priceMax" class="price-in" placeholder="Máx" min="0"></div></div>
             <div class="filter-actions"><button class="btn-primary" id="applyFilters" type="button">Aplicar filtros</button></div>
           </aside>
 
           <div class="catalog-center">
-            <section class="hero">
-              <div class="hero-copy">
-                <h1>Catálogo Distribuidor</h1>
-                <p class="hero-sub">Seleccioná productos y cantidades para solicitar una cotización personalizada.</p>
-                <div class="hero-stats" id="heroStats">
-                  <span class="hs-chip"><b id="statProducts">—</b> productos activos</span>
-                  <span class="hs-chip"><b id="statBrands">—</b> marcas</span>
-                  <span class="hs-chip"><b id="statAvail">—</b> con disponibilidad</span>
-                </div>
-              </div>
-              <a id="downloadCatalogBtn" class="download-catalog" href="/api/catalog/pdf" target="_blank" rel="noopener"><span aria-hidden="true">↓</span><span class="dl-label">Descargar catálogo (PDF)</span></a>
-            </section>
-
-            <section class="quick-access" aria-label="Accesos rápidos" id="quickAccess">
-              <button class="qa-card" data-quick="all" type="button"><span class="qa-ico">☰</span><span class="qa-t">Todos los productos</span><span class="qa-n" id="qaAll">—</span></button>
-              <button class="qa-card" data-quick="avail" type="button"><span class="qa-ico">✓</span><span class="qa-t">Con disponibilidad</span><span class="qa-n" id="qaAvail">—</span></button>
-              <button class="qa-card" data-quick="novedades" type="button"><span class="qa-ico">☆</span><span class="qa-t">Novedades</span><span class="qa-n">Recientes</span></button>
-              <button class="qa-card" data-quick="favoritos" type="button"><span class="qa-ico">♥</span><span class="qa-t">Favoritos</span><span class="qa-n" id="qaFav">0</span></button>
-              <button class="qa-card" data-quick="frecuentes" type="button"><span class="qa-ico">⟳</span><span class="qa-t">Pedidos frecuentes</span><span class="qa-n" id="qaFreq">—</span></button>
-            </section>
-
+            <section class="hero"><div class="hero-copy"><h1>Catálogo Distribuidor</h1><p class="hero-sub">Seleccioná productos y cantidades para solicitar una cotización personalizada.</p><div class="hero-stats" id="heroStats"><span class="hs-chip"><b id="statProducts">—</b> productos activos</span><span class="hs-chip"><b id="statBrands">—</b> marcas</span><span class="hs-chip"><b id="statAvail">—</b> con disponibilidad</span></div></div><a id="downloadCatalogBtn" class="download-catalog" href="/api/catalog/pdf" target="_blank" rel="noopener"><span aria-hidden="true">↓</span><span class="dl-label">Descargar catálogo (PDF)</span></a></section>
+            <section class="quick-access" aria-label="Accesos rápidos" id="quickAccess"><button class="qa-card" data-quick="all" type="button"><span class="qa-ico">☰</span><span class="qa-t">Todos los productos</span><span class="qa-n" id="qaAll">—</span></button><button class="qa-card" data-quick="avail" type="button"><span class="qa-ico">✓</span><span class="qa-t">Con disponibilidad</span><span class="qa-n" id="qaAvail">—</span></button><button class="qa-card" data-quick="novedades" type="button"><span class="qa-ico">☆</span><span class="qa-t">Novedades</span><span class="qa-n">Recientes</span></button><button class="qa-card" data-quick="favoritos" type="button"><span class="qa-ico">♥</span><span class="qa-t">Favoritos</span><span class="qa-n" id="qaFav">0</span></button><button class="qa-card" data-quick="frecuentes" type="button"><span class="qa-ico">⟳</span><span class="qa-t">Pedidos frecuentes</span><span class="qa-n" id="qaFreq">—</span></button></section>
             <section class="brands-section" id="brandsSection"><h2 class="section-title">Marcas</h2><div class="brand-cards" id="brandCards"></div></section>
-
-            <section class="catalog-section" id="catalogSection">
-              <div class="cs-toolbar">
-                <button class="filters-toggle" id="filtersToggle" type="button">☰ Filtros</button>
-                <h2 class="section-title" id="resultsTitle">Todos los productos</h2>
-                <span class="result-count" id="resultCount"></span>
-                <div class="toolbar-spacer"></div>
-                <label class="sort-wrap">Ordenar <select id="sortSelect" class="mini-select" aria-label="Ordenar productos"><option value="default">Sugerido</option><option value="name">Nombre (A-Z)</option><option value="price_asc">Precio: menor a mayor</option><option value="price_desc">Precio: mayor a menor</option><option value="new">Más nuevos</option></select></label>
-                <div class="view-toggle" role="group" aria-label="Vista de productos"><button class="vt-btn active" id="viewGrid" type="button" aria-label="Vista en grilla" aria-pressed="true">▦</button><button class="vt-btn" id="viewList" type="button" aria-label="Vista en lista" aria-pressed="false">☰</button></div>
-              </div>
-              <div class="active-chips" id="activeChips"></div>
-              <div class="products-area"><div class="grid" id="productGrid"></div></div>
-            </section>
+            <section class="catalog-section" id="catalogSection"><div class="cs-toolbar"><button class="filters-toggle" id="filtersToggle" type="button">☰ Filtros</button><h2 class="section-title" id="resultsTitle">Todos los productos</h2><span class="result-count" id="resultCount"></span><div class="toolbar-spacer"></div><label class="sort-wrap">Ordenar <select id="sortSelect" class="mini-select" aria-label="Ordenar productos"><option value="default">Sugerido</option><option value="name">Nombre (A-Z)</option><option value="price_asc">Precio: menor a mayor</option><option value="price_desc">Precio: mayor a menor</option><option value="new">Más nuevos</option></select></label><div class="view-toggle" role="group" aria-label="Vista de productos"><button class="vt-btn active" id="viewGrid" type="button" aria-label="Vista en grilla" aria-pressed="true">▦</button><button class="vt-btn" id="viewList" type="button" aria-label="Vista en lista" aria-pressed="false">☰</button></div></div><div class="active-chips" id="activeChips"></div><div class="products-area"><div class="grid" id="productGrid"></div></div></section>
           </div>
 
           <div class="cart-overlay" id="cartOverlay"></div>
-          <aside class="cart-drawer" id="cartDrawer" aria-label="Solicitud actual">
-            <div class="cart-head"><div class="cart-head-title"><span aria-hidden="true">🛒</span><h3>Solicitud actual</h3></div><span class="cart-lines-label">Resumen</span><button class="cart-close" id="cartClose" type="button" aria-label="Cerrar">×</button></div>
-            <div class="cart-note-top">Esto es una <b>pre-cotización</b>. Un vendedor la revisa y te envía la cotización final.</div>
-            <div class="cart-items" id="cartItems"><div class="cart-empty">Todavía no agregaste productos.<br>Elegí cantidades desde el catálogo.</div></div>
-            <div class="cart-foot" id="cartFoot" style="display:none">
-              <label class="cart-obs">Observaciones para el vendedor (opcional)…<textarea id="cartNotes" rows="3" placeholder="Aclaraciones para el vendedor…"></textarea></label>
-              <div class="cart-total-row"><span>Total estimado</span><span class="tabular" id="cartTotal">$ 0</span></div>
-              <div class="cart-note">Precio y cantidad sujetos a confirmación.</div>
-              <button class="btn-primary" id="submitQuoteBtn" type="button">Enviar solicitud</button>
-            </div>
-            <div class="promo-card"><span>Recién llegado</span><strong>Equipamiento profesional</strong><p>Consultá novedades y financiación con tu vendedor.</p></div>
-          </aside>
+          <aside class="cart-drawer" id="cartDrawer" aria-label="Solicitud actual"><div class="cart-head"><div class="cart-head-title"><span aria-hidden="true">🛒</span><h3>Solicitud actual</h3></div><span class="cart-lines-label">Resumen</span><button class="cart-close" id="cartClose" type="button" aria-label="Cerrar">×</button></div><div class="cart-note-top">Esto es una <b>pre-cotización</b>. Un vendedor la revisa y te envía la cotización final.</div><div class="cart-items" id="cartItems"><div class="cart-empty">Todavía no agregaste productos.<br>Elegí cantidades desde el catálogo.</div></div><div class="cart-foot" id="cartFoot" style="display:none"><label class="cart-obs">Observaciones para el vendedor (opcional)…<textarea id="cartNotes" rows="3" placeholder="Aclaraciones para el vendedor…"></textarea></label><div class="cart-total-row"><span>Total estimado</span><span class="tabular" id="cartTotal">$ 0</span></div><div class="cart-note">Precio y cantidad sujetos a confirmación.</div><button class="btn-primary" id="submitQuoteBtn" type="button">Enviar solicitud</button></div><div class="promo-card"><span>Recién llegado</span><strong>Equipamiento profesional</strong><p>Consultá novedades y financiación con tu vendedor.</p></div></aside>
         </div>
       </section>
     </main>
@@ -158,39 +93,15 @@
     <button class="cart-quick-btn" id="cartQuickBtn" type="button" hidden><span>Revisar y enviar</span><b id="cartQuickCount">0 productos</b></button>
   </div>
 
-  <div class="modal-overlay" id="profileOverlay" hidden>
-    <div class="modal" id="profileModal">
-      <div class="modal-head"><h3>Mis datos</h3><button class="modal-x" id="profileClose" type="button">×</button></div>
-      <p class="modal-lead">Necesitamos estos datos para poder cotizar y despachar tu pedido.</p>
-      <form id="profileForm" class="form-grid">
-        <label class="full">Razón social / Nombre *<input name="company_name" required></label>
-        <label>Condición de IVA *<select name="tax_condition" required><option value="">Elegir…</option><option value="responsable_inscripto">Responsable Inscripto</option><option value="monotributo">Monotributo</option><option value="exento">Exento</option><option value="consumidor_final">Consumidor Final</option></select></label>
-        <label><span id="taxIdLabel">Documento *</span><div class="tax-row"><select name="tax_id_type"></select><input name="tax_cuit" placeholder="30-71610175-0" required></div></label>
-        <div class="form-section-label full">Dirección de entrega</div>
-        <label>Calle *<input name="ship_street" required></label><label>Número *<input name="ship_number" required></label><label>Piso<input name="ship_floor"></label><label>Depto<input name="ship_apartment"></label><label>Código postal *<input name="ship_postal_code" required></label><label>Localidad *<input name="ship_city" required></label><label>Provincia *<input name="ship_province" required></label><label>Teléfono *<input name="ship_phone" required></label><label class="full">Referencias / notas de entrega<textarea name="ship_notes" rows="2"></textarea></label>
-        <div class="form-actions full"><span id="profileMsg"></span><button type="button" class="link-btn ghost" id="profileCancel">Cancelar</button><button type="submit" class="btn-primary">Guardar datos</button></div>
-      </form>
-    </div>
-  </div>
+  <div class="modal-overlay" id="profileOverlay" hidden><div class="modal" id="profileModal"><div class="modal-head"><h3>Mis datos</h3><button class="modal-x" id="profileClose" type="button">×</button></div><p class="modal-lead">Necesitamos estos datos para poder cotizar y despachar tu pedido.</p><form id="profileForm" class="form-grid"><label class="full">Razón social / Nombre *<input name="company_name" required></label><label>Condición de IVA *<select name="tax_condition" required><option value="">Elegir…</option><option value="responsable_inscripto">Responsable Inscripto</option><option value="monotributo">Monotributo</option><option value="exento">Exento</option><option value="consumidor_final">Consumidor Final</option></select></label><label><span id="taxIdLabel">Documento *</span><div class="tax-row"><select name="tax_id_type"></select><input name="tax_cuit" placeholder="30-71610175-0" required></div></label><div class="form-section-label full">Dirección de entrega</div><label>Calle *<input name="ship_street" required></label><label>Número *<input name="ship_number" required></label><label>Piso<input name="ship_floor"></label><label>Depto<input name="ship_apartment"></label><label>Código postal *<input name="ship_postal_code" required></label><label>Localidad *<input name="ship_city" required></label><label>Provincia *<input name="ship_province" required></label><label>Teléfono *<input name="ship_phone" required></label><label class="full">Referencias / notas de entrega<textarea name="ship_notes" rows="2"></textarea></label><div class="form-actions full"><span id="profileMsg"></span><button type="button" class="link-btn ghost" id="profileCancel">Cancelar</button><button type="submit" class="btn-primary">Guardar datos</button></div></form></div></div>
 
-  <div class="modal-overlay requests-overlay" id="requestsOverlay" hidden>
-    <div class="modal requests-modal" id="requestsModal">
-      <div class="modal-head"><div><h3 id="requestsTitle">Mis solicitudes</h3><p>Solicitudes de cotización, pre-compras y compras.</p></div><button class="modal-x" id="requestsClose" type="button">×</button></div>
-      <div id="requestsBody"><div class="loading-row">Cargando…</div></div>
-    </div>
-  </div>
-
+  <div class="modal-overlay requests-overlay" id="requestsOverlay" hidden><div class="modal requests-modal" id="requestsModal"><div class="modal-head"><div><h3 id="requestsTitle">Mis solicitudes</h3><p>Solicitudes de cotización, pre-compras y compras.</p></div><button class="modal-x" id="requestsClose" type="button">×</button></div><div id="requestsBody"><div class="loading-row">Cargando…</div></div></div></div>
   <div class="modal-overlay" id="compareOverlay" hidden><div class="modal compare-modal"><div class="modal-head"><h3>Comparar productos</h3><button class="modal-x" id="compareClose" type="button">×</button></div><div id="compareBody"></div></div></div>
   <div class="compare-bar" id="compareBar" hidden><span><b id="compareCount">0</b>/3 seleccionados</span><button class="link-btn ghost" id="compareClear" type="button">Limpiar</button><button class="btn-primary" id="compareOpen" type="button">Comparar</button></div>
-
-  <div class="modal-overlay" id="accountOverlay" hidden>
-    <div class="modal account-modal">
-      <div class="modal-head"><div><h3>Cuenta corriente</h3><p id="accountSubtitle">Estado de cuenta</p></div><button class="modal-x" id="accountClose" type="button">×</button></div>
-      <div id="accountBody"><div class="loading-row">Cargando…</div></div>
-    </div>
-  </div>
+  <div class="modal-overlay" id="accountOverlay" hidden><div class="modal account-modal"><div class="modal-head"><div><h3>Cuenta corriente</h3><p id="accountSubtitle">Estado de cuenta</p></div><button class="modal-x" id="accountClose" type="button">×</button></div><div id="accountBody"><div class="loading-row">Cargando…</div></div></div></div>
 
   <script type="module" src="/assets/catalog.js?v=20260731-ux2"></script>
   <script type="module" src="/assets/client-v4-enhancements.js?v=20260731-r1"></script>
+  <script type="module" src="/assets/client-v5-shell.js?v=20260731-v5"></script>
 </body>
 </html>
