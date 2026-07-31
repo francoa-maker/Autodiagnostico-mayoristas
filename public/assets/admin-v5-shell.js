@@ -69,12 +69,23 @@ function clickLegacy(section) {
   link.click();
 }
 
-function roleTargets(role) {
+function capabilityTargets(capabilities, role) {
+  const caps = new Set(Array.isArray(capabilities) ? capabilities : []);
+  const all = caps.has("*");
+  const hasAny = (...items) => all || items.some((item) => caps.has(item));
+  const allowed = new Set();
   const normalized = role === "admin" ? "superadmin" : role;
-  if (normalized === "logistics") return new Set(["logistics"]);
-  if (normalized === "administration") return new Set(["dashboard", "orders", "clients"]);
-  if (normalized === "sales_billing") return new Set(["dashboard", "orders", "logistics", "products", "taxonomy", "clients"]);
-  return new Set(["dashboard", "orders", "logistics", "products", "taxonomy", "clients", "settings"]);
+
+  if (normalized !== "client" && normalized !== "customer") allowed.add("dashboard");
+  if (hasAny("quotes.manage", "orders.manage", "orders.view", "invoices.view")) allowed.add("orders");
+  if (hasAny("logistics.prepare", "logistics.serial_numbers.view", "documents.view.logistics")) allowed.add("logistics");
+  if (hasAny("catalog.manage")) {
+    allowed.add("products");
+    allowed.add("taxonomy");
+  }
+  if (hasAny("clients.view", "clients.manage")) allowed.add("clients");
+  if (all) allowed.add("settings");
+  return allowed;
 }
 
 function navButton(target, label, iconName) {
@@ -85,8 +96,13 @@ async function installNavigation() {
   const nav = q("#adminNav");
   if (!nav || q(".v5-admin-nav", nav)) return;
   let role = "superadmin";
-  try { role = (await fetchJson("/api/me")).user?.role || role; } catch { /* admin.js handles auth */ }
-  const allowed = roleTargets(role);
+  let capabilities = ["*"];
+  try {
+    const me = await fetchJson("/api/me");
+    role = me.user?.role || role;
+    capabilities = Array.isArray(me.capabilities) ? me.capabilities : capabilities;
+  } catch { /* admin.js handles auth */ }
+  const allowed = capabilityTargets(capabilities, role);
   const shell = document.createElement("div");
   shell.className = "v5-admin-nav";
   const groups = [
