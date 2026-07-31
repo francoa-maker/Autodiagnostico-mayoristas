@@ -4,6 +4,7 @@ import { requireApproved } from "../middleware.js";
 import { getStockForSkus } from "../stock/stockRepository.js";
 import { resolveWholesaleUnit } from "../pricing.js";
 import { renderCatalogPdfHtml } from "../catalogPdf.js";
+import { isAdminStaff } from "../permissions.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -88,7 +89,7 @@ router.get("/catalog/products", async (req, res) => {
   );
 
   const stockMap = await getStockForSkus(productsResult.rows.map((row) => row.sku_normalized));
-  const isAdmin = req.user.role === "admin";
+  const isAdmin = isAdminStaff(req.user.role);
 
   // Non-admin responses never include exactQty/sourceUpdatedAt at all - not
   // even as null - since the stock source's exact quantity must never reach
