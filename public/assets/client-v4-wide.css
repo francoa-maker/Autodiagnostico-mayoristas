@@ -9,10 +9,14 @@
   }
 
   .client-topbar-inner,
-  .cat-header-inner,
-  .catalog-utilbar-inner {
+  .cat-header-inner {
     padding-left: clamp(24px, 2.2vw, 48px);
     padding-right: clamp(24px, 2.2vw, 48px);
+  }
+
+  .catalog-utilbar-inner {
+    padding-left: clamp(24px, 2.2vw, 48px);
+    padding-right: clamp(10px, 1vw, 18px);
   }
 
   .cat-main-wrap {
@@ -39,38 +43,40 @@
   .brand-cards {
     gap: clamp(11px, .8vw, 16px);
   }
+
+  .account-mini {
+    margin-left: auto;
+  }
 }
 
-.cat-logo-mark {
-  width: 40px;
-  height: 40px;
-  overflow: hidden;
+/* Marca horizontal construida desde el logo provisto por el usuario. */
+.cat-logo {
+  width: clamp(225px, 15vw, 285px);
+  height: 58px;
+  flex: 0 0 auto;
+  background: url('/assets/autodiagnostico-header-brand.svg?v=20260731-r3') no-repeat left center / contain;
 }
 
-.cat-logo-mark svg {
-  display: none;
-}
-
-.cat-logo-mark img {
-  display: block;
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-}
-
+.cat-logo-mark,
 .cat-logo-word {
-  font-size: 23px;
-  letter-spacing: -.03em;
+  display: none !important;
+}
+
+/* El bloque promocional no forma parte de esta versión del portal. */
+.promo-card {
+  display: none !important;
+}
+
+@media (max-width: 980px) {
+  .cat-logo {
+    width: 210px;
+    height: 54px;
+  }
 }
 
 @media (max-width: 620px) {
-  .cat-logo-mark {
-    width: 34px;
-    height: 34px;
-  }
-
-  .cat-logo-mark img {
-    width: 20px;
-    height: 20px;
+  .cat-logo {
+    width: 170px;
+    height: 48px;
   }
 }
