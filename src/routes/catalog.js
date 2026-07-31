@@ -128,6 +128,15 @@ router.get("/catalog/products", async (req, res) => {
 // agua por usuario y fecha de emisión. Mismos precios que ve en el catálogo
 // (mayorista 1u resuelto + PVP). Se descarga con "Guardar como PDF".
 router.get("/catalog/pdf", async (req, res) => {
+  // Filtro opcional: el cliente manda los SKU que está viendo (?skus=a,b,c) para
+  // que el PDF respete exactamente lo filtrado (marca/categoría/stock/precio/
+  // favoritos/búsqueda). Sin skus => catálogo completo (comportamiento previo).
+  const skus = String(req.query.skus || "")
+    .split(",").map((s) => s.trim()).filter(Boolean).slice(0, 2000);
+  const filtered = skus.length > 0;
+  const params = [];
+  const conditions = ["p.active", "p.visible"];
+  if (filtered) { params.push(skus); conditions.push(`p.sku = any($${params.length})`); }
   const productsResult = await pool.query(
     `select p.id, p.sku, p.sku_normalized, p.name, p.brand, p.category, p.image_url,
             coalesce(
@@ -137,9 +146,10 @@ router.get("/catalog/pdf", async (req, res) => {
             ) as prices
      from portal.products p
      left join portal.product_prices pp on pp.product_id = p.id
-     where active and visible
+     where ${conditions.join(" and ")}
      group by p.id
-     order by p.sort_order, p.name`
+     order by p.sort_order, p.name`,
+    params
   );
   const stockMap = await getStockForSkus(productsResult.rows.map((r) => r.sku_normalized));
   const [brandOrderRow, companyRow] = await Promise.all([
@@ -168,7 +178,9 @@ router.get("/catalog/pdf", async (req, res) => {
     })
     .map(([brand, products]) => ({ brand, products }));
 
-  const html = renderCatalogPdfHtml({ client: req.user, groups, company, issueDate: new Date() });
+  const filterSummary = filtered && typeof req.query.resumen === "string"
+    ? req.query.resumen.slice(0, 200) : "";
+  const html = renderCatalogPdfHtml({ client: req.user, groups, company, issueDate: new Date(), filtered, filterSummary });
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(html);
 });

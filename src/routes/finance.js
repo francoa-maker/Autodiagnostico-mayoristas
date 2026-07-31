@@ -67,7 +67,7 @@ router.get("/admin/finance/orders", requireFlag("financial"), requireCapability(
                 where i.voided_at is null and ii.due_date < current_date
                   and ii.status in ('pending','partially_paid','overdue')
                 group by i.order_id) ov on ov.order_id = q.id
-     where q.status in ('quoted','accepted')
+     where q.status in ('enviada','orden','despachado')
      order by q.quoted_at desc nulls last, q.submitted_at desc`
   );
   const EPS = 0.005;

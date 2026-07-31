@@ -110,6 +110,9 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 
   const rows = items
     .map((it) => {
+      // Líneas de sección/nota (guía §11.1): encabezado o aclaración, sin precio.
+      if (it.line_type === "section") return `<tr><td></td><td colspan="5" style="font-weight:700;background:#f4f4f4;padding-top:10px">${esc(it.product_name_snapshot)}</td></tr>`;
+      if (it.line_type === "note") return `<tr><td></td><td colspan="5" style="color:#555;font-style:italic">${esc(it.product_name_snapshot)}</td></tr>`;
       const unit = resolveItemUnit(it);
       const lineTotal = unit != null ? unit * Number(it.quantity) : null;
       const rate = resolveItemRate(it);
@@ -146,8 +149,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
     : `<div class="logo-text">Auto<span>diagnostico</span></div>`;
 
   const dateStr = new Date(quote.submitted_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  // Mientras es cotización = "Pre-compra"; cuando queda confirmada (aceptada) = "Compra".
-  const docTerm = quote.status === "accepted" ? "Compra" : "Pre-compra";
+  // Mientras es cotización/enviada = "Pre-compra"; orden o despachado = "Compra".
+  const docTerm = ["orden", "despachado"].includes(quote.status) ? "Compra" : "Pre-compra";
   const addr = addressLines(quote);
 
   const signatureBlock = signer
@@ -192,6 +195,8 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
           <div>Fecha: <b>${esc(dateStr)}</b></div>
           <div>Moneda: <b>${esc(currency)}</b></div>
           ${company.proformaValidityDays ? `<div>Validez: <b>${Number(company.proformaValidityDays)} días</b></div>` : ""}
+          ${quote.payment_terms ? `<div>Términos de pago: <b>${esc(quote.payment_terms)}</b></div>` : ""}
+          ${quote.due_date ? `<div>Vencimiento: <b>${esc(String(quote.due_date).slice(0, 10).split("-").reverse().join("/"))}</b></div>` : ""}
         </div>
       </div>
     </div>
@@ -248,6 +253,7 @@ export function renderProformaHtml({ quote, items, company, signer, forEmail = f
 // dirección de entrega lista para Andreani.
 export function renderWarehouseHtml({ quote, items, company }) {
   const rows = items
+    .filter((it) => (it.line_type || "product") === "product")
     .map((it) => {
       const thumb = it.image_url ? `<img class="thumb" src="${esc(it.image_url)}" alt="">` : `<div class="thumb-empty"></div>`;
       return `<tr>

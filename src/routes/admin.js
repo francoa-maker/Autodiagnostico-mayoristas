@@ -30,7 +30,8 @@ const canClients = requireCapability("clients.manage");
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const USER_STATUSES = ["pending", "approved", "rejected", "blocked"];
 const USER_ROLES = ROLES; // superadmin/sales_billing/administration/logistics/client
-const QUOTE_STATUSES = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
+// Modelo simplificado de 5 estados (guía §11.2). 'despachado' lo setea Logística.
+const QUOTE_STATUSES = ["cotizacion", "enviada", "orden", "despachado", "cancelado"];
 const PRICE_STATES = ["value", "consult", "hidden", "unavailable", "custom"];
 
 // Reject a malformed :id / :itemId with a clean 400 before it reaches
@@ -62,7 +63,7 @@ function tierForQuantity(qty) {
 // computed IVA as tax, and the gross total as quoted_total.
 async function recomputeQuoteTotals(client, quoteId) {
   const items = await client.query(
-    `select quantity, quoted_unit_price, displayed_price_snapshot, iva_rate from portal.quote_items where quote_request_id = $1`,
+    `select quantity, quoted_unit_price, displayed_price_snapshot, iva_rate from portal.quote_items where quote_request_id = $1 and line_type = 'product'`,
     [quoteId]
   );
   const q = await client.query(
@@ -692,6 +693,11 @@ router.get("/admin/quotes", async (req, res) => {
     params.push(req.query.month);
     conditions.push(`to_char(q.submitted_at AT TIME ZONE '${AR_TZ}', 'YYYY-MM') = $${params.length}`);
   }
+  if (req.query.userId) {
+    if (!UUID_RE.test(String(req.query.userId))) return res.status(400).json({ error: "invalid_user_id" });
+    params.push(req.query.userId);
+    conditions.push(`q.user_id = $${params.length}`);
+  }
   const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await pool.query(
     `select q.*, u.email, u.display_name, u.company_name
@@ -714,11 +720,12 @@ router.get("/admin/quotes/months", async (req, res) => {
 });
 
 // Alta manual de una cotización vacía para un cliente existente (a diferencia
-// de POST /api/quotes, que la arma el propio cliente desde su carrito). Queda
-// en 'reviewing' -no 'submitted'- para marcar que la está armando el admin,
-// no que la pidió el cliente desde el catálogo. Sin items al crearse: el
-// admin los agrega desde el editor de detalle (mismo POST .../items que ya
-// usa para sumar productos a una cotización existente).
+// de POST /api/quotes, que la arma el propio cliente desde su carrito). Nace en
+// 'cotizacion' pero con assigned_admin_id seteado, para distinguir "la está
+// armando el admin" de las que pide el cliente (esas quedan sin admin asignado);
+// así el contador de "cotizaciones nuevas por revisar" no las cuenta. Sin items
+// al crearse: el admin los agrega desde el editor de detalle (mismo POST
+// .../items que ya usa para sumar productos a una cotización existente).
 router.post("/admin/quotes", canQuotes, async (req, res) => {
   const { userId } = req.body || {};
   if (!userId || !UUID_RE.test(String(userId))) return res.status(400).json({ error: "invalid_user_id" });
@@ -727,7 +734,7 @@ router.post("/admin/quotes", canQuotes, async (req, res) => {
 
   const result = await pool.query(
     `insert into portal.quote_requests (user_id, status, assigned_admin_id)
-     values ($1, 'reviewing', $2)
+     values ($1, 'cotizacion', $2)
      returning *`,
     [userId, req.user.id]
   );
@@ -748,6 +755,35 @@ router.get("/admin/audit", async (req, res) => {
   res.json({ entries: result.rows });
 });
 
+// Chatter (guía §11.1): timeline de actividad de una cotización + notas internas.
+// Reusa portal.audit_log (sin tabla nueva): las notas se guardan como
+// action='quote.note' con metadata.text. Devuelve create/update/note/dispatch, etc.
+router.get("/admin/quotes/:id/audit", async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: "invalid_id" });
+  const r = await pool.query(
+    `select a.id, a.action, a.before_data, a.after_data, a.metadata, a.created_at,
+            u.display_name as actor_name, u.email as actor_email
+       from portal.audit_log a
+       left join portal.users u on u.id = a.actor_user_id
+      where a.entity_type = 'quote_request' and a.entity_id = $1
+      order by a.created_at asc
+      limit 200`,
+    [req.params.id]
+  );
+  res.json({ entries: r.rows });
+});
+
+router.post("/admin/quotes/:id/note", canQuotes, async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: "invalid_id" });
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ error: "empty_note" });
+  if (text.length > 2000) return res.status(400).json({ error: "note_too_long" });
+  const exists = await pool.query(`select 1 from portal.quote_requests where id = $1`, [req.params.id]);
+  if (!exists.rows[0]) return res.status(404).json({ error: "not_found" });
+  await recordAudit({ actorUserId: req.user.id, action: "quote.note", entityType: "quote_request", entityId: req.params.id, metadata: { text } });
+  res.status(201).json({ ok: true });
+});
+
 // Resumen liviano para el auto-refresh del panel: contadores + marca de
 // tiempo del último cliente/cotización. El front lo consulta cada pocos
 // segundos y, si cambió algún "latest", refresca la lista correspondiente y
@@ -756,7 +792,7 @@ router.get("/admin/summary", async (req, res) => {
   const r = await pool.query(`
     select
       (select count(*)::int from portal.users where status = 'pending') as pending_users,
-      (select count(*)::int from portal.quote_requests where status = 'submitted') as pending_quotes,
+      (select count(*)::int from portal.quote_requests where status = 'cotizacion' and assigned_admin_id is null) as pending_quotes,
       (select count(*)::int from portal.quote_requests) as total_quotes,
       (select count(*)::int from portal.users) as total_users,
       (select max(created_at) from portal.users) as latest_user_at,
@@ -807,7 +843,7 @@ router.put("/admin/quotes/:id/items/order", canQuotes, async (req, res) => {
 // Header-level edits: status, adjustments (discount/shipping/surcharge/tax),
 // notes. Totals are recomputed from the adjustments in the same transaction.
 router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
-  const { status, discount, discountType, shipping, surcharge, adminNotes, publicNotes, currency } = req.body || {};
+  const { status, discount, discountType, shipping, surcharge, adminNotes, publicNotes, currency, paymentTerms, dueDate } = req.body || {};
   if (discountType !== undefined && !["nominal", "percent"].includes(discountType)) {
     return res.status(400).json({ error: "invalid_discount_type" });
   }
@@ -819,9 +855,9 @@ router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
     const result = await withTransaction(async (client) => {
       const before = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
       if (!before.rows[0]) throw Object.assign(new Error("not_found"), { statusCode: 404 });
-      // "Firma" del vendedor: al pasar la cotización a 'quoted' queda
-      // registrado quién la cotizó (quoted_by_user_id + quoted_at).
-      const nowQuoting = status === "quoted";
+      // "Firma" del vendedor: al pasar la cotización a 'enviada' (cotización
+      // enviada) queda registrado quién la cotizó (quoted_by_user_id + quoted_at).
+      const nowQuoting = status === "enviada";
       await client.query(
         `update portal.quote_requests set
            status = coalesce($2, status),
@@ -835,18 +871,25 @@ router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
            quoted_at = case when $10 then now() else quoted_at end,
            quoted_by_user_id = case when $10 then $11 else quoted_by_user_id end,
            assigned_admin_id = coalesce(assigned_admin_id, $11),
+           payment_terms = coalesce($12, payment_terms),
+           due_date = coalesce($13, due_date),
            updated_at = now()
          where id = $1`,
         [req.params.id, status || null,
          discount === undefined ? null : Number(discount), discountType || null,
          shipping === undefined ? null : Number(shipping), surcharge === undefined ? null : Number(surcharge),
-         adminNotes ?? null, publicNotes ?? null, currency || null, nowQuoting, req.user.id]
+         adminNotes ?? null, publicNotes ?? null, currency || null, nowQuoting, req.user.id,
+         paymentTerms === undefined ? null : String(paymentTerms), dueDate ? String(dueDate) : null]
       );
       const totals = await recomputeQuoteTotals(client, req.params.id);
       const after = await client.query(`select * from portal.quote_requests where id = $1`, [req.params.id]);
-      return { quote: after.rows[0], totals };
+      return { quote: after.rows[0], totals, beforeStatus: before.rows[0].status };
     });
-    await recordAudit({ actorUserId: req.user.id, action: "quote.update", entityType: "quote_request", entityId: req.params.id, after: result.quote });
+    await recordAudit({
+      actorUserId: req.user.id, action: "quote.update", entityType: "quote_request", entityId: req.params.id,
+      before: { status: result.beforeStatus }, after: { status: result.quote.status },
+      metadata: { statusChanged: result.beforeStatus !== result.quote.status }
+    });
     res.json(result);
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -908,6 +951,40 @@ router.post("/admin/quotes/:id/items", canQuotes, async (req, res) => {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     console.error(error);
     res.status(500).json({ error: "quote_item_add_failed" });
+  }
+});
+
+// Agrega una línea de SECCIÓN o NOTA a la cotización (guía §11.1, estilo Odoo).
+// Se guardan como filas de quote_items con line_type='section'/'note' y el texto
+// en product_name_snapshot; NO cuentan en los totales ni van a Logística (ambos
+// filtran line_type='product'). Campos NOT NULL rellenados con placeholders.
+router.post("/admin/quotes/:id/lines", canQuotes, async (req, res) => {
+  const type = req.body?.type;
+  const text = String(req.body?.text || "").trim();
+  if (!["section", "note"].includes(type)) return res.status(400).json({ error: "invalid_line_type" });
+  if (!text) return res.status(400).json({ error: "empty_text" });
+  if (text.length > 500) return res.status(400).json({ error: "text_too_long" });
+  try {
+    const item = await withTransaction(async (client) => {
+      const q = await client.query(`select id from portal.quote_requests where id = $1`, [req.params.id]);
+      if (!q.rows[0]) throw Object.assign(new Error("not_found"), { statusCode: 404 });
+      const inserted = await client.query(
+        `insert into portal.quote_items
+           (quote_request_id, product_id, sku_snapshot, product_name_snapshot, quantity,
+            displayed_price_snapshot, quoted_unit_price, stock_status_at_submit, iva_rate, line_type, sort_order)
+         values ($1, null, '', $2, 1, '{"state":"hidden"}'::jsonb, null, 'in_stock', 0, $3,
+            (select coalesce(max(sort_order), -1) + 1 from portal.quote_items where quote_request_id = $1))
+         returning *`,
+        [req.params.id, text, type]
+      );
+      return inserted.rows[0];
+    });
+    await recordAudit({ actorUserId: req.user.id, action: "quote.line.add", entityType: "quote_item", entityId: item.id, metadata: { type } });
+    res.status(201).json({ item });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error(error);
+    res.status(500).json({ error: "quote_line_add_failed" });
   }
 });
 
@@ -985,6 +1062,35 @@ router.put("/admin/company-profile", canCatalog, async (req, res) => {
   res.json({ profile: merged });
 });
 
+// ---------------------------------------- notificaciones automáticas por email (§11.1)
+// Un CC global + destinatarios por evento. Guardado en app_settings key
+// 'email_recipients'. El compositor de envío precarga el CC según el evento.
+const EMAIL_EVENTS = ["enviada", "orden", "pago", "despachado"];
+async function getEmailRecipients() {
+  const r = await pool.query(`select value from portal.app_settings where key = 'email_recipients'`);
+  const v = r.rows[0]?.value || {};
+  return { globalCc: v.globalCc || "", events: v.events || {} };
+}
+
+router.get("/admin/email-recipients", async (req, res) => {
+  res.json({ recipients: await getEmailRecipients() });
+});
+
+router.put("/admin/email-recipients", canCatalog, async (req, res) => {
+  const incoming = req.body?.recipients || {};
+  const events = {};
+  for (const ev of EMAIL_EVENTS) events[ev] = String(incoming.events?.[ev] || "").trim();
+  const merged = { globalCc: String(incoming.globalCc || "").trim(), events };
+  await pool.query(
+    `insert into portal.app_settings (key, value, description, updated_by, updated_at)
+     values ('email_recipients', $1, 'Destinatarios de avisos automaticos por email', $2, now())
+     on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()`,
+    [JSON.stringify(merged), req.user.id]
+  );
+  await recordAudit({ actorUserId: req.user.id, action: "email_recipients.update", entityType: "app_settings", entityId: "email_recipients", after: merged });
+  res.json({ recipients: merged });
+});
+
 // ------------------------------------------------------ proforma (printable)
 
 // Loads a quote + its client + items + company profile + the signer (the
@@ -1043,7 +1149,7 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
   // the signature and the recomputed totals.
   await withTransaction(async (client) => {
     await client.query(
-      `update portal.quote_requests set status = 'quoted', quoted_at = coalesce(quoted_at, now()),
+      `update portal.quote_requests set status = 'enviada', quoted_at = coalesce(quoted_at, now()),
          quoted_by_user_id = $2, assigned_admin_id = coalesce(assigned_admin_id, $2), updated_at = now()
        where id = $1`,
       [req.params.id, req.user.id]
@@ -1055,8 +1161,12 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
   if (!ctx) return res.status(404).json({ error: "not_found" });
 
   const to = (req.body?.to && String(req.body.to).trim()) || ctx.quote.email;
+  // Multi-destinatario (guía §11.1): CC opcional, como array o lista separada por comas.
+  const ccList = (Array.isArray(req.body?.cc) ? req.body.cc : String(req.body?.cc || "").split(","))
+    .map((s) => String(s).trim()).filter(Boolean);
+  const cc = ccList.length ? ccList.join(", ") : undefined;
   const html = renderProformaHtml({ ...ctx, forEmail: true });
-  const term = ctx.quote.status === "accepted" ? "Compra" : "Pre-compra";
+  const term = ["orden", "despachado"].includes(ctx.quote.status) ? "Compra" : "Pre-compra";
   const subject = `${term} #${ctx.quote.request_number} - ${ctx.company.name}`;
 
   try {
@@ -1065,6 +1175,7 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
       from: tokenRow.rows[0].gmail_address || req.user.email,
       fromName: req.user.display_name || ctx.company.name,
       to,
+      cc,
       subject,
       html,
       replyTo: req.user.email
@@ -1074,8 +1185,8 @@ router.post("/admin/quotes/:id/send-proforma", canQuotes, async (req, res) => {
     return res.status(502).json({ error: "gmail_send_failed", detail: error.message });
   }
 
-  await recordAudit({ actorUserId: req.user.id, action: "quote.proforma.sent", entityType: "quote_request", entityId: req.params.id, metadata: { to } });
-  res.json({ ok: true, to });
+  await recordAudit({ actorUserId: req.user.id, action: "quote.proforma.sent", entityType: "quote_request", entityId: req.params.id, metadata: { to, cc: ccList } });
+  res.json({ ok: true, to, cc: ccList });
 });
 
 // Envía al depósito la hoja de armado (picking + dirección de entrega) desde

@@ -27,12 +27,23 @@ async function openOrder(id, num, ordersEl, detailEl) {
   const { order, items, serials } = await fetchJson(`/api/logistics/orders/${id}`);
   const byItem = {};
   serials.forEach((s) => { (byItem[s.order_item_id] = byItem[s.order_item_id] || []).push(s); });
+  const dispatched = ["dispatched", "delivered"].includes(order.logistics_status);
+  const dispatchCtrl = dispatched
+    ? `<span class="req-badge despachado">Despachado</span>`
+    : `<button class="btn-primary sm" id="dispatchBtn" type="button">📦 Marcar despachado</button>`;
   detailEl.innerHTML = `<div class="panel">
     <h2 style="margin:0 0 4px">Pedido #${esc(num)} — ${esc(order.company_name || order.display_name || "")}</h2>
     <p style="color:var(--muted);font-size:12.5px">Envío: ${esc([order.ship_street, order.ship_number, order.ship_floor, order.ship_apartment, order.ship_postal_code, order.ship_city, order.ship_province].filter(Boolean).join(" ")) || "sin dirección"} · Tel ${esc(order.ship_phone || "-")}</p>
+    <div style="margin-top:8px">${dispatchCtrl}</div>
     </div>
     ${items.map((it) => itemHtml(it, byItem[it.id] || [])).join("")}`;
   wireItems(id, num, ordersEl, detailEl);
+  const db = detailEl.querySelector("#dispatchBtn");
+  if (db) db.addEventListener("click", async () => {
+    if (!confirm(`¿Marcar el pedido #${num} como despachado? Pasa a estado "Despachado" y bloquea la edición de seriales (salvo Superadmin).`)) return;
+    try { await postJson(`/api/logistics/orders/${id}/dispatch`, {}); await loadOrders(ordersEl, detailEl); openOrder(id, num, ordersEl, detailEl); }
+    catch (e) { alert("No se pudo despachar: " + (e.body?.detail || e.message)); }
+  });
 }
 
 function itemHtml(it, serials) {

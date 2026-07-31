@@ -337,6 +337,12 @@ a{color:inherit}
 .req-badge.reviewing{background:var(--info-soft);color:#1e40af}
 .req-badge.quoted,.req-badge.accepted{background:var(--success-soft);color:#166534}
 .req-badge.rejected,.req-badge.cancelled,.req-badge.expired{background:var(--danger-soft);color:#991b1b}
+/* Modelo simplificado de 5 estados (guía §11.2) */
+.req-badge.cotizacion{background:#eef0f3;color:#475569}
+.req-badge.enviada{background:var(--warning-soft);color:#9a3412}
+.req-badge.orden{background:var(--info-soft);color:#1e40af}
+.req-badge.despachado{background:var(--success-soft);color:#166534}
+.req-badge.cancelado{background:var(--danger-soft);color:#991b1b}
 .req-hint{font-size:10.5px;color:var(--muted);margin-top:3px}
 .btn-primary.sm{padding:6px 12px;font-size:12px}
 
@@ -504,6 +510,33 @@ details.collapsible > div{padding:0 18px 18px}
 .quotes-list-panel{max-height:calc(100vh - 160px);overflow-y:auto}
 .quote-row.active{background:var(--brand-red-soft,#fff0f2)}
 .quote-row.active td:first-child{box-shadow:inset 3px 0 var(--brand-red,#c8102e)}
+
+/* Stepper/ribbon de estado de venta (5 estados, guía §11.2) */
+.stepper{display:flex;flex-wrap:wrap;gap:5px;margin:14px 0 4px}
+.stepper .st{font-size:12px;font-weight:600;color:var(--muted,#888);background:#f1f1f4;padding:6px 14px;border-radius:20px;white-space:nowrap}
+.stepper .st.done{background:var(--catalog-dark,#111);color:#fff}
+.stepper .st.cur{background:var(--brand-red,#c8102e);color:#fff}
+.stepper .st.cancel{background:var(--danger-soft,#fee2e2);color:#991b1b}
+
+/* Chatter / actividad de la cotización (guía §11.1) */
+.chatter{border:1px solid var(--border,#e0e0e0);border-radius:12px;background:#fbfbfc;overflow:hidden}
+.chatter .cbar{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#888);border-bottom:1px solid var(--border,#e0e0e0);background:#fff}
+.chatter .tl{padding:12px 14px;max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.chatter .ev{display:flex;gap:10px;align-items:flex-start}
+.chatter .av{width:28px;height:28px;flex-shrink:0;border-radius:50%;background:var(--brand-red,#c8102e);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.chatter .av.sys{background:#c9ccd3;color:#3a3d44}
+.chatter .evb{min-width:0;flex:1}
+.chatter .evh{font-size:12px;color:var(--admin-heading,#101828);font-weight:600}
+.chatter .evh span{color:var(--muted,#888);font-weight:400}
+.chatter .msg{font-size:13px;color:var(--catalog-text,#2c2c2c);background:#fff;border:1px solid var(--border,#e0e0e0);border-radius:8px;padding:7px 10px;margin-top:4px;white-space:pre-wrap;word-break:break-word}
+.chatter .evc{font-size:12.5px;color:var(--muted,#888);margin-top:1px}
+.chatter .composer{padding:10px 14px;border-top:1px solid var(--border,#e0e0e0);background:#fff}
+.chatter .composer textarea{width:100%;border:1px solid var(--border,#e0e0e0);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical}
+.chatter .composer .ctools{display:flex;gap:10px;align-items:center;margin-top:8px}
+
+/* Líneas de sección / nota en el editor de cotización (guía §11.1) */
+#quoteItemsBody tr.qline-section > td{background:#f4f4f4}
+#quoteItemsBody tr.qline-note > td{background:#fcfcfc}
 
 /* Buscador para agregar productos a la cotización */
 .add-results{display:flex;flex-wrap:wrap;gap:6px;width:100%}

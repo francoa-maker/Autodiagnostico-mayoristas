@@ -155,7 +155,7 @@ async function loadRecentQuotes() {
         </div>`
       )
       .join("") || '<div class="empty-row">Todavía no hay cotizaciones.</div>';
-  return quotes.filter((q) => q.status === "submitted").length;
+  return quotes.filter((q) => normStatus(q.status) === "cotizacion" && !q.assigned_admin_id).length;
 }
 
 async function loadAudit() {
@@ -863,6 +863,7 @@ async function loadClients() {
           <td>${timeAgo(u.last_login_at)}</td>
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="link-btn" data-action="edit-profile">Datos</button>
+            <button class="link-btn" data-action="view-orders">Ver compras</button>
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
             <button class="link-btn ghost" data-action="delete-user" title="Eliminar cliente">🗑</button>
@@ -875,6 +876,32 @@ async function loadClients() {
 document.getElementById("clientStatusFilter").addEventListener("change", loadClients);
 document.getElementById("clientMonthFilter").addEventListener("change", loadClients);
 
+// "Ver compras" (guía §11.1): modal con los pedidos del cliente + pill de estado
+// y el stepper Cotización→…→Despachado por cada uno (reusa quoteStepper/pills).
+async function openClientOrders(userId, email) {
+  openModal(`
+    <div class="modal-head"><h3>Compras · ${esc(email)}</h3><button class="modal-x" data-close>&times;</button></div>
+    <div id="clientOrdersBody"><div class="empty-row">Cargando...</div></div>`);
+  const body = document.getElementById("clientOrdersBody");
+  try {
+    const { quotes } = await fetchJson(`/api/admin/quotes?userId=${encodeURIComponent(userId)}`);
+    if (!quotes.length) { body.innerHTML = '<div class="empty-row">Este cliente todavía no tiene cotizaciones.</div>'; return; }
+    body.innerHTML = quotes.map((q) => `
+      <div style="border:1px solid var(--border,#e0e0e0);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div><b>#${q.request_number}</b> <span style="color:var(--muted);font-size:12px">${new Date(q.submitted_at).toLocaleDateString("es-AR")}</span></div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="status-pill ${statusPillClass(q.status)}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span>
+            <b class="tabular">${money(q.quoted_total ?? q.displayed_subtotal ?? 0)}</b>
+          </div>
+        </div>
+        ${quoteStepper(q.status)}
+      </div>`).join("");
+  } catch (error) {
+    body.innerHTML = `<div class="empty-row" style="color:var(--danger,#c8102e)">No se pudieron cargar: ${esc(error.body?.detail || error.message)}</div>`;
+  }
+}
+
 document.getElementById("clientsBody").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
@@ -883,6 +910,11 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
 
   if (btn.dataset.action === "edit-profile") {
     openClientProfileModal(id, row.dataset.email);
+    return;
+  }
+
+  if (btn.dataset.action === "view-orders") {
+    openClientOrders(id, row.dataset.email);
     return;
   }
 
@@ -1063,8 +1095,41 @@ document.getElementById("newClientBtn").addEventListener("click", () => {
 
 // ==================== Cotizaciones ====================
 
-const QUOTE_STATUS = ["submitted", "reviewing", "quoted", "accepted", "rejected", "expired", "cancelled"];
-const QUOTE_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotizada", accepted: "Aceptada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+// Modelo simplificado de 5 estados (guía §11.2). El select de edición ofrece los
+// 5 nuevos; el mapa de labels mantiene además las claves viejas por si la DB aún
+// no migró (lectura robusta). 'despachado' lo dispara Logística.
+const QUOTE_STATUS = ["cotizacion", "enviada", "orden", "despachado", "cancelado"];
+const QUOTE_STATUS_LABEL = {
+  cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
+  submitted: "Cotización", reviewing: "Cotización", quoted: "Cotización enviada", accepted: "Orden de venta", rejected: "Cancelado", expired: "Cancelado", cancelled: "Cancelado"
+};
+// Normaliza estados viejos → nuevos (por si se lee data sin migrar todavía).
+const STATUS_OLD_TO_NEW = { submitted: "cotizacion", reviewing: "cotizacion", quoted: "enviada", accepted: "orden", rejected: "cancelado", expired: "cancelado", cancelled: "cancelado" };
+function normStatus(s) { return STATUS_OLD_TO_NEW[s] || s; }
+// Estados que corresponden al documento "Compra" (vs "Pre-compra").
+const STATUS_COMPRA = new Set(["orden", "despachado", "accepted"]);
+// Ribbon progresivo de la venta; 'cancelado' se muestra aparte en rojo (estilo Odoo).
+const STEPPER_STEPS = [
+  { key: "cotizacion", label: "Cotización" },
+  { key: "enviada", label: "Cotización enviada" },
+  { key: "orden", label: "Orden de venta" },
+  { key: "despachado", label: "Despachado" }
+];
+// Estados que el admin puede setear a mano en el editor. 'despachado' NO está:
+// lo dispara Logística al despachar (evita desincronizar con logistics_status).
+const QUOTE_STATUS_MANUAL = ["cotizacion", "enviada", "orden", "cancelado"];
+function statusPillClass(status) {
+  const s = normStatus(status);
+  return s === "cotizacion" ? "pending" : (s === "cancelado" ? "rejected" : "approved");
+}
+function quoteStepper(status) {
+  const st = normStatus(status);
+  if (st === "cancelado") return `<div class="stepper"><span class="st cancel">Cancelado</span></div>`;
+  const idx = STEPPER_STEPS.findIndex((x) => x.key === st);
+  return `<div class="stepper">${STEPPER_STEPS
+    .map((x, i) => `<span class="st ${i < idx ? "done" : (i === idx ? "cur" : "")}">${x.label}</span>`)
+    .join("")}</div>`;
+}
 
 let currentQuoteId = null;
 
@@ -1097,7 +1162,7 @@ async function loadQuotes() {
         (q) => `<tr data-id="${q.id}" class="quote-row${q.id === currentQuoteId ? " active" : ""}" style="cursor:pointer">
           <td><strong>#${q.request_number}</strong></td>
           <td>${esc(q.display_name || q.email)}${q.company_name ? `<br><span style="color:var(--muted);font-size:11.5px">${esc(q.company_name)}</span>` : ""}</td>
-          <td><span class="status-pill ${q.status === "submitted" ? "pending" : "approved"}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span></td>
+          <td><span class="status-pill ${statusPillClass(q.status)}">${QUOTE_STATUS_LABEL[q.status] || q.status}</span></td>
           <td class="num tabular">${money(q.quoted_total ?? q.displayed_subtotal)}</td>
           <td>${timeAgo(q.submitted_at)}</td>
           <td><button class="link-btn ghost" data-action="del-quote" title="Eliminar cotización">🗑</button></td>
@@ -1175,6 +1240,91 @@ function previewTotals({ items, discount, discountType, shipping }) {
   return { itemsGross, discountAmount, ivaGroups, total };
 }
 
+// Chatter (guía §11.1): timeline de actividad + notas internas, alimentado por
+// portal.audit_log (endpoint /admin/quotes/:id/audit y POST .../note).
+const CHATTER_ACTION_LABEL = {
+  "quote.create": "creó la cotización",
+  "order.dispatch": "marcó el pedido como despachado"
+};
+function chatterEventText(e) {
+  if (e.action === "quote.update") {
+    if (e.metadata && e.metadata.statusChanged && e.before_data && e.after_data) {
+      const from = QUOTE_STATUS_LABEL[e.before_data.status] || e.before_data.status || "—";
+      const to = QUOTE_STATUS_LABEL[e.after_data.status] || e.after_data.status || "—";
+      return `Estado: <b>${esc(from)}</b> → <b>${esc(to)}</b>`;
+    }
+    return "Editó la cotización";
+  }
+  return esc(CHATTER_ACTION_LABEL[e.action] || e.action);
+}
+async function loadQuoteChatter(id, canEdit) {
+  const tl = document.getElementById("quoteTimeline");
+  if (!tl) return;
+  try {
+    const { entries } = await fetchJson(`/api/admin/quotes/${id}/audit`);
+    if (!entries.length) {
+      tl.innerHTML = '<div class="empty-row">Sin actividad todavía.</div>';
+    } else {
+      tl.innerHTML = entries.slice().reverse().map((e) => {
+        const who = esc(e.actor_name || e.actor_email || "Sistema");
+        const when = new Date(e.created_at).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const initial = esc((e.actor_name || e.actor_email || "S").trim().charAt(0).toUpperCase() || "S");
+        if (e.action === "quote.note") {
+          return `<div class="ev"><div class="av">${initial}</div><div class="evb"><div class="evh">${who} <span>· ${when}</span></div><div class="msg">${esc(e.metadata?.text || "")}</div></div></div>`;
+        }
+        return `<div class="ev"><div class="av sys">${initial}</div><div class="evb"><div class="evh">${who} <span>· ${when}</span></div><div class="evc">${chatterEventText(e)}</div></div></div>`;
+      }).join("");
+    }
+  } catch {
+    tl.innerHTML = '<div class="empty-row" style="color:var(--danger,#c8102e)">No se pudo cargar la actividad.</div>';
+  }
+  if (canEdit) {
+    const btn = document.getElementById("chatterSend");
+    const input = document.getElementById("chatterInput");
+    const msg = document.getElementById("chatterMsg");
+    if (btn && input) btn.addEventListener("click", async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      try {
+        await postJson(`/api/admin/quotes/${id}/note`, { text });
+        input.value = "";
+        await loadQuoteChatter(id, canEdit);
+      } catch (err) {
+        if (msg) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = err.body?.detail || err.message; }
+      } finally { btn.disabled = false; }
+    });
+  }
+}
+
+// Agrega una línea de sección o nota a la cotización (pide el texto y re-render).
+async function addQuoteLine(id, type) {
+  const text = prompt(type === "section" ? "Título de la sección:" : "Texto de la nota:");
+  if (!text || !text.trim()) return;
+  try {
+    await postJson(`/api/admin/quotes/${id}/lines`, { type, text: text.trim() });
+    await renderQuoteEditor(id);
+  } catch (e) {
+    alert("No se pudo agregar: " + (e.body?.detail || e.message));
+  }
+}
+
+// Fila de SECCIÓN o NOTA en el editor de cotización (guía §11.1). No es un
+// producto: no tiene cantidad/precio y no cuenta en los totales. Lleva data-item
+// para poder quitarla, pero el recálculo la ignora (no tiene input de cantidad).
+function annotationRow(it, canEdit) {
+  const inner = it.line_type === "section"
+    ? `<b>${esc(it.product_name_snapshot)}</b>`
+    : `<span style="color:var(--muted)">📝 ${esc(it.product_name_snapshot)}</span>`;
+  return canEdit
+    ? `<tr data-item="${it.id}" class="qline-${it.line_type}">
+        <td class="q-handle-cell"><span class="q-handle" title="Arrastrar para reordenar" aria-hidden="true">⠿</span></td>
+        <td colspan="5">${inner}</td>
+        <td><button class="link-btn ghost" data-action="del-item">Quitar</button></td>
+      </tr>`
+    : `<tr class="qline-${it.line_type}"><td colspan="5">${inner}</td></tr>`;
+}
+
 async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   const canEditQuote = CAN_MANAGE_QUOTES; // ventas/superadmin editan; administración: solo finanzas (lectura)
   // Sólo un editor a la vez: limpio el otro contenedor para no dejar IDs duplicados.
@@ -1187,12 +1337,14 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   const { quote, items } = await fetchJson(`/api/admin/quotes/${id}`);
   const cur = quote.currency || "ARS";
   const dtype = quote.discount_type || "nominal";
-  // Mientras es cotización = "Pre-compra"; confirmada (aceptada) = "Compra".
-  const docTerm = quote.status === "accepted" ? "Compra" : "Pre-compra";
+  // Mientras es cotización/enviada = "Pre-compra"; orden o despachado = "Compra".
+  const docTerm = STATUS_COMPRA.has(quote.status) ? "Compra" : "Pre-compra";
 
   const itemRows = items
     .map(
-      (it) => canEditQuote
+      (it) => (it.line_type === "section" || it.line_type === "note")
+        ? annotationRow(it, canEditQuote)
+        : canEditQuote
         ? `<tr data-item="${it.id}">
         <td class="q-handle-cell"><span class="q-handle" title="Arrastrar para reordenar" aria-hidden="true">⠿</span></td>
         <td><span style="font-family:var(--font-mono);font-size:11.5px;color:var(--muted)">${esc(it.sku_snapshot)}</span><br>${esc(it.product_name_snapshot)}</td>
@@ -1216,7 +1368,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
     .join("");
 
   const staticTotals = previewTotals({
-    items: items.map((it) => ({ quantity: it.quantity, unit: itemUnit(it), rate: itemRate(it) })),
+    items: items.filter((it) => (it.line_type || "product") === "product").map((it) => ({ quantity: it.quantity, unit: itemUnit(it), rate: itemRate(it) })),
     discount: quote.discount, discountType: dtype, shipping: quote.shipping
   });
   const gmailConnected = currentUser?.gmail_connected;
@@ -1229,11 +1381,13 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${canEditQuote
-          ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${QUOTE_STATUS.map((s) => `<option value="${s}"${quote.status === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
+          ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${(normStatus(quote.status) === "despachado" ? [...QUOTE_STATUS_MANUAL, "despachado"] : QUOTE_STATUS_MANUAL).map((s) => `<option value="${s}"${normStatus(quote.status) === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
           : `<span class="status-pill approved">${QUOTE_STATUS_LABEL[quote.status] || quote.status}</span>`}
         <button class="btn-primary" id="proformaBtn">Ver ${docTerm.toLowerCase()}</button>
       </div>
     </div>
+
+    ${quoteStepper(quote.status)}
 
     ${quote.customer_notes ? `<p style="font-size:12.5px;color:var(--muted);margin-top:10px"><b>Notas del cliente:</b> ${esc(quote.customer_notes)}</p>` : ""}
 
@@ -1246,7 +1400,9 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
 
     ${canEditQuote ? `<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
       <input type="search" id="addProductSearch" class="admin-search" placeholder="Buscar producto para agregar..." style="flex:1;min-width:200px">
-      <div id="addProductResults" class="add-results"></div>
+      <button class="link-btn" id="addSectionBtn" type="button">+ Sección</button>
+      <button class="link-btn" id="addNoteBtn" type="button">+ Nota</button>
+      <div id="addProductResults" class="add-results" style="flex-basis:100%"></div>
     </div>` : ""}
 
     <div class="quote-totals">
@@ -1270,7 +1426,11 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
     </div>
 
-    ${canEditQuote ? `<label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la pre-compra)
+    ${canEditQuote ? `<div class="form-grid" style="margin-top:14px">
+      <label>Términos de pago<input id="qPaymentTerms" value="${esc(quote.payment_terms || "")}" placeholder="Ej: 30 días" class="admin-search"></label>
+      <label>Vencimiento<input id="qDueDate" type="date" value="${quote.due_date ? String(quote.due_date).slice(0, 10) : ""}" class="admin-search"></label>
+    </div>
+    <label style="display:block;margin-top:14px;font-size:12.5px">Notas para el cliente (aparecen en la pre-compra)
       <textarea id="qPublicNotes" rows="2" class="admin-search" style="width:100%;margin-top:4px">${esc(quote.public_notes || "")}</textarea>
     </label>
 
@@ -1417,6 +1577,15 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
       <div id="docsList" style="font-size:12.5px;color:var(--muted)">Cargando documentos...</div>
     </div>
+
+    <div id="quoteChatter" class="chatter" style="margin-top:14px">
+      <div class="cbar">Actividad</div>
+      <div class="tl" id="quoteTimeline"><div class="empty-row">Cargando actividad…</div></div>
+      ${canEditQuote ? `<div class="composer">
+        <textarea id="chatterInput" rows="2" placeholder="Escribí una nota interna (no la ve el cliente)…"></textarea>
+        <div class="ctools"><button class="btn-primary sm" id="chatterSend" type="button">Agregar nota</button><span id="chatterMsg" style="font-size:12px"></span></div>
+      </div>` : ""}
+    </div>
   `;
 
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -1424,12 +1593,13 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   document.getElementById("qIvaBreakdown").innerHTML = staticTotals.ivaGroups
     .map((g) => `<div><span>Neto ${g.rate}%</span><b>${money(r2(g.neto), cur)}</b></div><div><span>IVA ${g.rate}%</span><b>${money(r2(g.iva), cur)}</b></div>`)
     .join("");
+  loadQuoteChatter(id, canEditQuote);
 
   document.getElementById("proformaBtn").addEventListener("click", () => window.open(`/api/admin/quotes/${id}/proforma`, "_blank"));
 
   if (canEditQuote) {
     const recalc = () => {
-      const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].map((r) => ({
+      const rows = [...document.querySelectorAll("#quoteItemsBody tr[data-item]")].filter((r) => r.querySelector('[data-f="quantity"]')).map((r) => ({
         quantity: Number(r.querySelector('[data-f="quantity"]').value) || 0,
         unit: r.querySelector('[data-f="unitPrice"]').value === "" ? null : Number(r.querySelector('[data-f="unitPrice"]').value),
         rate: Number(r.querySelector('[data-f="ivaRate"]').value)
@@ -1454,6 +1624,8 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
     document.getElementById("saveQuoteBtn").addEventListener("click", () => saveQuoteHeader(id));
     document.getElementById("sendProformaBtn").addEventListener("click", () => sendProforma(id, quote.email));
     document.getElementById("sendWarehouseBtn").addEventListener("click", () => sendWarehouse(id));
+    document.getElementById("addSectionBtn").addEventListener("click", () => addQuoteLine(id, "section"));
+    document.getElementById("addNoteBtn").addEventListener("click", () => addQuoteLine(id, "note"));
     wireQuoteItemActions(id);
     wireQuoteItemsDnD(id);
     wireAddProduct(id);
@@ -2014,7 +2186,9 @@ async function saveQuoteHeader(id) {
       discount: Number(document.getElementById("qDiscount").value || 0),
       discountType: document.getElementById("qDiscountType").value,
       shipping: Number(document.getElementById("qShipping").value || 0),
-      publicNotes: document.getElementById("qPublicNotes").value
+      publicNotes: document.getElementById("qPublicNotes").value,
+      paymentTerms: document.getElementById("qPaymentTerms")?.value ?? "",
+      dueDate: document.getElementById("qDueDate")?.value || null
     });
     msg.textContent = "Guardado ✓";
     setTimeout(() => (msg.textContent = ""), 1800);
@@ -2046,6 +2220,8 @@ async function sendWarehouse(id) {
   }
 }
 
+// Compositor de email multi-destinatario (guía §11.1): Para + CC, desde la casilla
+// del vendedor. (Programar envío / plantillas quedan para una próxima iteración.)
 async function sendProforma(id, clientEmail) {
   if (!currentUser?.gmail_connected) {
     if (confirm("Necesitás conectar tu Gmail una vez para enviar desde tu casilla. ¿Conectar ahora?")) {
@@ -2053,31 +2229,52 @@ async function sendProforma(id, clientEmail) {
     }
     return;
   }
-  const btn = document.getElementById("sendProformaBtn");
-  const label = btn?.textContent || "✉ Enviar al cliente";
-  const to = prompt("Enviar a:", clientEmail || "");
-  if (!to) return;
-  btn.disabled = true;
-  btn.textContent = "Enviando...";
+  // Precarga el CC desde la config de notificaciones (CC global + evento "enviada").
+  let defaultCc = "";
   try {
-    // Persistir precios/ajustes en pantalla (sin re-render) antes de enviar.
-    // (El IVA es por línea; ya no hay selector global de IVA acá.)
-    await patchJson(`/api/admin/quotes/${id}`, {
-      status: document.getElementById("quoteStatus").value,
-      discount: Number(document.getElementById("qDiscount").value || 0),
-      discountType: document.getElementById("qDiscountType").value,
-      shipping: Number(document.getElementById("qShipping").value || 0),
-      publicNotes: document.getElementById("qPublicNotes").value
-    });
-    await postJson(`/api/admin/quotes/${id}/send-proforma`, { to });
-    alert("Documento enviado a " + to);
-    await renderQuoteEditor(id);
-    await loadQuotes();
-  } catch (error) {
-    alert("No se pudo enviar: " + (error.body?.detail || error.message));
-    const b = document.getElementById("sendProformaBtn");
-    if (b) { b.disabled = false; b.textContent = label; }
-  }
+    const { recipients } = await fetchJson("/api/admin/email-recipients");
+    defaultCc = [recipients.globalCc, recipients.events?.enviada].filter(Boolean).join(", ");
+  } catch { /* la config es opcional */ }
+  openModal(`
+    <div class="modal-head"><h3>Enviar al cliente</h3><button class="modal-x" data-close>&times;</button></div>
+    <div class="form-grid">
+      <label class="full">Para<input id="emailTo" value="${esc(clientEmail || "")}" placeholder="cliente@correo.com"></label>
+      <label class="full">CC <span style="color:var(--muted);font-weight:400">(separá varios con coma)</span><input id="emailCc" value="${esc(defaultCc)}" placeholder="ventas@empresa.com, contador@empresa.com"></label>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:10px 0">El documento (Pre-compra/Compra) se envía en el cuerpo del correo, desde tu casilla de Gmail.</p>
+    <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:8px">
+      <span id="emailMsg" style="font-size:12px;margin-right:auto"></span>
+      <button class="link-btn ghost" data-close>Cancelar</button>
+      <button class="btn-primary" id="emailSendBtn" type="button">Enviar</button>
+    </div>`);
+  document.getElementById("emailSendBtn").addEventListener("click", async () => {
+    const to = document.getElementById("emailTo").value.trim();
+    const cc = document.getElementById("emailCc").value.split(",").map((s) => s.trim()).filter(Boolean);
+    const msg = document.getElementById("emailMsg");
+    if (!to) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Ingresá al menos un destinatario."; return; }
+    const btn = document.getElementById("emailSendBtn");
+    btn.disabled = true; btn.textContent = "Enviando...";
+    try {
+      // Persistir precios/ajustes en pantalla antes de enviar (el editor sigue montado).
+      await patchJson(`/api/admin/quotes/${id}`, {
+        status: document.getElementById("quoteStatus").value,
+        discount: Number(document.getElementById("qDiscount").value || 0),
+        discountType: document.getElementById("qDiscountType").value,
+        shipping: Number(document.getElementById("qShipping").value || 0),
+        publicNotes: document.getElementById("qPublicNotes").value,
+        paymentTerms: document.getElementById("qPaymentTerms")?.value ?? "",
+        dueDate: document.getElementById("qDueDate")?.value || null
+      });
+      await postJson(`/api/admin/quotes/${id}/send-proforma`, { to, cc });
+      closeModal();
+      await renderQuoteEditor(id);
+      await loadQuotes();
+    } catch (error) {
+      msg.style.color = "var(--danger,#c8102e)";
+      msg.textContent = error.body?.detail || error.message;
+      btn.disabled = false; btn.textContent = "Enviar";
+    }
+  });
 }
 
 function wireQuoteItemActions(id) {
@@ -2194,8 +2391,47 @@ document.getElementById("newQuoteBtn").addEventListener("click", () => {
 
 // ==================== Configuración (perfil de empresa) ====================
 
+// Notificaciones automáticas por email (§11.1): CC global + destinatarios por evento.
+async function loadNotifyRecipients() {
+  const f = document.getElementById("notifyForm");
+  if (!f) return;
+  try {
+    const { recipients } = await fetchJson("/api/admin/email-recipients");
+    f.globalCc.value = recipients.globalCc || "";
+    f.ev_enviada.value = recipients.events?.enviada || "";
+    f.ev_orden.value = recipients.events?.orden || "";
+    f.ev_pago.value = recipients.events?.pago || "";
+    f.ev_despachado.value = recipients.events?.despachado || "";
+  } catch { /* config opcional */ }
+}
+document.getElementById("notifyForm")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const msg = document.getElementById("notifySaveMsg");
+  try {
+    await putJson("/api/admin/email-recipients", {
+      recipients: {
+        globalCc: f.globalCc.value.trim(),
+        events: {
+          enviada: f.ev_enviada.value.trim(),
+          orden: f.ev_orden.value.trim(),
+          pago: f.ev_pago.value.trim(),
+          despachado: f.ev_despachado.value.trim()
+        }
+      }
+    });
+    msg.style.color = "var(--success,#137333)";
+    msg.textContent = "Guardado ✓";
+    setTimeout(() => (msg.textContent = ""), 1800);
+  } catch (error) {
+    msg.style.color = "var(--danger,#c8102e)";
+    msg.textContent = "No se pudo guardar: " + (error.body?.detail || error.message);
+  }
+});
+
 async function loadCompanyProfile() {
   const { profile } = await fetchJson("/api/admin/company-profile");
+  await loadNotifyRecipients();
   const f = document.getElementById("companyForm");
   f.name.value = profile.name || "";
   f.legalName.value = profile.legalName || "";
@@ -2334,7 +2570,7 @@ function renderBillingTable() {
       return `<tr data-bill="${o.id}" class="quote-row" style="cursor:pointer">
         <td><b>#${o.request_number}</b></td>
         <td>${esc(o.company_name || o.display_name || "")}${o.client_code ? ` <span style="color:var(--muted);font-size:11px">(${esc(o.client_code)})</span>` : ""}</td>
-        <td><span class="status-pill ${o.status === "accepted" ? "approved" : "pending"}">${QUOTE_STATUS_LABEL[o.status] || o.status}</span></td>
+        <td><span class="status-pill ${statusPillClass(o.status)}">${QUOTE_STATUS_LABEL[o.status] || o.status}</span></td>
         <td class="num tabular">${o.invoice_count ? money(o.total_invoiced) : "-"}</td>
         <td class="num tabular">${o.total_paid ? money(o.total_paid) : "-"}</td>
         <td class="num tabular">${o.invoice_count ? money(o.balance) : "-"}</td>

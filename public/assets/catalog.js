@@ -307,6 +307,46 @@ function computeFiltered() {
   return list;
 }
 
+// ---------------------------------------------------- descarga PDF filtrada --
+function hasActiveFilters() {
+  const f = state.filters;
+  return !!(state.search || (state.quick && state.quick !== "all") ||
+    f.brands.size || f.categories.size || f.availability.size ||
+    f.priceMin != null || f.priceMax != null);
+}
+function filterSummaryText() {
+  const parts = [];
+  if (state.quick && state.quick !== "all") parts.push(QUICK_LABEL[state.quick] || state.quick);
+  if (state.filters.brands.size) parts.push("Marca: " + [...state.filters.brands].join(", "));
+  if (state.filters.categories.size) parts.push("Categoría: " + [...state.filters.categories].join(", "));
+  if (state.filters.availability.size) parts.push([...state.filters.availability].map((a) => STOCK_LABEL[a] || a).join(", "));
+  if (state.filters.priceMin != null) parts.push("Desde " + money(state.filters.priceMin));
+  if (state.filters.priceMax != null) parts.push("Hasta " + money(state.filters.priceMax));
+  if (state.search) parts.push(`“${state.search}”`);
+  return parts.join(" · ");
+}
+// El botón arma la descarga desde lo que el cliente ve: con filtros activos manda
+// los SKU visibles (?skus=...) para que el PDF -con marca de agua- respete
+// marca/categoría/disponibilidad/precio/favoritos/frecuentes/búsqueda; sin filtros
+// baja el catálogo completo. CSP-safe: solo setea href/texto, sin JS inline.
+function updateDownloadBtn(list) {
+  const a = document.getElementById("downloadCatalogBtn");
+  if (!a) return;
+  const label = a.querySelector(".dl-label");
+  const narrowed = hasActiveFilters() && list.length > 0 && list.length < state.products.length;
+  if (narrowed) {
+    const skus = list.map((p) => p.sku).filter(Boolean).join(",");
+    const params = new URLSearchParams({ skus });
+    const resumen = filterSummaryText();
+    if (resumen) params.set("resumen", resumen);
+    a.href = "/api/catalog/pdf?" + params.toString();
+    if (label) label.textContent = `Descargar filtrado (${list.length})`;
+  } else {
+    a.href = "/api/catalog/pdf";
+    if (label) label.textContent = "Descargar catálogo (PDF)";
+  }
+}
+
 // ------------------------------------------------------------- productos ----
 function heartIco(on) { return on ? "&#9829;" : "&#9825;"; }
 
@@ -348,6 +388,7 @@ function productCardHtml(p) {
 
 function renderProducts() {
   const list = computeFiltered();
+  updateDownloadBtn(list);
   window.__products = new Map(state.products.map((p) => [p.id, p]));
   const grid = document.getElementById("productGrid");
   grid.className = "grid" + (state.view === "list" ? " list" : "");
@@ -864,8 +905,19 @@ profileForm.addEventListener("submit", async (e) => {
 
 // ==================== Mis solicitudes / Mis cotizaciones ====================
 const requestsOverlay = document.getElementById("requestsOverlay");
-const REQ_STATUS_LABEL = { submitted: "Enviada", reviewing: "En revisión", quoted: "Cotización emitida", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
-const REQ_STATUS_HINT = { submitted: "Esperando revisión de un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización lista para ver", accepted: "Aprobada", rejected: "Rechazada", expired: "Vencida", cancelled: "Cancelada" };
+// Modelo simplificado de 5 estados (guía §11.2). Se mantienen las claves viejas
+// mapeadas al mismo label para que la vista no se rompa si la DB aún no migró.
+const REQ_STATUS_LABEL = {
+  cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
+  submitted: "Cotización", reviewing: "Cotización", quoted: "Cotización enviada", accepted: "Orden de venta", rejected: "Cancelado", expired: "Cancelado", cancelled: "Cancelado"
+};
+const REQ_STATUS_HINT = {
+  cotizacion: "Recibida, la está revisando un administrador", enviada: "Cotización enviada, esperando tu confirmación", orden: "Confirmada como compra", despachado: "Pedido despachado", cancelado: "Cancelada",
+  submitted: "Recibida, la está revisando un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización enviada, esperando tu confirmación", accepted: "Confirmada como compra", rejected: "Cancelada", expired: "Cancelada", cancelled: "Cancelada"
+};
+// Estados a partir de los cuales existe documento "enviado"/compra.
+const REQ_SENT = new Set(["enviada", "orden", "despachado", "quoted", "accepted"]);
+const REQ_COMPRA = new Set(["orden", "despachado", "accepted"]);
 
 let finState = {};
 async function accountBanner() {
@@ -892,7 +944,7 @@ async function openRequests(mode) {
   body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>';
   try {
     const { quotes: all } = await fetchJson("/api/quotes");
-    const quotes = onlyQuoted ? all.filter((q) => q.quoted_at) : all;
+    const quotes = onlyQuoted ? all.filter((q) => REQ_SENT.has(q.status) || q.quoted_at) : all;
     const banner = await accountBanner();
     if (!quotes.length) {
       body.innerHTML = banner + `<div style="text-align:center;color:var(--muted);padding:30px">${onlyQuoted ? "Todavía no tenés cotizaciones emitidas." : "Todavía no hiciste ninguna solicitud."}</div>`;
@@ -907,7 +959,7 @@ async function openRequests(mode) {
               <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
               <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
               <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-              <td style="white-space:nowrap">${q.quoted_at ? `<button class="btn-primary sm" data-proforma="${q.id}">${q.status === "accepted" ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
             </tr>`
           )
           .join("")}</tbody></table></div>`;

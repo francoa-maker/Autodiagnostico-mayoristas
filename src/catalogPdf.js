@@ -21,7 +21,7 @@ function priceText(price) {
 }
 
 // groups: [{ brand, products: [{ sku, name, imageUrl, pvp:{...}, wholesale:{...} }] }]
-export function renderCatalogPdfHtml({ client, groups, company, issueDate = new Date() }) {
+export function renderCatalogPdfHtml({ client, groups, company, issueDate = new Date(), filtered = false, filterSummary = "" }) {
   const dateStr = issueDate.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const timeStr = issueDate.toLocaleString("es-AR", { hour: "2-digit", minute: "2-digit" });
   const logo = company.logoUrl
@@ -67,6 +67,7 @@ export function renderCatalogPdfHtml({ client, groups, company, issueDate = new 
   .meta{text-align:right;font-size:11px;color:var(--muted);line-height:1.6}
   .meta b{color:var(--ink)}
   .company{font-size:11px;color:var(--muted);margin-bottom:14px;line-height:1.5}
+  .filter-note{font-size:11px;color:var(--red);background:#fff0f2;border:1px solid #f3c9d0;border-radius:6px;padding:6px 10px;margin-bottom:12px;font-weight:600}
   .brand{margin-bottom:16px;break-inside:avoid}
   .brand h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:var(--red);border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:6px}
   .brand h2 .bcount{color:var(--muted);font-size:11px;font-weight:400;text-transform:none;letter-spacing:0}
@@ -90,7 +91,7 @@ export function renderCatalogPdfHtml({ client, groups, company, issueDate = new 
   <div class="sheet">
     ${watermarkLayer(client, dateStr)}
     <div class="head">
-      <div>${logo}<h1 style="margin-top:8px">Catálogo de productos</h1></div>
+      <div>${logo}<h1 style="margin-top:8px">${filtered ? "Catálogo filtrado" : "Catálogo de productos"}</h1></div>
       <div class="meta">
         <div>Emitido: <b>${dateStr}</b> ${timeStr}</div>
         <div>Documento para: <b>${esc(who)}</b></div>
@@ -102,6 +103,7 @@ export function renderCatalogPdfHtml({ client, groups, company, issueDate = new 
       ${company.legalName || company.name ? `<b>${esc(company.legalName || company.name)}</b> · ` : ""}
       Precios mayoristas orientativos en ARS, sujetos a confirmación en la cotización. PVP = precio de venta al público.
     </div>
+    ${filtered ? `<div class="filter-note">Selección filtrada${filterSummary ? `: ${esc(filterSummary)}` : ""} · ${total} producto${total === 1 ? "" : "s"}</div>` : ""}
     ${sections || '<p style="color:#999">No hay productos disponibles.</p>'}
     <div class="foot">Documento confidencial para ${esc(who)}${client.client_code ? ` (${esc(client.client_code)})` : ""} · Emitido el ${dateStr} · Prohibida su distribución.</div>
   </div>
