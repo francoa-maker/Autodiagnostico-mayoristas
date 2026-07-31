@@ -14,6 +14,26 @@ async function fetchJson(url) {
   return response.json();
 }
 
+function installWideLayoutAndLogo() {
+  if (!qs('link[data-client-v4-wide]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/assets/client-v4-wide.css?v=20260731-r2";
+    link.dataset.clientV4Wide = "true";
+    document.head.appendChild(link);
+  }
+
+  const mark = qs(".cat-logo-mark");
+  if (mark && !mark.querySelector("img")) {
+    mark.replaceChildren();
+    const image = document.createElement("img");
+    image.src = "/assets/autodiagnostico-mark.svg?v=20260731-r2";
+    image.alt = "";
+    image.setAttribute("aria-hidden", "true");
+    mark.appendChild(image);
+  }
+}
+
 function syncCartBadge() {
   const source = qs("#cartCount");
   const target = qs("#headerCartBadge");
@@ -164,6 +184,7 @@ async function loadIdentity() {
 }
 
 function boot() {
+  installWideLayoutAndLogo();
   syncCartBadge();
   setupShellNavigation();
   setupCutoff();

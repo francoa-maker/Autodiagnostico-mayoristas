@@ -1,0 +1,76 @@
+/* Ajustes para aprovechar pantallas anchas sin alterar la lógica del portal. */
+@media (min-width: 1201px) {
+  .client-topbar-inner,
+  .cat-header-inner,
+  .catalog-utilbar-inner,
+  .cat-main-wrap {
+    width: 100%;
+    max-width: none;
+  }
+
+  .client-topbar-inner,
+  .cat-header-inner,
+  .catalog-utilbar-inner {
+    padding-left: clamp(24px, 2.2vw, 48px);
+    padding-right: clamp(24px, 2.2vw, 48px);
+  }
+
+  .cat-main-wrap {
+    padding-left: clamp(24px, 2.2vw, 48px);
+    padding-right: clamp(24px, 2.2vw, 48px);
+  }
+
+  .catalog-shell {
+    grid-template-columns:
+      minmax(270px, 17vw)
+      minmax(0, 1fr)
+      minmax(340px, 21vw);
+    gap: clamp(18px, 1.3vw, 28px);
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  }
+
+  .quick-access {
+    gap: clamp(12px, .9vw, 18px);
+  }
+
+  .brand-cards {
+    gap: clamp(11px, .8vw, 16px);
+  }
+}
+
+.cat-logo-mark {
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+}
+
+.cat-logo-mark svg {
+  display: none;
+}
+
+.cat-logo-mark img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.cat-logo-word {
+  font-size: 23px;
+  letter-spacing: -.03em;
+}
+
+@media (max-width: 620px) {
+  .cat-logo-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .cat-logo-mark img {
+    width: 20px;
+    height: 20px;
+  }
+}
