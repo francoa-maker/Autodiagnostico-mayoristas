@@ -9,7 +9,7 @@ services:
     runtime: node
     plan: starter
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: npm run db:migrate && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
