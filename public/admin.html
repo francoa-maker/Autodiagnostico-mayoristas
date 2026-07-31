@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Autodiagnóstico - Panel administrador</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=20260731-ux1">
+    <link rel="stylesheet" href="/assets/styles.css?v=20260731-ux2">
   </head>
   <body>
     <div class="admin-app">
@@ -16,6 +16,11 @@
         <div class="admin-workspace">
           <span class="admin-workspace-dot" aria-hidden="true"></span>
           <div><strong>Portal mayorista</strong><span>Operaciones en línea</span></div>
+        </div>
+        <div class="admin-global-search">
+          <span aria-hidden="true">&#128269;</span>
+          <input id="adminGlobalSearch" type="search" placeholder="Buscar cliente, pedido o SKU" aria-label="Buscar en el panel">
+          <div id="adminGlobalResults" class="admin-global-results" hidden></div>
         </div>
         <div class="admin-section-label">General</div>
         <nav class="admin-nav" id="adminNav">
@@ -41,7 +46,7 @@
           <div class="admin-topline">
             <div>
               <h1>Dashboard</h1>
-              <p>Resumen general del portal</p>
+              <p id="dashboardSubtitle">Resumen general del portal</p>
             </div>
             <div class="source-card" id="sourceCard">
               <span class="source-dot" id="sourceDot"></span>
@@ -51,6 +56,17 @@
           </div>
 
           <div class="kpi-row" id="kpiRow"></div>
+
+          <div class="panel attention-panel">
+            <div class="panel-title-row">
+              <div>
+                <h3>Requiere atención</h3>
+                <p>Lo más importante para resolver ahora</p>
+              </div>
+              <span class="attention-count" id="attentionCount">0 pendientes</span>
+            </div>
+            <div class="attention-grid" id="attentionGrid"><div class="empty-row">Cargando...</div></div>
+          </div>
 
           <div class="dash-grid">
             <div class="panel">
@@ -81,8 +97,24 @@
                 </table>
               </div>
             </details>
-            <details class="panel collapsible">
+            <details class="panel collapsible" open>
               <summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary>
+              <div class="audit-toolbar" id="auditToolbar">
+                <select id="auditTypeFilter" aria-label="Filtrar actividad por tipo">
+                  <option value="">Todas las actividades</option>
+                  <option value="user">Clientes y usuarios</option>
+                  <option value="quote">Cotizaciones y pedidos</option>
+                  <option value="product">Productos y precios</option>
+                  <option value="finance">Facturación y pagos</option>
+                </select>
+                <select id="auditActorFilter" aria-label="Filtrar actividad por usuario"><option value="">Todos los usuarios</option></select>
+                <select id="auditDateFilter" aria-label="Filtrar actividad por fecha">
+                  <option value="">Cualquier fecha</option>
+                  <option value="today">Hoy</option>
+                  <option value="7">Últimos 7 días</option>
+                  <option value="30">Últimos 30 días</option>
+                </select>
+              </div>
               <div id="auditFeed" style="margin-top:12px">Cargando...</div>
             </details>
           </div>
@@ -146,6 +178,7 @@
               <p>Todos los usuarios registrados en el portal</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="search" id="clientSearch" class="admin-search" placeholder="Buscar cliente...">
               <select id="clientMonthFilter" class="admin-search" style="min-width:150px">
                 <option value="">Todos los meses</option>
               </select>
@@ -155,6 +188,19 @@
                 <option value="approved">Aprobados</option>
                 <option value="rejected">Rechazados</option>
               </select>
+              <details class="view-menu">
+                <summary>Vista</summary>
+                <div class="view-menu-pop" data-view-menu="clients">
+                  <strong>Columnas visibles</strong>
+                  <label><input type="checkbox" data-col="0" checked> Código</label>
+                  <label><input type="checkbox" data-col="2" checked> Nombre</label>
+                  <label><input type="checkbox" data-col="3" checked> Empresa</label>
+                  <label><input type="checkbox" data-col="4" checked> Rol</label>
+                  <label><input type="checkbox" data-col="6" checked> Alta</label>
+                  <label><input type="checkbox" data-col="7" checked> Último login</label>
+                  <button class="link-btn" type="button" data-save-view="clients">Guardar esta vista</button>
+                </div>
+              </details>
               <button class="btn-primary" id="newClientBtn">+ Agregar</button>
             </div>
           </div>
@@ -176,6 +222,7 @@
               <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la pre-compra.</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input type="search" id="quoteSearch" class="admin-search" placeholder="Buscar # o cliente...">
               <select id="quoteMonthFilter" class="admin-search" style="min-width:150px">
                 <option value="">Todos los meses</option>
               </select>
@@ -187,6 +234,15 @@
                 <option value="despachado">Despachado</option>
                 <option value="cancelado">Cancelado</option>
               </select>
+              <details class="view-menu">
+                <summary>Vista</summary>
+                <div class="view-menu-pop" data-view-menu="quotes">
+                  <strong>Columnas visibles</strong>
+                  <label><input type="checkbox" data-col="3" checked> Total</label>
+                  <label><input type="checkbox" data-col="4" checked> Fecha</label>
+                  <button class="link-btn" type="button" data-save-view="quotes">Guardar esta vista</button>
+                </div>
+              </details>
               <button class="btn-primary" id="newQuoteBtn">+ Agregar</button>
             </div>
           </div>
@@ -212,11 +268,15 @@
               <h1>Facturación</h1>
               <p>Pedidos confirmados listos para facturar y cobrar</p>
             </div>
-            <select id="billingFilter" class="admin-search" style="min-width:150px">
-              <option value="all">Todos</option>
-              <option value="por_cobrar">Por cobrar</option>
-              <option value="pagados">Pagados</option>
-            </select>
+            <div class="billing-toolbar">
+              <input type="search" id="billingSearch" class="admin-search" placeholder="Buscar pedido o cliente...">
+              <select id="billingFilter" class="admin-search" style="min-width:150px">
+                <option value="all">Todos</option>
+                <option value="por_cobrar">Por cobrar</option>
+                <option value="pagados">Pagados</option>
+              </select>
+              <button class="link-btn" id="saveBillingView" type="button">Guardar vista</button>
+            </div>
           </div>
           <div class="panel">
             <div id="billingOrders">Cargando...</div>
@@ -292,7 +352,6 @@
       <div class="modal" id="modalBox"></div>
     </div>
 
-    <script type="module" src="/assets/admin.js?v=20260731-ux1"></script>
+    <script type="module" src="/assets/admin.js?v=20260731-ux2"></script>
   </body>
 </html>
-
