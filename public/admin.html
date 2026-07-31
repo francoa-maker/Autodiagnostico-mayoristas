@@ -13,49 +13,20 @@
           <div class="admin-brand-mark">A</div>
           <div class="admin-brand-copy"><strong>Auto<span>diagnostico</span></strong><span>Panel interno</span></div>
         </div>
-        <div class="admin-workspace">
-          <span class="admin-workspace-dot" aria-hidden="true"></span>
-          <div><strong>Portal mayorista</strong><span>Operaciones en línea</span></div>
-        </div>
-        <div class="admin-global-search">
-          <span aria-hidden="true">&#128269;</span>
-          <input id="adminGlobalSearch" type="search" placeholder="Buscar cliente, pedido o SKU" aria-label="Buscar en el panel">
-          <div id="adminGlobalResults" class="admin-global-results" hidden></div>
-        </div>
+        <div class="admin-workspace"><span class="admin-workspace-dot" aria-hidden="true"></span><div><strong>Portal mayorista</strong><span>Operaciones en línea</span></div></div>
+        <div class="admin-global-search"><span aria-hidden="true">&#128269;</span><input id="adminGlobalSearch" type="search" placeholder="Buscar cliente, pedido o SKU" aria-label="Buscar en el panel"><div id="adminGlobalResults" class="admin-global-results" hidden></div></div>
         <div class="admin-section-label">General</div>
-        <nav class="admin-nav" id="adminNav">
-          <a class="active" data-section="dashboard"><span class="ic">&#9635;</span>Dashboard</a>
-          <a data-section="catalog"><span class="ic">&#9776;</span>Catálogo</a>
-          <a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a>
-          <a data-section="clients"><span class="ic">&#128100;</span>Clientes</a>
-          <a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a>
-          <a data-section="billing"><span class="ic">&#129534;</span>Facturación</a>
-          <a data-section="logistics"><span class="ic">&#128666;</span>Logística</a>
-          <a data-section="settings"><span class="ic">&#9881;</span>Configuración</a>
-        </nav>
-        <div class="admin-user">
-          <div class="av"></div>
-          <div><strong id="adminName">...</strong><span id="adminEmail">...</span></div>
-          <a href="/auth/logout">Salir</a>
-        </div>
+        <nav class="admin-nav" id="adminNav"><a class="active" data-section="dashboard"><span class="ic">&#9635;</span>Dashboard</a><a data-section="catalog"><span class="ic">&#9776;</span>Catálogo</a><a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a><a data-section="clients"><span class="ic">&#128100;</span>Clientes</a><a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a><a data-section="billing"><span class="ic">&#129534;</span>Facturación</a><a data-section="logistics"><span class="ic">&#128666;</span>Logística</a><a data-section="settings"><span class="ic">&#9881;</span>Configuración</a></nav>
+        <div class="admin-user"><div class="av"></div><div><strong id="adminName">...</strong><span id="adminEmail">...</span></div><a href="/auth/logout">Salir</a></div>
       </aside>
 
       <main class="admin-main">
         <div class="admin-section" id="section-dashboard">
-          <div class="admin-topline">
-            <div><h1>Dashboard</h1><p id="dashboardSubtitle">Resumen general del portal</p></div>
-            <div class="source-card" id="sourceCard"><span class="source-dot" id="sourceDot"></span><div class="txt"><b id="sourceHeadline">Cargando estado de la fuente de stock...</b><span id="sourceDetail"></span></div><span class="source-pill">Solo lectura</span></div>
-          </div>
+          <div class="admin-topline"><div><h1>Dashboard</h1><p id="dashboardSubtitle">Resumen general del portal</p></div><div class="source-card" id="sourceCard"><span class="source-dot" id="sourceDot"></span><div class="txt"><b id="sourceHeadline">Cargando estado de la fuente de stock...</b><span id="sourceDetail"></span></div><span class="source-pill">Solo lectura</span></div></div>
           <div class="kpi-row" id="kpiRow"></div>
           <div class="panel attention-panel"><div class="panel-title-row"><div><h3>Requiere atención</h3><p>Lo más importante para resolver ahora</p></div><span class="attention-count" id="attentionCount">0 pendientes</span></div><div class="attention-grid" id="attentionGrid"><div class="empty-row">Cargando...</div></div></div>
-          <div class="dash-grid">
-            <div class="panel"><h3>Usuarios pendientes de aprobación</h3><div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead><tbody id="pendingUsersBody"><tr><td colspan="4" class="empty-row">Cargando...</td></tr></tbody></table></div></div>
-            <div class="panel"><h3>Últimas cotizaciones</h3><div id="recentQuotes">Cargando...</div></div>
-          </div>
-          <div class="bottom-grid">
-            <details class="panel collapsible" id="lowStockPanel"><summary><span>Productos con bajo o sin stock <span class="muted-note">(cantidad exacta - solo admin)</span></span><span class="chevron">&#9662;</span></summary><div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead><tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody></table></div></details>
-            <details class="panel collapsible" open><summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary><div class="audit-toolbar" id="auditToolbar"><select id="auditTypeFilter" aria-label="Filtrar actividad por tipo"><option value="">Todas las actividades</option><option value="user">Clientes y usuarios</option><option value="quote">Cotizaciones y pedidos</option><option value="product">Productos y precios</option><option value="finance">Facturación y pagos</option></select><select id="auditActorFilter" aria-label="Filtrar actividad por usuario"><option value="">Todos los usuarios</option></select><select id="auditDateFilter" aria-label="Filtrar actividad por fecha"><option value="">Cualquier fecha</option><option value="today">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option></select></div><div id="auditFeed" style="margin-top:12px">Cargando...</div></details>
-          </div>
+          <div class="dash-grid"><div class="panel"><h3>Usuarios pendientes de aprobación</h3><div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead><tbody id="pendingUsersBody"><tr><td colspan="4" class="empty-row">Cargando...</td></tr></tbody></table></div></div><div class="panel"><h3>Últimas cotizaciones</h3><div id="recentQuotes">Cargando...</div></div></div>
+          <div class="bottom-grid"><details class="panel collapsible" id="lowStockPanel"><summary><span>Productos con bajo o sin stock <span class="muted-note">(cantidad exacta - solo admin)</span></span><span class="chevron">&#9662;</span></summary><div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead><tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody></table></div></details><details class="panel collapsible" open><summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary><div class="audit-toolbar" id="auditToolbar"><select id="auditTypeFilter" aria-label="Filtrar actividad por tipo"><option value="">Todas las actividades</option><option value="user">Clientes y usuarios</option><option value="quote">Cotizaciones y pedidos</option><option value="product">Productos y precios</option><option value="finance">Facturación y pagos</option></select><select id="auditActorFilter" aria-label="Filtrar actividad por usuario"><option value="">Todos los usuarios</option></select><select id="auditDateFilter" aria-label="Filtrar actividad por fecha"><option value="">Cualquier fecha</option><option value="today">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option></select></div><div id="auditFeed" style="margin-top:12px">Cargando...</div></details></div>
         </div>
 
         <div class="admin-section" id="section-catalog" hidden>
@@ -93,6 +64,7 @@
       </main>
     </div>
     <div class="modal-overlay" id="modalOverlay" hidden><div class="modal" id="modalBox"></div></div>
+    <div id="toastHost" class="toast-host" role="status" aria-live="polite"></div>
     <script type="module" src="/assets/admin.js?v=20260731-ux2"></script>
     <script type="module" src="/assets/admin-v5-shell.js?v=20260731-v5"></script>
   </body>
