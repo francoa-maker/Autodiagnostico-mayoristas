@@ -398,7 +398,405 @@ function renderProducts() {
   const grid = document.getElementById("productGrid");
   grid.className = "grid" + (state.view === "list" ? " list" : "");
   document.getElementById("resultCount").textContent = `${list.length} producto${list.length === 1 ? "" : "s"}`;
-  document.getElementById("resu…4387 tokens truncated…)) {
+  document.getElementById("resultsTitle").textContent =
+    state.quick && state.quick !== "all" ? (QUICK_LABEL[state.quick] || "Productos") : (state.filters.brands.size === 1 ? [...state.filters.brands][0] : "Todos los productos");
+
+  if (!list.length) {
+    let msg = "Sin resultados para este filtro.";
+    if (state.quick === "favoritos" && !state.favorites.size) msg = "Todavía no marcaste favoritos. Tocá el corazón ♡ en cualquier producto para guardarlo acá.";
+    else if (state.quick === "frecuentes" && !state.frequentIds.length) msg = "Todavía no tenés productos frecuentes. Marcá productos como favoritos o hacé tu primera solicitud para encontrarlos rápido.";
+    grid.innerHTML = `<div class="grid-empty">${msg}</div>`;
+    return;
+  }
+  grid.innerHTML = list.map(productCardHtml).join("");
+}
+
+// --------------------------------------------------------------- favoritos --
+function updateFavBtn(btn, on) {
+  btn.classList.toggle("on", on);
+  btn.setAttribute("aria-pressed", String(on));
+  btn.setAttribute("aria-label", on ? "Quitar de favoritos" : "Agregar a favoritos");
+  btn.innerHTML = heartIco(on);
+}
+async function toggleFavorite(id, btn) {
+  const wasFav = state.favorites.has(id);
+  if (wasFav) state.favorites.delete(id);
+  else state.favorites.add(id);
+  updateFavBtn(btn, !wasFav);
+  document.getElementById("qaFav").textContent = state.favorites.size;
+  try {
+    if (wasFav) await fetchJson(`/api/catalog/favorites/${id}`, { method: "DELETE" });
+    else await postJson("/api/catalog/favorites", { productId: id });
+    toast(wasFav ? "Producto eliminado de favoritos." : "Producto agregado a favoritos.");
+    if (state.quick === "favoritos") renderProducts();
+  } catch (error) {
+    // revertir en caso de error (actualización optimista)
+    if (wasFav) state.favorites.add(id);
+    else state.favorites.delete(id);
+    updateFavBtn(btn, wasFav);
+    document.getElementById("qaFav").textContent = state.favorites.size;
+    toast("No se pudo actualizar favoritos.", true);
+  }
+}
+
+// ------------------------------------------------------------- solicitud ----
+function cartEstimateTotal() {
+  let total = 0;
+  for (const { product, quantity } of cart.values()) {
+    const price = resolveDisplay(product, tierForQuantity(quantity));
+    if (price.state === "value") total += price.amount * quantity;
+  }
+  return total;
+}
+function renderCart() {
+  const entries = [...cart.values()];
+  const count = entries.reduce((sum, e) => sum + e.quantity, 0);
+  document.getElementById("cartCount").textContent = count;
+  const quick = document.getElementById("cartQuickBtn");
+  const quickCount = document.getElementById("cartQuickCount");
+  quick.hidden = !entries.length;
+  quickCount.textContent = `${count} producto${count === 1 ? "" : "s"}`;
+  const total = cartEstimateTotal();
+  document.getElementById("cartEstLine").textContent = "Total estimado: " + money(total);
+  const itemsEl = document.getElementById("cartItems");
+  const footEl = document.getElementById("cartFoot");
+
+  if (!entries.length) {
+    itemsEl.innerHTML = '<div class="cart-empty">Todavía no agregaste productos.<br>Elegí cantidades desde el catálogo.</div>';
+    footEl.style.display = "none";
+    return;
+  }
+  itemsEl.innerHTML = entries
+    .map(({ product, quantity }) => {
+      const price = resolveDisplay(product, tierForQuantity(quantity));
+      const isValue = price.state === "value";
+      const sub = isValue ? price.amount * quantity : null;
+      return `<div class="cart-item" data-id="${product.id}">
+        <div class="ci-thumb">${product.imageUrl ? `<img src="${esc(product.imageUrl)}" alt="">` : ""}</div>
+        <div class="info">
+          <div class="name">${esc(product.name)}</div>
+          <div class="ci-qty">
+            <div class="qty-stepper mini"><button class="ci-minus" type="button" aria-label="Menos">&minus;</button><input class="ci-qval" value="${quantity}" inputmode="numeric" aria-label="Cantidad"><button class="ci-plus" type="button" aria-label="Más">+</button></div>
+            <span class="ci-unit">${isValue ? money(price.amount) + " c/u" : "Consultar"}</span>
+          </div>
+          <div class="row"><span class="sub tabular">${isValue ? money(sub) : "Consultar"}</span><button class="remove-link">Quitar</button></div>
+        </div>
+      </div>`;
+    })
+    .join("");
+  document.getElementById("cartTotal").textContent = money(total);
+  footEl.style.display = "flex";
+}
+
+function renderCompareBar() {
+  const bar = document.getElementById("compareBar");
+  const count = state.compare.size;
+  bar.hidden = count === 0;
+  document.getElementById("compareCount").textContent = String(count);
+  document.getElementById("compareOpen").disabled = count < 2;
+}
+
+function toggleCompare(id) {
+  if (state.compare.has(id)) {
+    state.compare.delete(id);
+  } else {
+    if (state.compare.size >= 3) {
+      toast("Podés comparar hasta 3 productos.", true);
+      return;
+    }
+    state.compare.add(id);
+  }
+  renderProducts();
+  renderCompareBar();
+}
+
+function openCompare() {
+  const selected = [...state.compare].map((id) => state.products.find((p) => p.id === id)).filter(Boolean);
+  if (selected.length < 2) return;
+  const cells = (render) => selected.map(render).join("");
+  document.getElementById("compareBody").innerHTML = `<div class="compare-table-wrap"><table class="compare-table">
+    <thead><tr><th>Característica</th>${cells((p) => `<th>${esc(p.name)}</th>`)}</tr></thead>
+    <tbody>
+      <tr><th>Imagen</th>${cells((p) => `<td>${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="">` : "Sin imagen"}</td>`)}</tr>
+      <tr><th>Marca</th>${cells((p) => `<td>${esc(p.brand)}</td>`)}</tr>
+      <tr><th>SKU</th>${cells((p) => `<td class="tabular">${esc(p.sku)}</td>`)}</tr>
+      <tr><th>Disponibilidad</th>${cells((p) => `<td><span class="stock-pill ${p.stockStatus}">${STOCK_LABEL[p.stockStatus]}</span></td>`)}</tr>
+      <tr><th>1 unidad</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "one"))}</b></td>`)}</tr>
+      <tr><th>4 unidades</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "four"))}</b></td>`)}</tr>
+      <tr><th>8 unidades</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "eight"))}</b></td>`)}</tr>
+      <tr><th></th>${cells((p) => `<td><button class="btn-primary sm" data-compare-add="${p.id}">Agregar a solicitud</button></td>`)}</tr>
+    </tbody>
+  </table></div>`;
+  document.getElementById("compareOverlay").hidden = false;
+}
+function setCartQty(id, qty) {
+  const entry = cart.get(id);
+  if (!entry) return;
+  entry.quantity = Math.max(1, qty || 1);
+  renderCart();
+  // reflejar en la tarjeta si está visible
+  const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
+  if (card) {
+    card.querySelector(".qval").value = entry.quantity;
+    card.querySelector(".estval").textContent = estText(entry.product, entry.quantity);
+    const btn = card.querySelector(".add-btn");
+    btn.textContent = `Agregado ✓ (${entry.quantity})`;
+  }
+}
+
+// --------------------------------------------------------- scroll a catálogo
+function scrollToCatalog() {
+  document.getElementById("catalogSection").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ============================ RENDER GENERAL ================================
+function renderFiltersUI() {
+  renderBrandFilter();
+  renderCategoryFilter();
+  renderAvailCounts();
+}
+function renderAll() {
+  renderStats();
+  renderBrandCards();
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+}
+
+// =============================== EVENTOS ===================================
+function setQuick(q, scroll) {
+  state.quick = q;
+  renderActiveChips();
+  renderProducts();
+  if (scroll) scrollToCatalog();
+}
+
+// Accesos rápidos
+document.getElementById("quickAccess").addEventListener("click", (e) => {
+  const card = e.target.closest(".qa-card");
+  if (!card) return;
+  setQuick(card.dataset.quick === "all" ? "all" : card.dataset.quick, true);
+});
+
+// Tarjetas de marca
+document.getElementById("brandCards").addEventListener("click", (e) => {
+  const card = e.target.closest(".brand-card");
+  if (!card) return;
+  const brand = card.dataset.brand;
+  state.quick = "all";
+  state.filters.brands = new Set([brand]);
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+  scrollToCatalog();
+});
+
+// Filtros: marca (live)
+document.getElementById("brandFilterList").addEventListener("change", (e) => {
+  const chk = e.target.closest("input[data-brand]");
+  if (!chk) return;
+  if (chk.checked) state.filters.brands.add(chk.dataset.brand);
+  else state.filters.brands.delete(chk.dataset.brand);
+  renderActiveChips();
+  renderProducts();
+});
+// Filtros: categoría (live)
+document.getElementById("catFilterList").addEventListener("change", (e) => {
+  const chk = e.target.closest("input[data-cat]");
+  if (!chk) return;
+  if (chk.checked) state.filters.categories.add(chk.dataset.cat);
+  else state.filters.categories.delete(chk.dataset.cat);
+  renderActiveChips();
+  renderProducts();
+});
+let catSearchTimer;
+document.getElementById("catSearchInput").addEventListener("input", () => {
+  clearTimeout(catSearchTimer);
+  catSearchTimer = setTimeout(renderCategoryFilter, 150);
+});
+document.getElementById("catMoreBtn").addEventListener("click", () => {
+  state.catExpanded = !state.catExpanded;
+  renderCategoryFilter();
+});
+// Filtros: disponibilidad (live)
+document.getElementById("availFilterList").addEventListener("change", (e) => {
+  const chk = e.target.closest("input[type=checkbox]");
+  if (!chk) return;
+  if (chk.checked) state.filters.availability.add(chk.value);
+  else state.filters.availability.delete(chk.value);
+  renderActiveChips();
+  renderProducts();
+});
+// Precio: se aplica con el botón (o Enter)
+function applyPriceInputs() {
+  const min = document.getElementById("priceMin").value.trim();
+  const max = document.getElementById("priceMax").value.trim();
+  state.filters.priceMin = min === "" ? null : Number(min);
+  state.filters.priceMax = max === "" ? null : Number(max);
+  if (state.filters.priceMin != null && !Number.isFinite(state.filters.priceMin)) state.filters.priceMin = null;
+  if (state.filters.priceMax != null && !Number.isFinite(state.filters.priceMax)) state.filters.priceMax = null;
+}
+document.getElementById("applyFilters").addEventListener("click", () => {
+  applyPriceInputs();
+  renderActiveChips();
+  renderProducts();
+  closeFilters();
+});
+document.querySelectorAll("#priceMin, #priceMax").forEach((inp) =>
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("applyFilters").click(); })
+);
+document.getElementById("clearFilters").addEventListener("click", () => {
+  state.filters = { brands: new Set(), categories: new Set(), availability: new Set(), priceMin: null, priceMax: null };
+  state.quick = "all";
+  state.search = "";
+  document.getElementById("searchInput").value = "";
+  document.getElementById("priceMin").value = "";
+  document.getElementById("priceMax").value = "";
+  document.getElementById("catSearchInput").value = "";
+  state.catExpanded = false;
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+});
+
+// Chips de filtros activos: quitar individual
+document.getElementById("activeChips").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  const type = chip.dataset.chip;
+  const val = chip.dataset.val;
+  if (type === "quick") state.quick = "all";
+  else if (type === "brand") state.filters.brands.delete(val);
+  else if (type === "category") state.filters.categories.delete(val);
+  else if (type === "availability") state.filters.availability.delete(val);
+  else if (type === "priceMin") { state.filters.priceMin = null; document.getElementById("priceMin").value = ""; }
+  else if (type === "priceMax") { state.filters.priceMax = null; document.getElementById("priceMax").value = ""; }
+  else if (type === "search") { state.search = ""; document.getElementById("searchInput").value = ""; }
+  renderFiltersUI();
+  renderActiveChips();
+  renderProducts();
+});
+
+// Orden
+document.getElementById("sortSelect").addEventListener("change", (e) => {
+  state.sort = e.target.value;
+  renderProducts();
+});
+// Vista grilla/lista
+function setView(v) {
+  state.view = v;
+  document.getElementById("viewGrid").classList.toggle("active", v === "grid");
+  document.getElementById("viewGrid").setAttribute("aria-pressed", String(v === "grid"));
+  document.getElementById("viewList").classList.toggle("active", v === "list");
+  document.getElementById("viewList").setAttribute("aria-pressed", String(v === "list"));
+  renderProducts();
+}
+document.getElementById("viewGrid").addEventListener("click", () => setView("grid"));
+document.getElementById("viewList").addEventListener("click", () => setView("list"));
+
+// Panel de filtros en móvil
+function openFilters() {
+  document.getElementById("filtersPanel").classList.add("open");
+  document.getElementById("filtersOverlay").classList.add("open");
+}
+function closeFilters() {
+  document.getElementById("filtersPanel").classList.remove("open");
+  document.getElementById("filtersOverlay").classList.remove("open");
+}
+document.getElementById("filtersToggle").addEventListener("click", openFilters);
+document.getElementById("filtersClose").addEventListener("click", closeFilters);
+document.getElementById("filtersOverlay").addEventListener("click", closeFilters);
+
+// Búsqueda principal
+let searchTimer;
+document.getElementById("searchInput").addEventListener("input", (e) => {
+  state.search = e.target.value;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    renderActiveChips();
+    renderProducts();
+  }, 220);
+});
+
+// Navegación
+document.getElementById("logoBtn").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+document.querySelector(".cat-nav").addEventListener("click", (e) => {
+  const btn = e.target.closest(".cn-link");
+  if (!btn) return;
+  document.querySelectorAll(".cn-link").forEach((b) => b.classList.remove("active"));
+  const nav = btn.dataset.nav;
+  if (nav === "catalogo") { btn.classList.add("active"); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  else if (nav === "favoritos") { btn.classList.add("active"); setQuick("favoritos", true); }
+  else if (nav === "solicitudes") openRequests("all");
+  else if (nav === "cotizaciones") openRequests("quoted");
+});
+
+// Interacción con las tarjetas de producto
+document.getElementById("productGrid").addEventListener("click", (e) => {
+  const card = e.target.closest(".pcard");
+  if (!card) return;
+  const id = card.dataset.id;
+  const favBtn = e.target.closest(".fav-btn");
+  if (favBtn) { toggleFavorite(id, favBtn); return; }
+  if (e.target.closest("[data-compare]")) { toggleCompare(id); return; }
+  const product = window.__products.get(id);
+  const qtyInput = card.querySelector(".qval");
+  let qty = parseInt(qtyInput.value, 10) || 1;
+  if (e.target.closest(".qminus")) qty = Math.max(1, qty - 1);
+  else if (e.target.closest(".qplus")) qty = qty + 1;
+  else if (e.target.closest(".add-btn")) {
+    cart.set(id, { product, quantity: qty });
+    renderCart();
+    const btn = card.querySelector(".add-btn");
+    btn.textContent = `Agregado ✓ (${qty})`;
+    btn.classList.add("added");
+    toast("Producto agregado a tu solicitud.");
+    return;
+  } else return;
+  qtyInput.value = qty;
+  card.querySelector(".estval").textContent = estText(product, qty);
+  if (cart.has(id)) setCartQty(id, qty);
+});
+document.getElementById("productGrid").addEventListener("input", (e) => {
+  const qtyInput = e.target.closest(".qval");
+  if (!qtyInput) return;
+  const digitsOnly = qtyInput.value.replace(/[^0-9]/g, "");
+  if (digitsOnly !== qtyInput.value) qtyInput.value = digitsOnly;
+  const card = qtyInput.closest(".pcard");
+  const product = window.__products.get(card.dataset.id);
+  const qty = parseInt(digitsOnly, 10) || 1;
+  card.querySelector(".estval").textContent = estText(product, qty);
+});
+document.getElementById("productGrid").addEventListener("change", (e) => {
+  const qtyInput = e.target.closest(".qval");
+  if (!qtyInput) return;
+  const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+  qtyInput.value = qty;
+  const card = qtyInput.closest(".pcard");
+  const product = window.__products.get(card.dataset.id);
+  card.querySelector(".estval").textContent = estText(product, qty);
+  if (cart.has(card.dataset.id)) setCartQty(card.dataset.id, qty);
+});
+
+// Drawer "Solicitud actual"
+const cartDrawer = document.getElementById("cartDrawer");
+const cartOverlay = document.getElementById("cartOverlay");
+document.getElementById("cartBtn").addEventListener("click", () => {
+  cartDrawer.classList.add("open");
+  cartOverlay.classList.add("open");
+});
+function closeCart() {
+  cartDrawer.classList.remove("open");
+  cartOverlay.classList.remove("open");
+}
+document.getElementById("cartClose").addEventListener("click", closeCart);
+cartOverlay.addEventListener("click", closeCart);
+document.getElementById("cartItems").addEventListener("click", (e) => {
+  const item = e.target.closest(".cart-item");
+  if (!item) return;
+  const id = item.dataset.id;
+  const entry = cart.get(id);
+  if (e.target.closest(".remove-link")) {
     cart.delete(id);
     renderCart();
     const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
