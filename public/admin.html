@@ -41,317 +41,59 @@
       </aside>
 
       <main class="admin-main">
-        <!-- ==================== DASHBOARD ==================== -->
         <div class="admin-section" id="section-dashboard">
           <div class="admin-topline">
-            <div>
-              <h1>Dashboard</h1>
-              <p id="dashboardSubtitle">Resumen general del portal</p>
-            </div>
-            <div class="source-card" id="sourceCard">
-              <span class="source-dot" id="sourceDot"></span>
-              <div class="txt"><b id="sourceHeadline">Cargando estado de la fuente de stock...</b><span id="sourceDetail"></span></div>
-              <span class="source-pill">Solo lectura</span>
-            </div>
+            <div><h1>Dashboard</h1><p id="dashboardSubtitle">Resumen general del portal</p></div>
+            <div class="source-card" id="sourceCard"><span class="source-dot" id="sourceDot"></span><div class="txt"><b id="sourceHeadline">Cargando estado de la fuente de stock...</b><span id="sourceDetail"></span></div><span class="source-pill">Solo lectura</span></div>
           </div>
-
           <div class="kpi-row" id="kpiRow"></div>
-
-          <div class="panel attention-panel">
-            <div class="panel-title-row">
-              <div>
-                <h3>Requiere atención</h3>
-                <p>Lo más importante para resolver ahora</p>
-              </div>
-              <span class="attention-count" id="attentionCount">0 pendientes</span>
-            </div>
-            <div class="attention-grid" id="attentionGrid"><div class="empty-row">Cargando...</div></div>
-          </div>
-
+          <div class="panel attention-panel"><div class="panel-title-row"><div><h3>Requiere atención</h3><p>Lo más importante para resolver ahora</p></div><span class="attention-count" id="attentionCount">0 pendientes</span></div><div class="attention-grid" id="attentionGrid"><div class="empty-row">Cargando...</div></div></div>
           <div class="dash-grid">
-            <div class="panel">
-              <h3>Usuarios pendientes de aprobación</h3>
-              <div style="overflow-x:auto">
-                <table>
-                  <thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead>
-                  <tbody id="pendingUsersBody"><tr><td colspan="4" class="empty-row">Cargando...</td></tr></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="panel">
-              <h3>Últimas cotizaciones</h3>
-              <div id="recentQuotes">Cargando...</div>
-            </div>
+            <div class="panel"><h3>Usuarios pendientes de aprobación</h3><div style="overflow-x:auto"><table><thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead><tbody id="pendingUsersBody"><tr><td colspan="4" class="empty-row">Cargando...</td></tr></tbody></table></div></div>
+            <div class="panel"><h3>Últimas cotizaciones</h3><div id="recentQuotes">Cargando...</div></div>
           </div>
-
           <div class="bottom-grid">
-            <details class="panel collapsible" id="lowStockPanel">
-              <summary>
-                <span>Productos con bajo o sin stock <span class="muted-note">(cantidad exacta - solo admin)</span></span>
-                <span class="chevron">&#9662;</span>
-              </summary>
-              <div style="overflow-x:auto;margin-top:12px">
-                <table>
-                  <thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead>
-                  <tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody>
-                </table>
-              </div>
-            </details>
-            <details class="panel collapsible" open>
-              <summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary>
-              <div class="audit-toolbar" id="auditToolbar">
-                <select id="auditTypeFilter" aria-label="Filtrar actividad por tipo">
-                  <option value="">Todas las actividades</option>
-                  <option value="user">Clientes y usuarios</option>
-                  <option value="quote">Cotizaciones y pedidos</option>
-                  <option value="product">Productos y precios</option>
-                  <option value="finance">Facturación y pagos</option>
-                </select>
-                <select id="auditActorFilter" aria-label="Filtrar actividad por usuario"><option value="">Todos los usuarios</option></select>
-                <select id="auditDateFilter" aria-label="Filtrar actividad por fecha">
-                  <option value="">Cualquier fecha</option>
-                  <option value="today">Hoy</option>
-                  <option value="7">Últimos 7 días</option>
-                  <option value="30">Últimos 30 días</option>
-                </select>
-              </div>
-              <div id="auditFeed" style="margin-top:12px">Cargando...</div>
-            </details>
+            <details class="panel collapsible" id="lowStockPanel"><summary><span>Productos con bajo o sin stock <span class="muted-note">(cantidad exacta - solo admin)</span></span><span class="chevron">&#9662;</span></summary><div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>SKU</th><th>Producto</th><th>Marca</th><th>Stock</th><th>Estado</th></tr></thead><tbody id="lowStockBody"><tr><td colspan="5" class="empty-row">Cargando...</td></tr></tbody></table></div></details>
+            <details class="panel collapsible" open><summary><span>Actividad reciente</span><span class="chevron">&#9662;</span></summary><div class="audit-toolbar" id="auditToolbar"><select id="auditTypeFilter" aria-label="Filtrar actividad por tipo"><option value="">Todas las actividades</option><option value="user">Clientes y usuarios</option><option value="quote">Cotizaciones y pedidos</option><option value="product">Productos y precios</option><option value="finance">Facturación y pagos</option></select><select id="auditActorFilter" aria-label="Filtrar actividad por usuario"><option value="">Todos los usuarios</option></select><select id="auditDateFilter" aria-label="Filtrar actividad por fecha"><option value="">Cualquier fecha</option><option value="today">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option></select></div><div id="auditFeed" style="margin-top:12px">Cargando...</div></details>
           </div>
         </div>
 
-        <!-- ==================== CATÁLOGO (editor visual) ==================== -->
         <div class="admin-section" id="section-catalog" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Catálogo</h1>
-              <p>Arrastrá las tarjetas para reordenar (dentro del filtro actual). Editá o borrá cada producto. El orden se refleja en el catálogo del cliente.</p>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <select id="catBrandFilter" class="admin-search" style="min-width:150px"><option value="">Todas las marcas</option></select>
-              <select id="catCategoryFilter" class="admin-search" style="min-width:160px"><option value="">Todas las categorías</option></select>
-              <input type="search" id="catSearch" class="admin-search" placeholder="Buscar...">
-              <button class="link-btn" id="catManageBtn">Marcas y categorías</button>
-              <button class="link-btn" id="brandLogosBtn">Logos de marca</button>
-              <button class="btn-primary" id="catNewBtn">+ Nuevo producto</button>
-            </div>
-          </div>
-          <div class="panel">
-            <div id="catBulkBar" class="cat-bulk-bar" hidden>
-              <span id="catBulkCount">0 seleccionados</span>
-              <select id="catBulkBrand" class="admin-search"><option value="">Marca (sin cambios)</option></select>
-              <select id="catBulkCategory" class="admin-search"><option value="">Categoría (sin cambios)</option></select>
-              <button class="btn-primary" id="catBulkApply">Aplicar</button>
-              <button class="link-btn ghost" id="catBulkClear">Limpiar selección</button>
-            </div>
-            <div id="catalogEditorGrid" class="cat-editor-grid"><div class="empty-row">Cargando...</div></div>
-          </div>
+          <div class="admin-topline"><div><h1>Catálogo</h1><p>Arrastrá las tarjetas para reordenar (dentro del filtro actual). Editá o borrá cada producto. El orden se refleja en el catálogo del cliente.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="catBrandFilter" class="admin-search" style="min-width:150px"><option value="">Todas las marcas</option></select><select id="catCategoryFilter" class="admin-search" style="min-width:160px"><option value="">Todas las categorías</option></select><input type="search" id="catSearch" class="admin-search" placeholder="Buscar..."><button class="link-btn" id="catManageBtn">Marcas y categorías</button><button class="link-btn" id="brandLogosBtn">Logos de marca</button><button class="btn-primary" id="catNewBtn">+ Nuevo producto</button></div></div>
+          <div class="panel"><div id="catBulkBar" class="cat-bulk-bar" hidden><span id="catBulkCount">0 seleccionados</span><select id="catBulkBrand" class="admin-search"><option value="">Marca (sin cambios)</option></select><select id="catBulkCategory" class="admin-search"><option value="">Categoría (sin cambios)</option></select><button class="btn-primary" id="catBulkApply">Aplicar</button><button class="link-btn ghost" id="catBulkClear">Limpiar selección</button></div><div id="catalogEditorGrid" class="cat-editor-grid"><div class="empty-row">Cargando...</div></div></div>
         </div>
 
-        <!-- ==================== PRODUCTOS Y PRECIOS ==================== -->
         <div class="admin-section" id="section-products" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Productos y precios</h1>
-              <p>Editá los precios distribuidor (1u/4u/8u), el orden y la visibilidad (ojito). El PVP y el stock se leen en vivo. Precio vacío = oculto; escribí "consultar" para mostrar "Consultar".</p>
-            </div>
-            <div style="display:flex;gap:10px;align-items:center">
-              <input type="search" id="productSearch" class="admin-search" placeholder="Buscar por SKU, nombre o marca...">
-              <button class="btn-primary" id="newProductBtn">+ Nuevo producto</button>
-            </div>
-          </div>
-          <div class="panel">
-            <div style="overflow-x:auto">
-              <table>
-                <thead><tr><th style="width:60px">Orden</th><th>SKU</th><th>Producto</th><th>Marca</th><th style="width:78px">IVA</th><th>1 u</th><th>4 u</th><th>8 u</th><th style="width:50px">Visible</th><th style="width:120px"></th></tr></thead>
-                <tbody id="productsBody"><tr><td colspan="10" class="empty-row">Cargando...</td></tr></tbody>
-              </table>
-            </div>
-          </div>
+          <div class="admin-topline"><div><h1>Productos y precios</h1><p>Editá los precios distribuidor (1u/4u/8u), el orden y la visibilidad (ojito). El PVP y el stock se leen en vivo. Precio vacío = oculto; escribí "consultar" para mostrar "Consultar".</p></div><div style="display:flex;gap:10px;align-items:center"><input type="search" id="productSearch" class="admin-search" placeholder="Buscar por SKU, nombre o marca..."><button class="btn-primary" id="newProductBtn">+ Nuevo producto</button></div></div>
+          <div class="panel"><div style="overflow-x:auto"><table><thead><tr><th style="width:60px">Orden</th><th>SKU</th><th>Producto</th><th>Marca</th><th style="width:78px">IVA</th><th>1 u</th><th>4 u</th><th>8 u</th><th style="width:50px">Visible</th><th style="width:120px"></th></tr></thead><tbody id="productsBody"><tr><td colspan="10" class="empty-row">Cargando...</td></tr></tbody></table></div></div>
         </div>
 
-        <!-- ==================== CLIENTES ==================== -->
         <div class="admin-section" id="section-clients" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Clientes</h1>
-              <p>Todos los usuarios registrados en el portal</p>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input type="search" id="clientSearch" class="admin-search" placeholder="Buscar cliente...">
-              <select id="clientMonthFilter" class="admin-search" style="min-width:150px">
-                <option value="">Todos los meses</option>
-              </select>
-              <select id="clientStatusFilter" class="admin-search" style="min-width:150px">
-                <option value="">Todos los estados</option>
-                <option value="pending">Pendientes</option>
-                <option value="approved">Aprobados</option>
-                <option value="rejected">Rechazados</option>
-              </select>
-              <details class="view-menu">
-                <summary>Vista</summary>
-                <div class="view-menu-pop" data-view-menu="clients">
-                  <strong>Columnas visibles</strong>
-                  <label><input type="checkbox" data-col="0" checked> Código</label>
-                  <label><input type="checkbox" data-col="2" checked> Nombre</label>
-                  <label><input type="checkbox" data-col="3" checked> Empresa</label>
-                  <label><input type="checkbox" data-col="4" checked> Rol</label>
-                  <label><input type="checkbox" data-col="6" checked> Alta</label>
-                  <label><input type="checkbox" data-col="7" checked> Último login</label>
-                  <button class="link-btn" type="button" data-save-view="clients">Guardar esta vista</button>
-                </div>
-              </details>
-              <button class="btn-primary" id="newClientBtn">+ Agregar</button>
-            </div>
-          </div>
-          <div class="panel">
-            <div style="overflow-x:auto">
-              <table>
-                <thead><tr><th>Código</th><th>Email</th><th>Nombre</th><th>Empresa</th><th>Rol</th><th>Estado</th><th>Alta</th><th>Último login</th><th></th></tr></thead>
-                <tbody id="clientsBody"><tr><td colspan="9" class="empty-row">Cargando...</td></tr></tbody>
-              </table>
-            </div>
-          </div>
+          <div class="admin-topline"><div><h1>Clientes</h1><p>Todos los usuarios registrados en el portal</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="clientSearch" class="admin-search" placeholder="Buscar cliente..."><select id="clientMonthFilter" class="admin-search" style="min-width:150px"><option value="">Todos los meses</option></select><select id="clientStatusFilter" class="admin-search" style="min-width:150px"><option value="">Todos los estados</option><option value="pending">Pendientes</option><option value="approved">Aprobados</option><option value="rejected">Rechazados</option></select><details class="view-menu"><summary>Vista</summary><div class="view-menu-pop" data-view-menu="clients"><strong>Columnas visibles</strong><label><input type="checkbox" data-col="0" checked> Código</label><label><input type="checkbox" data-col="2" checked> Nombre</label><label><input type="checkbox" data-col="3" checked> Empresa</label><label><input type="checkbox" data-col="4" checked> Rol</label><label><input type="checkbox" data-col="6" checked> Alta</label><label><input type="checkbox" data-col="7" checked> Último login</label><button class="link-btn" type="button" data-save-view="clients">Guardar esta vista</button></div></details><button class="btn-primary" id="newClientBtn">+ Agregar</button></div></div>
+          <div class="panel"><div style="overflow-x:auto"><table><thead><tr><th>Código</th><th>Email</th><th>Nombre</th><th>Empresa</th><th>Rol</th><th>Estado</th><th>Alta</th><th>Último login</th><th></th></tr></thead><tbody id="clientsBody"><tr><td colspan="9" class="empty-row">Cargando...</td></tr></tbody></table></div></div>
         </div>
 
-        <!-- ==================== COTIZACIONES ==================== -->
         <div class="admin-section" id="section-quotes" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Cotizaciones</h1>
-              <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la pre-compra.</p>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <input type="search" id="quoteSearch" class="admin-search" placeholder="Buscar # o cliente...">
-              <select id="quoteMonthFilter" class="admin-search" style="min-width:150px">
-                <option value="">Todos los meses</option>
-              </select>
-              <select id="quoteStatusFilter" class="admin-search" style="min-width:150px">
-                <option value="">Todos los estados</option>
-                <option value="cotizacion">Cotización</option>
-                <option value="enviada">Cotización enviada</option>
-                <option value="orden">Orden de venta</option>
-                <option value="despachado">Despachado</option>
-                <option value="cancelado">Cancelado</option>
-              </select>
-              <details class="view-menu">
-                <summary>Vista</summary>
-                <div class="view-menu-pop" data-view-menu="quotes">
-                  <strong>Columnas visibles</strong>
-                  <label><input type="checkbox" data-col="3" checked> Total</label>
-                  <label><input type="checkbox" data-col="4" checked> Fecha</label>
-                  <button class="link-btn" type="button" data-save-view="quotes">Guardar esta vista</button>
-                </div>
-              </details>
-              <button class="btn-primary" id="newQuoteBtn">+ Agregar</button>
-            </div>
-          </div>
-          <div class="quotes-layout">
-            <div class="panel quotes-list-panel">
-              <div style="overflow-x:auto">
-                <table>
-                  <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Total</th><th>Enviada</th><th></th></tr></thead>
-                  <tbody id="quotesBody"><tr><td colspan="6" class="empty-row">Cargando...</td></tr></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="panel" id="quoteDetailPanel">
-              <div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver y editar el detalle.</div>
-            </div>
-          </div>
+          <div class="admin-topline"><div><h1>Cotizaciones</h1><p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la pre-compra.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="quoteSearch" class="admin-search" placeholder="Buscar # o cliente..."><select id="quoteMonthFilter" class="admin-search" style="min-width:150px"><option value="">Todos los meses</option></select><select id="quoteStatusFilter" class="admin-search" style="min-width:150px"><option value="">Todos los estados</option><option value="cotizacion">Cotización</option><option value="enviada">Cotización enviada</option><option value="orden">Orden de venta</option><option value="despachado">Despachado</option><option value="cancelado">Cancelado</option></select><details class="view-menu"><summary>Vista</summary><div class="view-menu-pop" data-view-menu="quotes"><strong>Columnas visibles</strong><label><input type="checkbox" data-col="3" checked> Total</label><label><input type="checkbox" data-col="4" checked> Fecha</label><button class="link-btn" type="button" data-save-view="quotes">Guardar esta vista</button></div></details><button class="btn-primary" id="newQuoteBtn">+ Agregar</button></div></div>
+          <div class="quotes-layout"><div class="panel quotes-list-panel"><div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Total</th><th>Enviada</th><th></th></tr></thead><tbody id="quotesBody"><tr><td colspan="6" class="empty-row">Cargando...</td></tr></tbody></table></div></div><div class="panel" id="quoteDetailPanel"><div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver y editar el detalle.</div></div></div>
         </div>
 
-        <!-- ==================== FACTURACIÓN ==================== -->
         <div class="admin-section" id="section-billing" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Facturación</h1>
-              <p>Pedidos confirmados listos para facturar y cobrar</p>
-            </div>
-            <div class="billing-toolbar">
-              <input type="search" id="billingSearch" class="admin-search" placeholder="Buscar pedido o cliente...">
-              <select id="billingFilter" class="admin-search" style="min-width:150px">
-                <option value="all">Todos</option>
-                <option value="por_cobrar">Por cobrar</option>
-                <option value="pagados">Pagados</option>
-              </select>
-              <button class="link-btn" id="saveBillingView" type="button">Guardar vista</button>
-            </div>
-          </div>
-          <div class="panel">
-            <div id="billingOrders">Cargando...</div>
-          </div>
-          <div class="panel" style="margin-top:14px">
-            <div id="billingDetailBody" class="empty-row">Elegí un pedido de la lista para facturar y cobrar.</div>
-          </div>
+          <div class="admin-topline"><div><h1>Facturación</h1><p>Pedidos confirmados listos para facturar y cobrar</p></div><div class="billing-toolbar"><input type="search" id="billingSearch" class="admin-search" placeholder="Buscar pedido o cliente..."><select id="billingFilter" class="admin-search" style="min-width:150px"><option value="all">Todos</option><option value="por_cobrar">Por cobrar</option><option value="pagados">Pagados</option></select><button class="link-btn" id="saveBillingView" type="button">Guardar vista</button></div></div>
+          <div class="panel"><div id="billingOrders">Cargando...</div></div><div class="panel" style="margin-top:14px"><div id="billingDetailBody" class="empty-row">Elegí un pedido de la lista para facturar y cobrar.</div></div>
         </div>
 
-        <!-- ==================== LOGÍSTICA / DEPÓSITO ==================== -->
-        <div class="admin-section" id="section-logistics" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Logística / Depósito</h1>
-              <p>Pedidos autorizados para preparar (sin datos de precios)</p>
-            </div>
-          </div>
-          <div class="panel">
-            <div id="logiOrdersAdmin">Cargando...</div>
-          </div>
-          <div id="logiDetailAdmin" style="margin-top:14px"></div>
-        </div>
+        <div class="admin-section" id="section-logistics" hidden><div class="admin-topline"><div><h1>Logística / Depósito</h1><p>Pedidos autorizados para preparar (sin datos de precios)</p></div></div><div class="panel"><div id="logiOrdersAdmin">Cargando...</div></div><div id="logiDetailAdmin" style="margin-top:14px"></div></div>
 
-        <!-- ==================== CONFIGURACIÓN ==================== -->
         <div class="admin-section" id="section-settings" hidden>
-          <div class="admin-topline">
-            <div>
-              <h1>Configuración</h1>
-              <p>Datos de la empresa que aparecen en la pre-compra/compra que se envía a los clientes</p>
-            </div>
-          </div>
-          <div class="panel" style="max-width:640px">
-            <form id="companyForm" class="form-grid">
-              <label>Nombre comercial<input name="name" placeholder="Autodiagnóstico"></label>
-              <label>Razón social<input name="legalName" placeholder="Patagonian Tools S.A."></label>
-              <label class="full">Dirección (una línea por renglón)<textarea name="addressLines" rows="3" placeholder="Dorrego Av. 2079 Dpto 509&#10;Buenos Aires, Argentina (1414)"></textarea></label>
-              <label>Teléfono<input name="phone" placeholder="54-11-5263-5484"></label>
-              <label>Email<input name="email" placeholder="ventas@autodiagnostico.com.ar"></label>
-              <label>Sitio web<input name="website" placeholder="autodiagnostico.com.ar"></label>
-              <label>CUIT / Tax ID<input name="taxId" placeholder="30-71610175-0"></label>
-              <label>Casilla del depósito<input name="warehouseEmail" placeholder="joaquin.guerri@patagoniatools.com.ar"></label>
-              <label class="full">URL del logo (opcional; si se deja vacío se usa el texto "Autodiagnostico")<input name="logoUrl" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label>
-              <label>Validez de la pre-compra (días)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label>
-              <label class="full">Texto al pie de la pre-compra<textarea name="proformaFooter" rows="2" placeholder="Documento no válido como factura. Precios sujetos a confirmación."></textarea></label>
-              <div class="full" style="display:flex;gap:10px;align-items:center">
-                <button type="submit" class="btn-primary">Guardar cambios</button>
-                <span id="companySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
-              </div>
-            </form>
-          </div>
-
-          <div class="panel" style="max-width:640px;margin-top:16px">
-            <h3 style="margin:0 0 4px">Notificaciones automáticas por email</h3>
-            <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px">Definí a quién se copia en cada aviso. El "CC siempre" se precarga en el compositor al enviar. Separá varios correos con coma.</p>
-            <form id="notifyForm" class="form-grid">
-              <label class="full">CC siempre (global)<input name="globalCc" placeholder="ventas@empresa.com, contador@empresa.com"></label>
-              <label>Cotización enviada<input name="ev_enviada" placeholder="correo@empresa.com"></label>
-              <label>Orden de venta<input name="ev_orden" placeholder="correo@empresa.com"></label>
-              <label>Pago recibido<input name="ev_pago" placeholder="correo@empresa.com"></label>
-              <label>Despachado<input name="ev_despachado" placeholder="correo@empresa.com"></label>
-              <div class="full" style="display:flex;gap:10px;align-items:center">
-                <button type="submit" class="btn-primary">Guardar destinatarios</button>
-                <span id="notifySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
-              </div>
-            </form>
-          </div>
+          <div class="admin-topline"><div><h1>Configuración</h1><p>Datos de la empresa que aparecen en la pre-compra/compra que se envía a los clientes</p></div></div>
+          <div class="panel" style="max-width:640px"><form id="companyForm" class="form-grid"><label>Nombre comercial<input name="name" placeholder="Autodiagnóstico"></label><label>Razón social<input name="legalName" placeholder="Patagonian Tools S.A."></label><label class="full">Dirección (una línea por renglón)<textarea name="addressLines" rows="3" placeholder="Dorrego Av. 2079 Dpto 509&#10;Buenos Aires, Argentina (1414)"></textarea></label><label>Teléfono<input name="phone" placeholder="54-11-5263-5484"></label><label>Email<input name="email" placeholder="ventas@autodiagnostico.com.ar"></label><label>Sitio web<input name="website" placeholder="autodiagnostico.com.ar"></label><label>CUIT / Tax ID<input name="taxId" placeholder="30-71610175-0"></label><label>Casilla del depósito<input name="warehouseEmail" placeholder="joaquin.guerri@patagoniatools.com.ar"></label><label class="full">URL del logo (opcional; si se deja vacío se usa el texto "Autodiagnostico")<input name="logoUrl" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label><label>Validez de la pre-compra (días)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label><label class="full">Texto al pie de la pre-compra<textarea name="proformaFooter" rows="2" placeholder="Documento no válido como factura. Precios sujetos a confirmación."></textarea></label><div class="full" style="display:flex;gap:10px;align-items:center"><button type="submit" class="btn-primary">Guardar cambios</button><span id="companySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span></div></form></div>
+          <div class="panel" style="max-width:640px;margin-top:16px"><h3 style="margin:0 0 4px">Notificaciones automáticas por email</h3><p style="color:var(--muted);font-size:12.5px;margin:0 0 14px">Definí a quién se copia en cada aviso. El "CC siempre" se precarga en el compositor al enviar. Separá varios correos con coma.</p><form id="notifyForm" class="form-grid"><label class="full">CC siempre (global)<input name="globalCc" placeholder="ventas@empresa.com, contador@empresa.com"></label><label>Cotización enviada<input name="ev_enviada" placeholder="correo@empresa.com"></label><label>Orden de venta<input name="ev_orden" placeholder="correo@empresa.com"></label><label>Pago recibido<input name="ev_pago" placeholder="correo@empresa.com"></label><label>Despachado<input name="ev_despachado" placeholder="correo@empresa.com"></label><div class="full" style="display:flex;gap:10px;align-items:center"><button type="submit" class="btn-primary">Guardar destinatarios</button><span id="notifySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span></div></form></div>
         </div>
       </main>
     </div>
-
-    <!-- Modal genérico (nuevo producto / agregar item) -->
-    <div class="modal-overlay" id="modalOverlay" hidden>
-      <div class="modal" id="modalBox"></div>
-    </div>
-
+    <div class="modal-overlay" id="modalOverlay" hidden><div class="modal" id="modalBox"></div></div>
     <script type="module" src="/assets/admin.js?v=20260731-ux2"></script>
+    <script type="module" src="/assets/admin-v5-shell.js?v=20260731-v5"></script>
   </body>
 </html>
