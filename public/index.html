@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AutodiagnÃ³stico - CatÃ¡logo Distribuidor</title>
+    <title>Autodiagnóstico - Catálogo Distribuidor</title>
     <link rel="stylesheet" href="/assets/styles.css">
   </head>
   <body>
@@ -11,19 +11,19 @@
       <div class="client-topbar">
         <div class="client-topbar-inner">
           <span>Portal exclusivo para distribuidores</span>
-          <span class="client-topbar-meta"><i aria-hidden="true"></i> Stock y precios actualizados en lÃ­nea</span>
+          <span class="client-topbar-meta"><i aria-hidden="true"></i> Stock y precios actualizados en línea</span>
         </div>
       </div>
 
       <!-- ==================== BARRA SUPERIOR ==================== -->
       <header class="cat-header">
-        <button class="cat-logo" id="logoBtn" aria-label="Ir al inicio del catÃ¡logo">
+        <button class="cat-logo" id="logoBtn" aria-label="Ir al inicio del catálogo">
           <span class="cat-logo-mark" aria-hidden="true">A</span>
           <span class="cat-logo-word">Auto<span>diagnostico</span></span>
         </button>
 
-        <nav class="cat-nav" aria-label="NavegaciÃ³n principal">
-          <button class="cn-link active" data-nav="catalogo">CatÃ¡logo</button>
+        <nav class="cat-nav" aria-label="Navegación principal">
+          <button class="cn-link active" data-nav="catalogo">Catálogo</button>
           <button class="cn-link" data-nav="solicitudes">Mis solicitudes</button>
           <button class="cn-link" data-nav="cotizaciones">Mis cotizaciones</button>
           <button class="cn-link" data-nav="favoritos">Mis favoritos</button>
@@ -41,17 +41,17 @@
           <button class="request-btn" id="cartBtn" aria-label="Ver mi solicitud actual">
             <span class="rb-ico" aria-hidden="true">&#128203;</span>
             <span class="rb-txt">
-              <span class="rb-line1">Mi solicitud Â· <span id="cartCount">0</span> prod.</span>
+              <span class="rb-line1">Mi solicitud · <span id="cartCount">0</span> prod.</span>
               <span class="rb-line2" id="cartEstLine">Total estimado: $ 0</span>
             </span>
           </button>
 
           <div class="profile-wrap">
-            <button class="cat-avatar" id="avatar" aria-label="MenÃº de usuario" aria-haspopup="true" aria-expanded="false">--</button>
+            <button class="cat-avatar" id="avatar" aria-label="Menú de usuario" aria-haspopup="true" aria-expanded="false">--</button>
             <div class="profile-panel" id="profilePanel" hidden role="menu">
               <div class="pp-head"><strong id="ppName">...</strong><span id="ppEmail">...</span></div>
               <button class="pp-item" id="myDataBtn" role="menuitem">&#128100; Mis datos</button>
-              <a class="pp-item" href="/auth/logout" role="menuitem">&#128682; Cerrar sesiÃ³n</a>
+              <a class="pp-item" href="/auth/logout" role="menuitem">&#128682; Cerrar sesión</a>
             </div>
           </div>
         </div>
@@ -61,7 +61,7 @@
         <div class="catalog-utilbar-inner">
           <div class="cat-search">
             <span class="si" aria-hidden="true">&#128269;</span>
-            <input type="text" id="searchInput" aria-label="Buscar en el catÃ¡logo" placeholder="Buscar por producto, marca, SKU o categorÃ­a">
+            <input type="text" id="searchInput" aria-label="Buscar en el catálogo" placeholder="Buscar por producto, marca, SKU o categoría">
           </div>
           <div class="catalog-util-note">
             <span class="catalog-util-kicker">Lista distribuidor</span>
@@ -73,30 +73,30 @@
       <main class="cat-main-wrap">
         <!-- ==================== HERO / RESUMEN ==================== -->
         <section class="hero">
-          <h1>CatÃ¡logo Distribuidor</h1>
-          <p class="hero-sub">SeleccionÃ¡ productos y cantidades para solicitar una cotizaciÃ³n personalizada.</p>
+          <h1>Catálogo Distribuidor</h1>
+          <p class="hero-sub">Seleccioná productos y cantidades para solicitar una cotización personalizada.</p>
           <div class="hero-stats" id="heroStats">
-            <span class="hs-chip"><b id="statProducts">â€”</b> productos activos</span>
-            <span class="hs-chip"><b id="statBrands">â€”</b> marcas</span>
-            <span class="hs-chip"><b id="statAvail">â€”</b> con disponibilidad</span>
+            <span class="hs-chip"><b id="statProducts">—</b> productos activos</span>
+            <span class="hs-chip"><b id="statBrands">—</b> marcas</span>
+            <span class="hs-chip"><b id="statAvail">—</b> con disponibilidad</span>
           </div>
           <a id="downloadCatalogBtn" href="/api/catalog/pdf" target="_blank" rel="noopener"
              style="display:inline-flex;align-items:center;gap:7px;margin-top:14px;background:var(--brand-red,#c8102e);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">
-            <span aria-hidden="true">â¬‡</span> <span class="dl-label">Descargar catÃ¡logo (PDF)</span>
+            <span aria-hidden="true">⬇</span> <span class="dl-label">Descargar catálogo (PDF)</span>
           </a>
         </section>
 
-        <!-- ==================== ACCESOS RÃPIDOS ==================== -->
-        <section class="quick-access" aria-label="Accesos rÃ¡pidos" id="quickAccess">
+        <!-- ==================== ACCESOS RÁPIDOS ==================== -->
+        <section class="quick-access" aria-label="Accesos rápidos" id="quickAccess">
           <button class="qa-card" data-quick="all">
             <span class="qa-ico" aria-hidden="true">&#9776;</span>
             <span class="qa-t">Todos los productos</span>
-            <span class="qa-n" id="qaAll">â€”</span>
+            <span class="qa-n" id="qaAll">—</span>
           </button>
           <button class="qa-card" data-quick="avail">
             <span class="qa-ico" aria-hidden="true">&#10003;</span>
             <span class="qa-t">Con disponibilidad</span>
-            <span class="qa-n" id="qaAvail">â€”</span>
+            <span class="qa-n" id="qaAvail">—</span>
           </button>
           <button class="qa-card" data-quick="novedades">
             <span class="qa-ico" aria-hidden="true">&#10024;</span>
@@ -111,7 +111,7 @@
           <button class="qa-card" data-quick="frecuentes">
             <span class="qa-ico" aria-hidden="true">&#128260;</span>
             <span class="qa-t">Pedidos frecuentes</span>
-            <span class="qa-n" id="qaFreq">â€”</span>
+            <span class="qa-n" id="qaFreq">—</span>
           </button>
         </section>
 
@@ -121,7 +121,7 @@
           <div class="brand-cards" id="brandCards"></div>
         </section>
 
-        <!-- ==================== CATÃLOGO (filtros + productos) ==================== -->
+        <!-- ==================== CATÁLOGO (filtros + productos) ==================== -->
         <section class="catalog-section" id="catalogSection">
           <div class="cs-toolbar">
             <button class="filters-toggle" id="filtersToggle" aria-label="Abrir filtros">&#9776; Filtros</button>
@@ -134,7 +134,7 @@
                 <option value="name">Nombre (A-Z)</option>
                 <option value="price_asc">Precio: menor a mayor</option>
                 <option value="price_desc">Precio: mayor a menor</option>
-                <option value="new">MÃ¡s nuevos</option>
+                <option value="new">Más nuevos</option>
               </select>
             </label>
             <div class="view-toggle" role="group" aria-label="Vista de productos">
@@ -146,7 +146,7 @@
           <div class="active-chips" id="activeChips"></div>
 
           <div class="catalog-body">
-            <!-- Panel de filtros (sidebar en escritorio, modal en mÃ³vil) -->
+            <!-- Panel de filtros (sidebar en escritorio, modal en móvil) -->
             <div class="filters-overlay" id="filtersOverlay"></div>
             <aside class="filters" id="filtersPanel" aria-label="Filtros">
               <div class="filters-head">
@@ -160,17 +160,17 @@
               </div>
 
               <div class="filter-group">
-                <div class="fg-title">CategorÃ­a</div>
-                <input type="search" id="catSearchInput" class="fg-search" placeholder="Buscar categorÃ­a..." aria-label="Buscar categorÃ­a">
+                <div class="fg-title">Categoría</div>
+                <input type="search" id="catSearchInput" class="fg-search" placeholder="Buscar categoría..." aria-label="Buscar categoría">
                 <div id="catFilterList" class="fg-body"></div>
-                <button class="fg-more" id="catMoreBtn" hidden>Ver mÃ¡s</button>
+                <button class="fg-more" id="catMoreBtn" hidden>Ver más</button>
               </div>
 
               <div class="filter-group">
                 <div class="fg-title">Disponibilidad</div>
                 <div class="fg-body" id="availFilterList">
                   <label class="fg-check"><input type="checkbox" value="in_stock"> <span>Con stock</span> <span class="n" id="cnt_in_stock">0</span></label>
-                  <label class="fg-check"><input type="checkbox" value="low_stock"> <span>Ãšltimos en stock</span> <span class="n" id="cnt_low_stock">0</span></label>
+                  <label class="fg-check"><input type="checkbox" value="low_stock"> <span>Últimos en stock</span> <span class="n" id="cnt_low_stock">0</span></label>
                   <label class="fg-check"><input type="checkbox" value="out_of_stock"> <span>Sin stock</span> <span class="n" id="cnt_out_of_stock">0</span></label>
                 </div>
               </div>
@@ -178,9 +178,9 @@
               <div class="filter-group">
                 <div class="fg-title">Precio estimado (ARS)</div>
                 <div class="price-range">
-                  <input type="number" id="priceMin" class="price-in" placeholder="MÃ­n" min="0" aria-label="Precio mÃ­nimo">
-                  <span>â€”</span>
-                  <input type="number" id="priceMax" class="price-in" placeholder="MÃ¡x" min="0" aria-label="Precio mÃ¡ximo">
+                  <input type="number" id="priceMin" class="price-in" placeholder="Mín" min="0" aria-label="Precio mínimo">
+                  <span>—</span>
+                  <input type="number" id="priceMax" class="price-in" placeholder="Máx" min="0" aria-label="Precio máximo">
                 </div>
               </div>
 
@@ -195,27 +195,27 @@
               <div class="grid" id="productGrid"></div>
             </div>
 
-            <!-- Resumen persistente en escritorio; drawer en tablet y mÃ³vil -->
+            <!-- Resumen persistente en escritorio; drawer en tablet y móvil -->
             <div class="cart-overlay" id="cartOverlay"></div>
             <aside class="cart-drawer" id="cartDrawer" aria-label="Solicitud actual">
               <div class="cart-head">
                 <div>
-                  <span class="cart-eyebrow">Pre-cotizaciÃ³n</span>
+                  <span class="cart-eyebrow">Pre-cotización</span>
                   <h3>Solicitud actual</h3>
                 </div>
                 <button class="cart-close" id="cartClose" aria-label="Cerrar">&times;</button>
               </div>
-              <div class="cart-note-top">AgregÃ¡ los productos que necesitÃ¡s. Un administrador revisarÃ¡ cantidades y precios antes de emitir la cotizaciÃ³n final.</div>
+              <div class="cart-note-top">Agregá los productos que necesitás. Un administrador revisará cantidades y precios antes de emitir la cotización final.</div>
               <div class="cart-items" id="cartItems">
-                <div class="cart-empty">TodavÃ­a no agregaste productos.<br>ElegÃ­ cantidades desde el catÃ¡logo.</div>
+                <div class="cart-empty">Todavía no agregaste productos.<br>Elegí cantidades desde el catálogo.</div>
               </div>
               <div class="cart-foot" id="cartFoot" style="display:none">
                 <label class="cart-obs">Observaciones (opcional)
                   <textarea id="cartNotes" rows="2" placeholder="Aclaraciones para el administrador..."></textarea>
                 </label>
                 <div class="cart-total-row"><span>Subtotal estimado</span><span class="tabular" id="cartTotal">$ 0</span></div>
-                <div class="cart-note">Las cantidades estÃ¡n sujetas a disponibilidad. Los precios finales se confirman al cotizar.</div>
-                <button class="btn-primary" id="submitQuoteBtn">Enviar solicitud de cotizaciÃ³n</button>
+                <div class="cart-note">Las cantidades están sujetas a disponibilidad. Los precios finales se confirman al cotizar.</div>
+                <button class="btn-primary" id="submitQuoteBtn">Enviar solicitud de cotización</button>
               </div>
             </aside>
           </div>
@@ -223,22 +223,22 @@
       </main>
 
       <footer class="cat-footer">
-        Autodiagnostico.com.ar &middot; Lista Distribuidor &middot; Precios en ARS salvo indicaciÃ³n &middot;
-        Los precios y cantidades son tentativos y quedan sujetos a revisiÃ³n de un administrador.
+        Autodiagnostico.com.ar &middot; Lista Distribuidor &middot; Precios en ARS salvo indicación &middot;
+        Los precios y cantidades son tentativos y quedan sujetos a revisión de un administrador.
       </footer>
     </div>
 
-    <!-- Modal "Mis datos" (datos fiscales + direcciÃ³n de entrega) -->
+    <!-- Modal "Mis datos" (datos fiscales + dirección de entrega) -->
     <div class="modal-overlay" id="profileOverlay" hidden>
       <div class="modal" id="profileModal">
         <div class="modal-head">
           <h3>Mis datos</h3>
           <button class="modal-x" id="profileClose">&times;</button>
         </div>
-        <p style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Necesitamos estos datos para poder cotizar y despachar tu pedido. El CUIT se valida sÃ³lo por formato.</p>
+        <p style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Necesitamos estos datos para poder cotizar y despachar tu pedido. El CUIT se valida sólo por formato.</p>
         <form id="profileForm" class="form-grid">
-          <label class="full">RazÃ³n social / Nombre *<input name="company_name" required></label>
-          <label>CondiciÃ³n de IVA *
+          <label class="full">Razón social / Nombre *<input name="company_name" required></label>
+          <label>Condición de IVA *
             <select name="tax_condition" required>
               <option value="">Elegir...</option>
               <option value="responsable_inscripto">Responsable Inscripto</option>
@@ -253,15 +253,15 @@
               <input name="tax_cuit" placeholder="30-71610175-0" required style="flex:1;min-width:0">
             </div>
           </label>
-          <div class="full" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px">DirecciÃ³n de entrega (formato Andreani)</div>
+          <div class="full" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px">Dirección de entrega (formato Andreani)</div>
           <label>Calle *<input name="ship_street" required></label>
-          <label>NÃºmero *<input name="ship_number" required></label>
+          <label>Número *<input name="ship_number" required></label>
           <label>Piso<input name="ship_floor"></label>
           <label>Depto<input name="ship_apartment"></label>
-          <label>CÃ³digo postal *<input name="ship_postal_code" required></label>
+          <label>Código postal *<input name="ship_postal_code" required></label>
           <label>Localidad *<input name="ship_city" required></label>
           <label>Provincia *<input name="ship_province" required></label>
-          <label>TelÃ©fono *<input name="ship_phone" required></label>
+          <label>Teléfono *<input name="ship_phone" required></label>
           <label class="full">Referencias / notas de entrega<textarea name="ship_notes" rows="2"></textarea></label>
           <div class="full" style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
             <span id="profileMsg" style="font-size:12.5px;margin-right:auto"></span>
@@ -291,4 +291,3 @@
     <script type="module" src="/assets/catalog.js"></script>
   </body>
 </html>
-
