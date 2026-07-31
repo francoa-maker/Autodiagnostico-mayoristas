@@ -751,7 +751,13 @@ router.delete("/admin/quotes/:id", canQuotes, async (req, res) => {
 });
 
 router.get("/admin/audit", async (req, res) => {
-  const result = await pool.query(`select * from portal.audit_log order by created_at desc limit 200`);
+  const result = await pool.query(
+    `select a.*, u.display_name as actor_name, u.email as actor_email
+       from portal.audit_log a
+       left join portal.users u on u.id = a.actor_user_id
+      order by a.created_at desc
+      limit 200`
+  );
   res.json({ entries: result.rows });
 });
 
