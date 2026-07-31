@@ -3,6 +3,7 @@
 // El archivo nunca se guarda en la base.
 import { pool } from "./db.js";
 import { getStorageProvider } from "./storage/index.js";
+import { isAdminStaff } from "./permissions.js";
 
 export const DOCUMENT_TYPES = [
   "proforma", "factura", "nota_credito", "comprobante_transferencia",
@@ -124,7 +125,7 @@ export async function getDocumentForUser(id, user) {
   const doc = r.rows[0];
   if (!doc) return { error: "not_found" };
   const isOwnerVisible = doc.client_id === user.id && doc.visible_to_customer;
-  if (user.role !== "admin" && !isOwnerVisible) return { error: "forbidden" };
+  if (!isAdminStaff(user.role) && !isOwnerVisible) return { error: "forbidden" };
   return { doc };
 }
 
