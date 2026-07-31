@@ -6,6 +6,7 @@ import { recordAudit } from "../audit.js";
 import { tierForQuantity, resolveWholesaleUnit } from "../pricing.js";
 import { loadProformaContext } from "./admin.js";
 import { renderProformaHtml } from "../proforma.js";
+import { isAdminStaff } from "../permissions.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -143,7 +144,7 @@ router.get("/quotes/:id/proforma", async (req, res) => {
   if (!UUID_RE.test(String(req.params.id))) return res.status(400).send("Solicitud inválida");
   const q = await pool.query(`select user_id, quoted_at from portal.quote_requests where id = $1`, [req.params.id]);
   const row = q.rows[0];
-  if (!row || (row.user_id !== req.user.id && req.user.role !== "admin")) return res.status(404).send("Cotización no encontrada");
+  if (!row || (row.user_id !== req.user.id && !isAdminStaff(req.user.role))) return res.status(404).send("Cotización no encontrada");
   if (!row.quoted_at) return res.status(409).send("La cotización todavía no está lista. Te avisaremos cuando esté cotizada.");
   const ctx = await loadProformaContext(req.params.id, null);
   if (!ctx) return res.status(404).send("Cotización no encontrada");
@@ -159,7 +160,7 @@ router.get("/quotes/:id", async (req, res) => {
     [req.params.id]
   );
   const quote = quoteResult.rows[0];
-  if (!quote || (quote.user_id !== req.user.id && req.user.role !== "admin")) {
+  if (!quote || (quote.user_id !== req.user.id && !isAdminStaff(req.user.role))) {
     return res.status(404).json({ error: "not_found" });
   }
   const itemsResult = await pool.query(`select * from portal.quote_items where quote_request_id = $1 order by sort_order nulls last, created_at`, [req.params.id]);
