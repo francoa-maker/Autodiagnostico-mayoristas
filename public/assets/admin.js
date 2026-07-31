@@ -410,14 +410,21 @@ document.getElementById("section-dashboard").addEventListener("click", (e) => {
   if (audit) {
     const entry = auditEntries.find((item) => String(item.id) === audit.dataset.auditId);
     if (!entry) return;
-    if (entry.entity_type === "quote_request" && openAdminSection("quotes")) {
-      currentQuoteId = entry.entity_id;
-      renderQuoteEditor(currentQuoteId);
+    if (["quote_request", "quote_item"].includes(entry.entity_type) && openAdminSection("quotes")) {
+      const quoteId = entry.entity_type === "quote_request"
+        ? entry.entity_id
+        : entry.after_data?.quote_request_id || entry.before_data?.quote_request_id || entry.metadata?.quote_request_id;
+      if (quoteId) {
+        currentQuoteId = quoteId;
+        renderQuoteEditor(currentQuoteId);
+      }
     } else if (entry.entity_type === "user" && openAdminSection("clients")) {
-      document.getElementById("clientSearch").value = entry.actor_email || "";
+      document.getElementById("clientSearch").value = entry.after_data?.email || entry.before_data?.email || "";
       filterAdminRows("clients");
     } else if (entry.entity_type === "product") {
       openAdminSection("products");
+      const sku = entry.after_data?.sku || entry.before_data?.sku || "";
+      if (sku) { document.getElementById("productSearch").value = sku; loadProducts(); }
     } else if (["invoice", "payment", "echeq", "account_movement"].includes(entry.entity_type)) {
       openAdminSection("billing");
     }
