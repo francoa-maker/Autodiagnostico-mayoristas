@@ -58,7 +58,8 @@ const state = {
   search: "",
   sort: "default",
   view: "grid",
-  catExpanded: false
+  catExpanded: false,
+  compare: new Set()
 };
 const cart = new Map(); // productId -> { product, quantity }
 const CAT_INITIAL = 8;
@@ -358,6 +359,7 @@ function productCardHtml(p) {
   const one = resolveDisplay(p, "one");
   const four = resolveDisplay(p, "four");
   const eight = resolveDisplay(p, "eight");
+  const comparing = state.compare.has(p.id);
   return `<div class="pcard" data-id="${p.id}">
     <div class="img-wrap">
       <div class="cat-chip">${esc(p.category)}</div>
@@ -377,6 +379,9 @@ function productCardHtml(p) {
         <div class="price-row"><span class="pl">8u</span><span class="pv tabular">${priceCell(eight)}</span></div>
       </div>
       <div class="price-disclaimer">Precio y cantidad sujetos a confirmación.</div>
+      <button class="compare-toggle${comparing ? " active" : ""}" type="button" data-compare aria-pressed="${comparing}">
+        ${comparing ? "✓ Seleccionado para comparar" : "Comparar"}
+      </button>
       <div class="qty-row">
         <div class="qty-stepper"><button class="qminus" type="button" aria-label="Menos">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*" aria-label="Cantidad"><button class="qplus" type="button" aria-label="Más">+</button></div>
         <div class="est-price">Estimado<b class="tabular estval">${estText(p, qty)}</b></div>
@@ -447,6 +452,10 @@ function renderCart() {
   const entries = [...cart.values()];
   const count = entries.reduce((sum, e) => sum + e.quantity, 0);
   document.getElementById("cartCount").textContent = count;
+  const quick = document.getElementById("cartQuickBtn");
+  const quickCount = document.getElementById("cartQuickCount");
+  quick.hidden = !entries.length;
+  quickCount.textContent = `${count} producto${count === 1 ? "" : "s"}`;
   const total = cartEstimateTotal();
   document.getElementById("cartEstLine").textContent = "Total estimado: " + money(total);
   const itemsEl = document.getElementById("cartItems");
@@ -477,6 +486,48 @@ function renderCart() {
     .join("");
   document.getElementById("cartTotal").textContent = money(total);
   footEl.style.display = "flex";
+}
+
+function renderCompareBar() {
+  const bar = document.getElementById("compareBar");
+  const count = state.compare.size;
+  bar.hidden = count === 0;
+  document.getElementById("compareCount").textContent = String(count);
+  document.getElementById("compareOpen").disabled = count < 2;
+}
+
+function toggleCompare(id) {
+  if (state.compare.has(id)) {
+    state.compare.delete(id);
+  } else {
+    if (state.compare.size >= 3) {
+      toast("Podés comparar hasta 3 productos.", true);
+      return;
+    }
+    state.compare.add(id);
+  }
+  renderProducts();
+  renderCompareBar();
+}
+
+function openCompare() {
+  const selected = [...state.compare].map((id) => state.products.find((p) => p.id === id)).filter(Boolean);
+  if (selected.length < 2) return;
+  const cells = (render) => selected.map(render).join("");
+  document.getElementById("compareBody").innerHTML = `<div class="compare-table-wrap"><table class="compare-table">
+    <thead><tr><th>Característica</th>${cells((p) => `<th>${esc(p.name)}</th>`)}</tr></thead>
+    <tbody>
+      <tr><th>Imagen</th>${cells((p) => `<td>${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="">` : "Sin imagen"}</td>`)}</tr>
+      <tr><th>Marca</th>${cells((p) => `<td>${esc(p.brand)}</td>`)}</tr>
+      <tr><th>SKU</th>${cells((p) => `<td class="tabular">${esc(p.sku)}</td>`)}</tr>
+      <tr><th>Disponibilidad</th>${cells((p) => `<td><span class="stock-pill ${p.stockStatus}">${STOCK_LABEL[p.stockStatus]}</span></td>`)}</tr>
+      <tr><th>1 unidad</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "one"))}</b></td>`)}</tr>
+      <tr><th>4 unidades</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "four"))}</b></td>`)}</tr>
+      <tr><th>8 unidades</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "eight"))}</b></td>`)}</tr>
+      <tr><th></th>${cells((p) => `<td><button class="btn-primary sm" data-compare-add="${p.id}">Agregar a solicitud</button></td>`)}</tr>
+    </tbody>
+  </table></div>`;
+  document.getElementById("compareOverlay").hidden = false;
 }
 function setCartQty(id, qty) {
   const entry = cart.get(id);
@@ -687,6 +738,7 @@ document.getElementById("productGrid").addEventListener("click", (e) => {
   const id = card.dataset.id;
   const favBtn = e.target.closest(".fav-btn");
   if (favBtn) { toggleFavorite(id, favBtn); return; }
+  if (e.target.closest("[data-compare]")) { toggleCompare(id); return; }
   const product = window.__products.get(id);
   const qtyInput = card.querySelector(".qval");
   let qty = parseInt(qtyInput.value, 10) || 1;
@@ -749,11 +801,33 @@ document.getElementById("cartItems").addEventListener("click", (e) => {
     renderCart();
     const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
     if (card) { const b = card.querySelector(".add-btn"); b.textContent = "Agregar a solicitud"; b.classList.remove("added"); }
+    toast("Producto quitado de tu solicitud.");
     return;
   }
   if (!entry) return;
   if (e.target.closest(".ci-minus")) setCartQty(id, entry.quantity - 1);
   else if (e.target.closest(".ci-plus")) setCartQty(id, entry.quantity + 1);
+});
+document.getElementById("cartQuickBtn").addEventListener("click", () => document.getElementById("cartBtn").click());
+document.getElementById("compareOpen").addEventListener("click", openCompare);
+document.getElementById("compareClear").addEventListener("click", () => {
+  state.compare.clear();
+  renderCompareBar();
+  renderProducts();
+});
+document.getElementById("compareClose").addEventListener("click", () => (document.getElementById("compareOverlay").hidden = true));
+document.getElementById("compareOverlay").addEventListener("click", (e) => {
+  if (e.target.id === "compareOverlay") e.currentTarget.hidden = true;
+});
+document.getElementById("compareBody").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-compare-add]");
+  if (!btn) return;
+  const product = state.products.find((p) => p.id === btn.dataset.compareAdd);
+  if (!product) return;
+  const current = cart.get(product.id);
+  cart.set(product.id, { product, quantity: current?.quantity || 1 });
+  renderCart();
+  toast("Producto agregado a tu solicitud.");
 });
 document.getElementById("cartItems").addEventListener("change", (e) => {
   const inp = e.target.closest(".ci-qval");
@@ -777,6 +851,7 @@ document.getElementById("submitQuoteBtn").addEventListener("click", async (e) =>
     document.getElementById("cartItems").innerHTML = `<div class="cart-success"><div class="ok-icon">&#10003;</div>
       <p><strong>Solicitud #${quote.requestNumber} enviada.</strong><br>Un administrador la va a revisar y te confirmará precios y disponibilidad.</p></div>`;
     renderProducts(); // limpia los "Agregado ✓" de las tarjetas
+    toast(`Solicitud #${quote.requestNumber} enviada correctamente.`);
   } catch (error) {
     alert("No se pudo enviar la solicitud: " + error.message);
   } finally {
@@ -959,17 +1034,40 @@ async function openRequests(mode) {
               <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
               <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
               <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}<button class="link-btn" data-repeat="${q.id}">Repetir solicitud</button>${finState.financial ? ` <button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
             </tr>`
           )
           .join("")}</tbody></table></div>`;
     }
     body.querySelectorAll("[data-proforma]").forEach((b) => b.addEventListener("click", () => window.open(`/api/quotes/${b.dataset.proforma}/proforma`, "_blank")));
+    body.querySelectorAll("[data-repeat]").forEach((b) => b.addEventListener("click", () => repeatRequest(b.dataset.repeat)));
     body.querySelectorAll("[data-fin]").forEach((b) => b.addEventListener("click", () => openOrderFinance(b.dataset.fin, b.dataset.num, mode)));
     const stmt = document.getElementById("stmtDownload");
     if (stmt) stmt.addEventListener("click", () => window.open("/api/account/statement", "_blank"));
   } catch (error) {
     body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${esc(error.message)}</div>`;
+  }
+}
+
+async function repeatRequest(id) {
+  try {
+    const { items } = await fetchJson(`/api/quotes/${id}`);
+    let added = 0;
+    let unavailable = 0;
+    for (const item of items || []) {
+      if (!item.product_id || (item.line_type && item.line_type !== "product")) continue;
+      const product = state.products.find((p) => p.id === item.product_id);
+      if (!product) { unavailable += 1; continue; }
+      cart.set(product.id, { product, quantity: Math.max(1, Number(item.quantity) || 1) });
+      added += 1;
+    }
+    renderCart();
+    renderProducts();
+    closeRequests();
+    document.getElementById("cartBtn").click();
+    toast(`${added} producto${added === 1 ? "" : "s"} agregado${added === 1 ? "" : "s"}${unavailable ? ` · ${unavailable} ya no disponible${unavailable === 1 ? "" : "s"}` : ""}.`);
+  } catch (error) {
+    toast("No se pudo repetir la solicitud.", true);
   }
 }
 

@@ -15,6 +15,9 @@ function timeAgo(iso) {
 function esc(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+function norm(value) {
+  return String(value ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
 const AUDIT_ACTION_INFO = {
   "user.create": ["Se agregó un cliente", "👤"],
@@ -131,24 +134,31 @@ async function loadMe() {
   CAN_MANAGE_QUOTES = ["superadmin", "sales_billing", "admin"].includes(user.role);
   document.getElementById("adminName").textContent = user.display_name || user.email;
   document.getElementById("adminEmail").textContent = user.email;
+  const subtitle = document.getElementById("dashboardSubtitle");
+  if (subtitle) {
+    subtitle.textContent = roleOf(user) === "superadmin"
+      ? "Panorama comercial, clientes, stock y operación"
+      : "Prioridades de ventas, cotizaciones y facturación";
+  }
 }
 
 // ==================== Dashboard ====================
 
 function renderKpis({ totalProducts, withStock, withoutStock, pendingQuotes, pendingUsers }) {
   const items = [
-    { label: "Productos del portal", value: totalProducts, icon: "&#128230;", bg: "var(--brand-red-soft)", fg: "var(--brand-red)" },
-    { label: "Con stock", value: withStock, icon: "&#10003;", bg: "var(--success-soft)", fg: "var(--success)", sub: totalProducts ? `${Math.round((withStock / totalProducts) * 100)}% del total` : "" },
-    { label: "Sin stock", value: withoutStock, icon: "&#9888;", bg: "var(--danger-soft)", fg: "var(--danger)" },
-    { label: "Cotizaciones pendientes", value: pendingQuotes, icon: "&#128172;", bg: "var(--info-soft)", fg: "var(--info)" },
-    { label: "Usuarios pendientes", value: pendingUsers, icon: "&#128100;", bg: "var(--warning-soft)", fg: "var(--warning)" }
+    { label: "Productos del portal", value: totalProducts, icon: "&#128230;", bg: "var(--brand-red-soft)", fg: "var(--brand-red)", section: "products" },
+    { label: "Con stock", value: withStock, icon: "&#10003;", bg: "var(--success-soft)", fg: "var(--success)", sub: totalProducts ? `${Math.round((withStock / totalProducts) * 100)}% del total` : "", section: "catalog" },
+    { label: "Sin stock", value: withoutStock, icon: "&#9888;", bg: "var(--danger-soft)", fg: "var(--danger)", section: "catalog", quick: "low-stock" },
+    { label: "Cotizaciones pendientes", value: pendingQuotes, icon: "&#128172;", bg: "var(--info-soft)", fg: "var(--info)", section: "quotes", filter: "cotizacion" },
+    { label: "Usuarios pendientes", value: pendingUsers, icon: "&#128100;", bg: "var(--warning-soft)", fg: "var(--warning)", section: "clients", filter: "pending" }
   ];
   document.getElementById("kpiRow").innerHTML = items
     .map(
-      (item) => `<div class="kpi-card">
+      (item) => `<button class="kpi-card kpi-link" type="button" data-kpi-section="${item.section}" data-kpi-filter="${item.filter || ""}" data-kpi-quick="${item.quick || ""}">
         <div class="kpi-icon" style="background:${item.bg};color:${item.fg}">${item.icon}</div>
         <div><div class="kl">${item.label}</div><div class="kv tabular">${item.value}</div>${item.sub ? `<div class="ksub" style="color:${item.fg}">${item.sub}</div>` : ""}</div>
-      </div>`
+        <span class="kpi-arrow" aria-hidden="true">→</span>
+      </button>`
     )
     .join("");
 }
@@ -230,35 +240,76 @@ async function loadRecentQuotes() {
     quotes
       .slice(0, 6)
       .map(
-        (q) => `<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f0f1f3;font-size:12.5px">
+        (q) => `<button class="recent-quote-link" type="button" data-recent-quote="${q.id}">
           <span><strong>#${q.request_number}</strong> · ${esc(q.display_name || q.email)}</span>
           <span class="tabular" style="color:var(--muted)">${money(q.quoted_total ?? q.displayed_subtotal)}</span>
-        </div>`
+        </button>`
       )
       .join("") || '<div class="empty-row">Todavía no hay cotizaciones.</div>';
   return quotes.filter((q) => normStatus(q.status) === "cotizacion" && !q.assigned_admin_id).length;
 }
 
+let auditEntries = [];
+function auditGroup(entry) {
+  const action = String(entry.action || "");
+  if (entry.entity_type === "user" || action.startsWith("user.")) return "user";
+  if (["quote_request", "quote_item"].includes(entry.entity_type) || action.startsWith("quote.") || action.startsWith("order.")) return "quote";
+  if (entry.entity_type === "product" || action.startsWith("product.") || action.startsWith("price.") || action.startsWith("catalog.")) return "product";
+  if (["invoice", "payment", "echeq", "account_movement"].includes(entry.entity_type) || /^(invoice|payment|echeq|account)\./.test(action)) return "finance";
+  return "other";
+}
+
+function renderAudit() {
+  const el = document.getElementById("auditFeed");
+  const type = document.getElementById("auditTypeFilter")?.value || "";
+  const actor = document.getElementById("auditActorFilter")?.value || "";
+  const date = document.getElementById("auditDateFilter")?.value || "";
+  const now = Date.now();
+  const entries = auditEntries.filter((entry) => {
+    if (type && auditGroup(entry) !== type) return false;
+    if (actor && auditActor(entry) !== actor) return false;
+    if (date === "today" && new Date(entry.created_at).toDateString() !== new Date().toDateString()) return false;
+    if (/^\d+$/.test(date) && now - new Date(entry.created_at).getTime() > Number(date) * 86400000) return false;
+    return true;
+  });
+  el.innerHTML = entries.slice(0, 30).map((entry) => {
+    const info = auditInfo(entry.action);
+    const entity = AUDIT_ENTITY_LABELS[entry.entity_type] || "Registro";
+    const exactDate = entry.created_at ? new Date(entry.created_at).toLocaleString("es-AR") : "";
+    const canOpen = ["user", "product", "quote_request", "quote_item", "invoice", "payment", "echeq"].includes(entry.entity_type);
+    return `<button class="audit-item${canOpen ? " actionable" : ""}" type="button" data-audit-id="${entry.id}" ${canOpen ? "" : "disabled"}>
+      <span class="audit-icon" aria-hidden="true">${info.icon}</span>
+      <span class="audit-copy">
+        <strong>${esc(info.label)}</strong>
+        <span>${esc(entity)} · por ${esc(auditActor(entry))}</span>
+      </span>
+      <time datetime="${esc(entry.created_at)}" title="${esc(exactDate)}">${timeAgo(entry.created_at)}</time>
+    </button>`;
+  }).join("") || '<div class="empty-row">No hay actividad para esos filtros.</div>';
+}
+
 async function loadAudit() {
   const { entries } = await fetchJson("/api/admin/audit");
-  const el = document.getElementById("auditFeed");
-  el.innerHTML =
-    entries
-      .slice(0, 8)
-      .map((entry) => {
-        const info = auditInfo(entry.action);
-        const entity = AUDIT_ENTITY_LABELS[entry.entity_type] || "Registro";
-        const exactDate = entry.created_at ? new Date(entry.created_at).toLocaleString("es-AR") : "";
-        return `<div class="audit-item">
-          <span class="audit-icon" aria-hidden="true">${info.icon}</span>
-          <span class="audit-copy">
-            <strong>${esc(info.label)}</strong>
-            <span>${esc(entity)} · por ${esc(auditActor(entry))}</span>
-          </span>
-          <time datetime="${esc(entry.created_at)}" title="${esc(exactDate)}">${timeAgo(entry.created_at)}</time>
-        </div>`;
-      })
-      .join("") || '<div class="empty-row">Sin actividad reciente.</div>';
+  auditEntries = entries || [];
+  const actors = [...new Set(auditEntries.map(auditActor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const actorSelect = document.getElementById("auditActorFilter");
+  actorSelect.innerHTML = '<option value="">Todos los usuarios</option>' + actors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  renderAudit();
+}
+
+function renderAttention({ pendingUsers, pendingQuotes, lowStock, billingDue = null }) {
+  const entries = [
+    { count: pendingUsers, label: "clientes esperan aprobación", action: "Revisar clientes", section: "clients", filter: "pending", tone: "warning" },
+    { count: pendingQuotes, label: "cotizaciones nuevas sin asignar", action: "Revisar cotizaciones", section: "quotes", filter: "cotizacion", tone: "info" },
+    { count: lowStock, label: "productos con poco o sin stock", action: "Revisar catálogo", section: "catalog", quick: "low-stock", tone: "danger" }
+  ];
+  if (billingDue != null) entries.push({ count: billingDue, label: "pedidos pendientes de cobro", action: "Ir a facturación", section: "billing", filter: "por_cobrar", tone: "finance" });
+  const total = entries.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  document.getElementById("attentionCount").textContent = `${total} pendiente${total === 1 ? "" : "s"}`;
+  document.getElementById("attentionGrid").innerHTML = entries.map((item) => `<button class="attention-item ${item.tone}" type="button"
+    data-kpi-section="${item.section}" data-kpi-filter="${item.filter || ""}" data-kpi-quick="${item.quick || ""}">
+      <strong>${item.count}</strong><span>${item.label}</span><small>${item.action} →</small>
+    </button>`).join("");
 }
 
 async function refreshKpis() {
@@ -276,6 +327,12 @@ async function refreshKpis() {
     pendingQuotes: pendingQuoteCount,
     pendingUsers: pendingUserCount
   });
+  let billingDue = null;
+  try {
+    const { orders } = await fetchJson("/api/admin/finance/orders");
+    billingDue = orders.filter((order) => order.payState !== "pagada").length;
+  } catch { /* el módulo o el rol pueden no tener acceso */ }
+  renderAttention({ pendingUsers: pendingUserCount, pendingQuotes: pendingQuoteCount, lowStock: withoutStockCount, billingDue });
 }
 
 // ==================== Modal helper ====================
@@ -307,16 +364,121 @@ const sectionLoaders = {
 };
 const loadedSections = new Set();
 
-document.getElementById("adminNav").addEventListener("click", (e) => {
-  const link = e.target.closest("a[data-section]");
-  if (!link) return;
+function openAdminSection(section, { reload = false } = {}) {
+  const link = document.querySelector(`#adminNav a[data-section="${section}"]`);
+  if (!link || link.style.display === "none") return false;
   document.querySelectorAll("#adminNav a").forEach((a) => a.classList.toggle("active", a === link));
-  document.querySelectorAll(".admin-section").forEach((s) => (s.hidden = s.id !== `section-${link.dataset.section}`));
-  const loader = sectionLoaders[link.dataset.section];
-  if (loader && !loadedSections.has(link.dataset.section)) {
-    loadedSections.add(link.dataset.section);
+  document.querySelectorAll(".admin-section").forEach((s) => (s.hidden = s.id !== `section-${section}`));
+  const loader = sectionLoaders[section];
+  if (loader && (reload || !loadedSections.has(section))) {
+    loadedSections.add(section);
     loader();
   }
+  return true;
+}
+
+document.getElementById("adminNav").addEventListener("click", (e) => {
+  const link = e.target.closest("a[data-section]");
+  if (link) openAdminSection(link.dataset.section);
+});
+
+function followDashboardLink(button) {
+  const section = button.dataset.kpiSection;
+  const filter = button.dataset.kpiFilter;
+  if (!openAdminSection(section)) return;
+  if (section === "clients" && filter) {
+    document.getElementById("clientStatusFilter").value = filter;
+    loadClients();
+  } else if (section === "quotes" && filter) {
+    document.getElementById("quoteStatusFilter").value = filter;
+    loadQuotes();
+  } else if (section === "billing" && filter) {
+    billingFilter = filter;
+    document.getElementById("billingFilter").value = filter;
+    renderBillingTable();
+  }
+}
+document.getElementById("section-dashboard").addEventListener("click", (e) => {
+  const jump = e.target.closest("[data-kpi-section]");
+  if (jump) { followDashboardLink(jump); return; }
+  const recent = e.target.closest("[data-recent-quote]");
+  if (recent && openAdminSection("quotes")) {
+    currentQuoteId = recent.dataset.recentQuote;
+    renderQuoteEditor(currentQuoteId);
+  }
+  const audit = e.target.closest("[data-audit-id]");
+  if (audit) {
+    const entry = auditEntries.find((item) => String(item.id) === audit.dataset.auditId);
+    if (!entry) return;
+    if (["quote_request", "quote_item"].includes(entry.entity_type) && openAdminSection("quotes")) {
+      const quoteId = entry.entity_type === "quote_request"
+        ? entry.entity_id
+        : entry.after_data?.quote_request_id || entry.before_data?.quote_request_id || entry.metadata?.quote_request_id;
+      if (quoteId) {
+        currentQuoteId = quoteId;
+        renderQuoteEditor(currentQuoteId);
+      }
+    } else if (entry.entity_type === "user" && openAdminSection("clients")) {
+      document.getElementById("clientSearch").value = entry.after_data?.email || entry.before_data?.email || "";
+      filterAdminRows("clients");
+    } else if (entry.entity_type === "product") {
+      openAdminSection("products");
+      const sku = entry.after_data?.sku || entry.before_data?.sku || "";
+      if (sku) { document.getElementById("productSearch").value = sku; loadProducts(); }
+    } else if (["invoice", "payment", "echeq", "account_movement"].includes(entry.entity_type)) {
+      openAdminSection("billing");
+    }
+  }
+});
+["auditTypeFilter", "auditActorFilter", "auditDateFilter"].forEach((id) => document.getElementById(id)?.addEventListener("change", renderAudit));
+
+let globalSearchTimer;
+async function performGlobalSearch() {
+  const input = document.getElementById("adminGlobalSearch");
+  const results = document.getElementById("adminGlobalResults");
+  const query = input.value.trim();
+  if (query.length < 2) { results.hidden = true; results.innerHTML = ""; return; }
+  results.hidden = false;
+  results.innerHTML = '<div class="global-search-empty">Buscando...</div>';
+  const q = norm(query);
+  const found = [];
+  const jobs = [];
+  if (allowedSections().includes("clients")) jobs.push(fetchJson("/api/admin/users").then(({ users }) => {
+    users.filter((u) => norm(`${u.client_code} ${u.email} ${u.display_name} ${u.company_name}`).includes(q)).slice(0, 4)
+      .forEach((u) => found.push({ type: "Cliente", title: u.company_name || u.display_name || u.email, meta: `${u.client_code || ""} · ${u.email}`, section: "clients", search: u.email }));
+  }));
+  if (allowedSections().includes("quotes")) jobs.push(fetchJson("/api/admin/quotes").then(({ quotes }) => {
+    quotes.filter((item) => norm(`${item.request_number} ${item.display_name} ${item.company_name} ${item.email}`).includes(q)).slice(0, 4)
+      .forEach((item) => found.push({ type: "Cotización", title: `#${item.request_number} · ${item.company_name || item.display_name || item.email}`, meta: QUOTE_STATUS_LABEL[item.status] || item.status, section: "quotes", id: item.id }));
+  }));
+  if (allowedSections().includes("products")) jobs.push(fetchJson(`/api/admin/products?search=${encodeURIComponent(query)}`).then(({ products }) => {
+    products.slice(0, 4).forEach((p) => found.push({ type: "Producto", title: p.name, meta: `${p.sku} · ${p.brand}`, section: "products", search: p.sku }));
+  }));
+  if (allowedSections().includes("billing")) jobs.push(fetchJson("/api/admin/finance/orders").then(({ orders }) => {
+    orders.filter((o) => norm(`${o.request_number} ${o.client_code} ${o.company_name} ${o.display_name}`).includes(q)).slice(0, 4)
+      .forEach((o) => found.push({ type: "Pedido", title: `#${o.request_number} · ${o.company_name || o.display_name}`, meta: BILLING_STATE[o.payState]?.label || o.payState, section: "billing", id: o.id }));
+  }).catch(() => {}));
+  await Promise.all(jobs);
+  results.innerHTML = found.slice(0, 12).map((item, i) => `<button type="button" data-global-result="${i}">
+    <span class="global-result-type">${item.type}</span><strong>${esc(item.title)}</strong><small>${esc(item.meta || "")}</small>
+  </button>`).join("") || '<div class="global-search-empty">No encontramos clientes, pedidos ni productos.</div>';
+  results.querySelectorAll("[data-global-result]").forEach((button) => button.addEventListener("click", () => {
+    const item = found[Number(button.dataset.globalResult)];
+    results.hidden = true;
+    input.value = "";
+    openAdminSection(item.section);
+    if (item.section === "clients") { document.getElementById("clientSearch").value = item.search; filterAdminRows("clients"); }
+    if (item.section === "products") { document.getElementById("productSearch").value = item.search; loadProducts(); }
+    if (item.section === "quotes") { currentQuoteId = item.id; renderQuoteEditor(item.id); }
+    if (item.section === "billing") { renderQuoteEditor(item.id, "billingDetailBody"); }
+  }));
+}
+document.getElementById("adminGlobalSearch").addEventListener("input", () => {
+  clearTimeout(globalSearchTimer);
+  globalSearchTimer = setTimeout(performGlobalSearch, 250);
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".admin-global-search")) document.getElementById("adminGlobalResults").hidden = true;
 });
 
 // ==================== Productos y precios ====================
@@ -929,6 +1091,73 @@ function roleSelectHtml(current) {
 const STATUS_LABEL = { pending: "Pendiente", approved: "Aprobado", rejected: "Rechazado", blocked: "Bloqueado" };
 const STATUS_PILL = { pending: "pending", approved: "approved", rejected: "rejected", blocked: "blocked" };
 
+const VIEW_STORAGE_KEY = "portal-admin-saved-views-v1";
+function readSavedViews() {
+  try { return JSON.parse(localStorage.getItem(VIEW_STORAGE_KEY) || "{}"); } catch { return {}; }
+}
+function writeSavedViews(views) {
+  try { localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(views)); } catch { /* preferencias opcionales */ }
+}
+function tableForView(name) {
+  return document.getElementById(name === "clients" ? "clientsBody" : "quotesBody")?.closest("table");
+}
+function applyColumnPrefs(name) {
+  const table = tableForView(name);
+  const menu = document.querySelector(`[data-view-menu="${name}"]`);
+  if (!table || !menu) return;
+  menu.querySelectorAll("[data-col]").forEach((checkbox) => {
+    const index = Number(checkbox.dataset.col);
+    table.querySelectorAll("tr").forEach((row) => {
+      const cell = row.children[index];
+      if (cell) cell.hidden = !checkbox.checked;
+    });
+  });
+}
+function filterAdminRows(name) {
+  const input = document.getElementById(name === "clients" ? "clientSearch" : name === "quotes" ? "quoteSearch" : "billingSearch");
+  const body = name === "clients" ? document.getElementById("clientsBody") : name === "quotes" ? document.getElementById("quotesBody") : document.querySelector("#billingOrders tbody");
+  if (!body) return;
+  const q = norm(input?.value || "");
+  body.querySelectorAll("tr").forEach((row) => {
+    if (row.querySelector(".empty-row")) return;
+    row.hidden = !!q && !norm(row.textContent).includes(q);
+  });
+}
+function saveCurrentView(name) {
+  const views = readSavedViews();
+  if (name === "clients") {
+    views.clients = { search: document.getElementById("clientSearch").value, month: document.getElementById("clientMonthFilter").value, status: document.getElementById("clientStatusFilter").value };
+  } else if (name === "quotes") {
+    views.quotes = { search: document.getElementById("quoteSearch").value, month: document.getElementById("quoteMonthFilter").value, status: document.getElementById("quoteStatusFilter").value };
+  } else if (name === "billing") {
+    views.billing = { search: document.getElementById("billingSearch").value, filter: document.getElementById("billingFilter").value };
+  }
+  const menu = document.querySelector(`[data-view-menu="${name}"]`);
+  if (menu) views[name].columns = [...menu.querySelectorAll("[data-col]")].filter((c) => c.checked).map((c) => Number(c.dataset.col));
+  writeSavedViews(views);
+  toast("Vista guardada para tu próxima visita.");
+}
+function restoreSavedViews() {
+  const views = readSavedViews();
+  if (views.clients) {
+    document.getElementById("clientSearch").value = views.clients.search || "";
+    document.getElementById("clientStatusFilter").value = views.clients.status || "";
+  }
+  if (views.quotes) {
+    document.getElementById("quoteSearch").value = views.quotes.search || "";
+    document.getElementById("quoteStatusFilter").value = views.quotes.status || "";
+  }
+  if (views.billing) {
+    document.getElementById("billingSearch").value = views.billing.search || "";
+    document.getElementById("billingFilter").value = views.billing.filter || "all";
+    billingFilter = views.billing.filter || "all";
+  }
+  ["clients", "quotes"].forEach((name) => {
+    if (!views[name]?.columns) return;
+    document.querySelectorAll(`[data-view-menu="${name}"] [data-col]`).forEach((c) => (c.checked = views[name].columns.includes(Number(c.dataset.col))));
+  });
+}
+
 async function loadClients() {
   const status = document.getElementById("clientStatusFilter").value;
   const month = document.getElementById("clientMonthFilter")?.value || "";
@@ -959,10 +1188,13 @@ async function loadClients() {
         </tr>`
       )
       .join("") || '<tr><td colspan="9" class="empty-row">No hay usuarios con ese filtro.</td></tr>';
+  filterAdminRows("clients");
+  applyColumnPrefs("clients");
 }
 
 document.getElementById("clientStatusFilter").addEventListener("change", loadClients);
 document.getElementById("clientMonthFilter").addEventListener("change", loadClients);
+document.getElementById("clientSearch").addEventListener("input", () => filterAdminRows("clients"));
 
 // "Ver compras" (guía §11.1): modal con los pedidos del cliente + pill de estado
 // y el stepper Cotización→…→Despachado por cada uno (reusa quoteStepper/pills).
@@ -1230,7 +1462,9 @@ function monthLabel(ym) {
 // Rellena un <select> de meses conservando la opción "Todos" y la selección.
 async function populateMonths(selectId, url) {
   const sel = document.getElementById(selectId);
-  const current = sel.value;
+  const saved = readSavedViews();
+  const savedMonth = selectId === "clientMonthFilter" ? saved.clients?.month : saved.quotes?.month;
+  const current = sel.value || savedMonth || "";
   const { months } = await fetchJson(url);
   sel.innerHTML = '<option value="">Todos los meses</option>' + months.map((m) => `<option value="${m}">${monthLabel(m)}</option>`).join("");
   if (current && months.includes(current)) sel.value = current;
@@ -1257,6 +1491,8 @@ async function loadQuotes() {
         </tr>`
       )
       .join("") || '<tr><td colspan="6" class="empty-row">No hay cotizaciones con ese filtro.</td></tr>';
+  filterAdminRows("quotes");
+  applyColumnPrefs("quotes");
 }
 
 document.getElementById("quotesBody").addEventListener("click", async (e) => {
@@ -1291,6 +1527,9 @@ document.getElementById("quotesBody").addEventListener("click", async (e) => {
 
 document.getElementById("quoteMonthFilter").addEventListener("change", loadQuotes);
 document.getElementById("quoteStatusFilter").addEventListener("change", loadQuotes);
+document.getElementById("quoteSearch").addEventListener("input", () => filterAdminRows("quotes"));
+document.querySelectorAll("[data-view-menu] [data-col]").forEach((checkbox) => checkbox.addEventListener("change", () => applyColumnPrefs(checkbox.closest("[data-view-menu]").dataset.viewMenu)));
+document.querySelectorAll("[data-save-view]").forEach((button) => button.addEventListener("click", () => saveCurrentView(button.dataset.saveView)));
 
 function itemUnit(it) {
   if (it.quoted_unit_price != null) return Number(it.quoted_unit_price);
@@ -1414,13 +1653,16 @@ function annotationRow(it, canEdit) {
 }
 
 async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
-  const canEditQuote = CAN_MANAGE_QUOTES; // ventas/superadmin editan; administración: solo finanzas (lectura)
+  const isBilling = targetId === "billingDetailBody";
+  // En Facturación el pedido se muestra como contexto de solo lectura: evita
+  // mezclar la edición comercial con las tareas de facturar y cobrar.
+  const canEditQuote = CAN_MANAGE_QUOTES && !isBilling;
   // Sólo un editor a la vez: limpio el otro contenedor para no dejar IDs duplicados.
   ["quoteDetailBody", "billingDetailBody"].forEach((tid) => {
     if (tid !== targetId) { const el = document.getElementById(tid); if (el) { el.className = "empty-row"; el.textContent = "Elegí un pedido de la lista."; } }
   });
   const panel = document.getElementById(targetId);
-  panel.className = "";
+  panel.className = isBilling ? "billing-detail" : "";
   panel.innerHTML = "Cargando...";
   const { quote, items } = await fetchJson(`/api/admin/quotes/${id}`);
   const cur = quote.currency || "ARS";
@@ -1475,10 +1717,27 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
     </div>
 
-    ${quoteStepper(quote.status)}
+    ${isBilling ? `<div class="billing-flow" aria-label="Flujo de facturación">
+      <span class="done">1 · Pedido confirmado</span>
+      <span class="current">2 · Facturar</span>
+      <span>3 · Registrar cobro</span>
+      <span>4 · Autorizar logística</span>
+    </div>
+    <div class="billing-next-action">
+      <div><small>Próxima acción recomendada</small><strong id="billingNextAction">Revisar el estado financiero del pedido</strong></div>
+      <div class="billing-smart-stats" id="billingSmartStats">
+        <span><small>Total</small><b>${money(staticTotals.total, cur)}</b></span>
+        <span><small>Facturado</small><b>—</b></span>
+        <span><small>Cobrado</small><b>—</b></span>
+        <span><small>Saldo</small><b>—</b></span>
+      </div>
+    </div>` : quoteStepper(quote.status)}
 
-    ${quote.customer_notes ? `<p style="font-size:12.5px;color:var(--muted);margin-top:10px"><b>Notas del cliente:</b> ${esc(quote.customer_notes)}</p>` : ""}
+    ${quote.customer_notes && !isBilling ? `<p style="font-size:12.5px;color:var(--muted);margin-top:10px"><b>Notas del cliente:</b> ${esc(quote.customer_notes)}</p>` : ""}
 
+    ${isBilling ? `<details class="billing-order-context">
+      <summary><span>Ver productos y datos del pedido</span><small>${items.filter((item) => (item.line_type || "product") === "product").length} productos · ${money(staticTotals.total, cur)}</small></summary>
+      ${quote.customer_notes ? `<p class="billing-customer-note"><b>Nota del cliente:</b> ${esc(quote.customer_notes)}</p>` : ""}` : ""}
     <div style="overflow-x:auto;margin-top:14px">
       <table>
         <thead><tr>${canEditQuote ? '<th style="width:22px"></th>' : ""}<th>Producto</th><th${canEditQuote ? "" : ' class="num"'}>Cant.</th><th${canEditQuote ? "" : ' class="num"'}>IVA</th><th${canEditQuote ? "" : ' class="num"'}>Precio unit.</th><th class="num">Importe</th>${canEditQuote ? "<th></th>" : ""}</tr></thead>
@@ -1513,6 +1772,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         <div class="grand"><span>Total</span><b id="qTotal">${money(Math.round((staticTotals.total + Number.EPSILON) * 100) / 100, cur)}</b></div>
       </div>
     </div>
+    ${isBilling ? "</details>" : ""}
 
     ${canEditQuote ? `<div class="form-grid" style="margin-top:14px">
       <label>Términos de pago<input id="qPaymentTerms" value="${esc(quote.payment_terms || "")}" placeholder="Ej: 30 días" class="admin-search"></label>
@@ -1543,7 +1803,8 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         : `Para enviar desde tu casilla necesitás <a href="/auth/google/gmail">conectar tu Gmail</a> una vez.`}
     </div>` : ""}
 
-    <div id="financeSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+    ${isBilling ? '<div class="billing-finance-grid">' : ""}
+    <div id="financeSection" class="${isBilling ? "finance-card finance-card-primary" : ""}" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Facturación</h4>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <label style="font-size:12px;display:flex;align-items:center;gap:5px">Condición de pago
@@ -1577,7 +1838,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </details>
     </div>
 
-    <div id="accountSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+    <div id="accountSection" class="${isBilling ? "finance-card" : ""}" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Cuenta corriente del cliente <button class="link-btn" id="stmtBtn" type="button" style="font-weight:400;margin-left:8px">Ver estado de cuenta</button></h4>
       <div id="accountBalance" style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-bottom:10px"></div>
       <div id="accountMovements" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
@@ -1592,7 +1853,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </details>
     </div>
 
-    <div id="paymentsSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+    <div id="paymentsSection" class="${isBilling ? "finance-card finance-card-primary" : ""}" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Pagos</h4>
       <div id="paymentsList" style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Cargando pagos...</div>
       <details>
@@ -1608,7 +1869,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </details>
     </div>
 
-    <div id="echeqSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+    <div id="echeqSection" class="${isBilling ? "finance-card" : ""}" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">eCheqs</h4>
       <div id="echeqList" style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Cargando eCheqs...</div>
       <details>
@@ -1625,8 +1886,9 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         </div>
       </details>
     </div>
+    ${isBilling ? "</div>" : ""}
 
-    <div id="logisticsSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+    <div id="logisticsSection" class="${isBilling ? "finance-card logistics-authorization-card" : ""}" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
       <h4 style="margin:0 0 8px">Resumen y autorización a Logística</h4>
       <div id="finSummary" style="display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px"></div>
       <div id="authState" style="font-size:12.5px;margin-bottom:8px"></div>
@@ -1638,13 +1900,13 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
       </div>
     </div>
 
-    <div id="serialSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
-      <h4 style="margin:0 0 8px">Números de serie <span style="font-weight:400;color:var(--muted);font-size:12px">(trazabilidad, solo lectura)</span></h4>
+    <${isBilling ? "details" : "div"} id="serialSection" class="${isBilling ? "billing-secondary" : ""}" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      ${isBilling ? '<summary>Números de serie <small>trazabilidad, solo lectura</small></summary>' : '<h4 style="margin:0 0 8px">Números de serie <span style="font-weight:400;color:var(--muted);font-size:12px">(trazabilidad, solo lectura)</span></h4>'}
       <div id="serialList" style="font-size:12.5px;color:var(--muted)">Cargando...</div>
-    </div>
+    </${isBilling ? "details" : "div"}>
 
-    <div id="docsSection" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
-      <h4 style="margin:0 0 8px">Documentos del pedido</h4>
+    <${isBilling ? "details" : "div"} id="docsSection" class="${isBilling ? "billing-secondary" : ""}" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border,#eee)">
+      ${isBilling ? "<summary>Documentos del pedido <small>facturas, comprobantes y remitos</small></summary>" : '<h4 style="margin:0 0 8px">Documentos del pedido</h4>'}
       <div id="docsStatusNote" style="font-size:11.5px;color:var(--muted);margin-bottom:8px"></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <select id="docType" class="admin-search" style="min-width:180px">
@@ -1664,8 +1926,9 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         <span id="docMsg" style="font-size:12px"></span>
       </div>
       <div id="docsList" style="font-size:12.5px;color:var(--muted)">Cargando documentos...</div>
-    </div>
+    </${isBilling ? "details" : "div"}>
 
+    ${isBilling ? '<details class="billing-secondary"><summary>Actividad y notas internas <small>historial del pedido</small></summary>' : ""}
     <div id="quoteChatter" class="chatter" style="margin-top:14px">
       <div class="cbar">Actividad</div>
       <div class="tl" id="quoteTimeline"><div class="empty-row">Cargando actividad…</div></div>
@@ -1674,6 +1937,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         <div class="ctools"><button class="btn-primary sm" id="chatterSend" type="button">Agregar nota</button><span id="chatterMsg" style="font-size:12px"></span></div>
       </div>` : ""}
     </div>
+    ${isBilling ? "</details>" : ""}
   `;
 
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -1854,6 +2118,7 @@ async function wireFinance(id, quote) {
       document.getElementById("finFile").value = "";
       instBox.innerHTML = finInstallmentRow(new Date().toISOString().slice(0, 10), "");
       loadInvoices(id);
+      loadFinSummary(id);
     } catch (error) {
       msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo cargar: " + (error.body?.detail || error.message);
     }
@@ -1925,6 +2190,26 @@ async function loadFinSummary(id) {
     st.innerHTML = summary.authorized
       ? `✅ <b>Autorizado para logística</b> por ${esc(summary.authorizedByName || "")} · ${AUTH_REASON_LABEL[summary.authorizationReason] || summary.authorizationReason || ""}${summary.authorizationNotes ? " · " + esc(summary.authorizationNotes) : ""} <span style="color:var(--muted)">(estado: ${esc(summary.logisticsStatus)})</span>`
       : `<span style="color:var(--muted)">Pedido NO autorizado a logística todavía. Estado de pago: <b>${esc(summary.paymentState)}</b>.</span>`;
+    const smart = document.getElementById("billingSmartStats");
+    const next = document.getElementById("billingNextAction");
+    const flow = document.querySelectorAll(".billing-flow span");
+    if (smart) {
+      smart.innerHTML = `
+        <span><small>Total</small><b>${money(summary.operationTotal)}</b></span>
+        <span><small>Facturado</small><b>${money(summary.invoiced)}</b></span>
+        <span><small>Cobrado</small><b>${money(summary.accredited)}</b></span>
+        <span class="${summary.orderBalance > 0 ? "has-balance" : "settled"}"><small>Saldo</small><b>${money(summary.orderBalance)}</b></span>`;
+    }
+    let stage = 1;
+    let nextText = "Cargar la factura del pedido";
+    if (Number(summary.invoiced) > 0) { stage = 2; nextText = "Registrar o confirmar el cobro pendiente"; }
+    if (Number(summary.orderBalance) <= 0 && Number(summary.invoiced) > 0) { stage = 3; nextText = "Autorizar el pedido para Logística"; }
+    if (summary.authorized) { stage = 4; nextText = "Pedido autorizado: seguimiento en Logística"; }
+    if (next) next.textContent = nextText;
+    flow.forEach((step, index) => {
+      step.classList.toggle("done", index < stage);
+      step.classList.toggle("current", index === stage && stage < flow.length);
+    });
   } catch (error) { box.textContent = "No se pudo cargar el resumen: " + error.message; }
 }
 function wireLogistics(id, status) {
@@ -2027,12 +2312,12 @@ async function loadPayments(id) {
         </div></div>`;
     }).join("");
     box.querySelectorAll("[data-payconfirm]").forEach((b) => b.addEventListener("click", async () => {
-      try { await postJson(`/api/admin/payments/${b.dataset.payconfirm}/confirm`, {}); loadPayments(id); loadAccount(id); loadInvoices(id); }
+      try { await postJson(`/api/admin/payments/${b.dataset.payconfirm}/confirm`, {}); loadPayments(id); loadAccount(id); loadInvoices(id); loadFinSummary(id); }
       catch (e) { alert("No se pudo confirmar: " + (e.body?.detail || e.message)); }
     }));
     box.querySelectorAll("[data-payreverse]").forEach((b) => b.addEventListener("click", async () => {
       const reason = prompt("Motivo de la reversa del pago:"); if (reason === null) return;
-      try { await postJson(`/api/admin/payments/${b.dataset.payreverse}/reverse`, { reason }); loadPayments(id); loadAccount(id); loadInvoices(id); }
+      try { await postJson(`/api/admin/payments/${b.dataset.payreverse}/reverse`, { reason }); loadPayments(id); loadAccount(id); loadInvoices(id); loadFinSummary(id); }
       catch (e) { alert("No se pudo reversar: " + (e.body?.detail || e.message)); }
     }));
     box.querySelectorAll("[data-payapply]").forEach((b) => b.addEventListener("click", () => openApplyModal(id, b.dataset.payapply, Number(b.dataset.rem))));
@@ -2076,7 +2361,7 @@ async function openApplyModal(orderId, paymentId, remaining) {
     if (!allocations.length) { msg.textContent = "Ingresá al menos un monto."; return; }
     try {
       await postJson(`/api/admin/payments/${paymentId}/apply`, { allocations });
-      closeModal(); loadPayments(orderId); loadAccount(orderId); loadInvoices(orderId);
+      closeModal(); loadPayments(orderId); loadAccount(orderId); loadInvoices(orderId); loadFinSummary(orderId);
     } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
   });
 }
@@ -2097,7 +2382,7 @@ function wirePayments(id) {
       });
       msg.style.color = "var(--success,#137333)"; msg.textContent = "Pago registrado ✓";
       document.getElementById("payAmount").value = ""; document.getElementById("payRef").value = "";
-      loadPayments(id); loadAccount(id); loadInvoices(id);
+      loadPayments(id); loadAccount(id); loadInvoices(id); loadFinSummary(id);
     } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Error: " + (e.body?.detail || e.message); }
   });
   loadPayments(id);
@@ -2645,11 +2930,12 @@ async function loadBillingOrders() {
 
 function renderBillingTable() {
   const box = document.getElementById("billingOrders");
+  const search = norm(document.getElementById("billingSearch")?.value || "");
   const orders = billingOrders.filter((o) => {
     if (billingFilter === "por_cobrar") return o.payState !== "pagada";
     if (billingFilter === "pagados") return o.payState === "pagada";
     return true;
-  });
+  }).filter((o) => !search || norm(`${o.request_number} ${o.company_name} ${o.display_name} ${o.client_code} ${o.payState}`).includes(search));
   if (!orders.length) { box.innerHTML = '<p class="empty-row">No hay pedidos con ese filtro.</p>'; return; }
   box.innerHTML = `<div style="overflow-x:auto"><table>
     <thead><tr><th>#</th><th>Cliente</th><th>Estado</th><th class="num">Facturado</th><th class="num">Cobrado</th><th class="num">Saldo</th><th>Pago</th></tr></thead>
@@ -2691,8 +2977,11 @@ function applyRoleNav() {
 
 (async function init() {
   await loadMe();
+  restoreSavedViews();
   const billingSel = document.getElementById("billingFilter");
   if (billingSel) billingSel.addEventListener("change", (e) => { billingFilter = e.target.value; renderBillingTable(); });
+  document.getElementById("billingSearch")?.addEventListener("input", renderBillingTable);
+  document.getElementById("saveBillingView")?.addEventListener("click", () => saveCurrentView("billing"));
   applyRoleNav();
   // El polling/KPIs/auditoría del dashboard sólo corre para roles que lo ven.
   if (allowedSections().includes("dashboard")) {
