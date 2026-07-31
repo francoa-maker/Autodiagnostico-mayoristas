@@ -58,7 +58,8 @@ const state = {
   search: "",
   sort: "default",
   view: "grid",
-  catExpanded: false
+  catExpanded: false,
+  compare: new Set()
 };
 const cart = new Map(); // productId -> { product, quantity }
 const CAT_INITIAL = 8;
@@ -358,6 +359,7 @@ function productCardHtml(p) {
   const one = resolveDisplay(p, "one");
   const four = resolveDisplay(p, "four");
   const eight = resolveDisplay(p, "eight");
+  const comparing = state.compare.has(p.id);
   return `<div class="pcard" data-id="${p.id}">
     <div class="img-wrap">
       <div class="cat-chip">${esc(p.category)}</div>
@@ -377,6 +379,9 @@ function productCardHtml(p) {
         <div class="price-row"><span class="pl">8u</span><span class="pv tabular">${priceCell(eight)}</span></div>
       </div>
       <div class="price-disclaimer">Precio y cantidad sujetos a confirmación.</div>
+      <button class="compare-toggle${comparing ? " active" : ""}" type="button" data-compare aria-pressed="${comparing}">
+        ${comparing ? "✓ Seleccionado para comparar" : "Comparar"}
+      </button>
       <div class="qty-row">
         <div class="qty-stepper"><button class="qminus" type="button" aria-label="Menos">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*" aria-label="Cantidad"><button class="qplus" type="button" aria-label="Más">+</button></div>
         <div class="est-price">Estimado<b class="tabular estval">${estText(p, qty)}</b></div>
@@ -393,367 +398,38 @@ function renderProducts() {
   const grid = document.getElementById("productGrid");
   grid.className = "grid" + (state.view === "list" ? " list" : "");
   document.getElementById("resultCount").textContent = `${list.length} producto${list.length === 1 ? "" : "s"}`;
-  document.getElementById("resultsTitle").textContent =
-    state.quick && state.quick !== "all" ? (QUICK_LABEL[state.quick] || "Productos") : (state.filters.brands.size === 1 ? [...state.filters.brands][0] : "Todos los productos");
-
-  if (!list.length) {
-    let msg = "Sin resultados para este filtro.";
-    if (state.quick === "favoritos" && !state.favorites.size) msg = "Todavía no marcaste favoritos. Tocá el corazón ♡ en cualquier producto para guardarlo acá.";
-    else if (state.quick === "frecuentes" && !state.frequentIds.length) msg = "Todavía no tenés productos frecuentes. Marcá productos como favoritos o hacé tu primera solicitud para encontrarlos rápido.";
-    grid.innerHTML = `<div class="grid-empty">${msg}</div>`;
-    return;
-  }
-  grid.innerHTML = list.map(productCardHtml).join("");
-}
-
-// --------------------------------------------------------------- favoritos --
-function updateFavBtn(btn, on) {
-  btn.classList.toggle("on", on);
-  btn.setAttribute("aria-pressed", String(on));
-  btn.setAttribute("aria-label", on ? "Quitar de favoritos" : "Agregar a favoritos");
-  btn.innerHTML = heartIco(on);
-}
-async function toggleFavorite(id, btn) {
-  const wasFav = state.favorites.has(id);
-  if (wasFav) state.favorites.delete(id);
-  else state.favorites.add(id);
-  updateFavBtn(btn, !wasFav);
-  document.getElementById("qaFav").textContent = state.favorites.size;
-  try {
-    if (wasFav) await fetchJson(`/api/catalog/favorites/${id}`, { method: "DELETE" });
-    else await postJson("/api/catalog/favorites", { productId: id });
-    toast(wasFav ? "Producto eliminado de favoritos." : "Producto agregado a favoritos.");
-    if (state.quick === "favoritos") renderProducts();
-  } catch (error) {
-    // revertir en caso de error (actualización optimista)
-    if (wasFav) state.favorites.add(id);
-    else state.favorites.delete(id);
-    updateFavBtn(btn, wasFav);
-    document.getElementById("qaFav").textContent = state.favorites.size;
-    toast("No se pudo actualizar favoritos.", true);
-  }
-}
-
-// ------------------------------------------------------------- solicitud ----
-function cartEstimateTotal() {
-  let total = 0;
-  for (const { product, quantity } of cart.values()) {
-    const price = resolveDisplay(product, tierForQuantity(quantity));
-    if (price.state === "value") total += price.amount * quantity;
-  }
-  return total;
-}
-function renderCart() {
-  const entries = [...cart.values()];
-  const count = entries.reduce((sum, e) => sum + e.quantity, 0);
-  document.getElementById("cartCount").textContent = count;
-  const total = cartEstimateTotal();
-  document.getElementById("cartEstLine").textContent = "Total estimado: " + money(total);
-  const itemsEl = document.getElementById("cartItems");
-  const footEl = document.getElementById("cartFoot");
-
-  if (!entries.length) {
-    itemsEl.innerHTML = '<div class="cart-empty">Todavía no agregaste productos.<br>Elegí cantidades desde el catálogo.</div>';
-    footEl.style.display = "none";
-    return;
-  }
-  itemsEl.innerHTML = entries
-    .map(({ product, quantity }) => {
-      const price = resolveDisplay(product, tierForQuantity(quantity));
-      const isValue = price.state === "value";
-      const sub = isValue ? price.amount * quantity : null;
-      return `<div class="cart-item" data-id="${product.id}">
-        <div class="ci-thumb">${product.imageUrl ? `<img src="${esc(product.imageUrl)}" alt="">` : ""}</div>
-        <div class="info">
-          <div class="name">${esc(product.name)}</div>
-          <div class="ci-qty">
-            <div class="qty-stepper mini"><button class="ci-minus" type="button" aria-label="Menos">&minus;</button><input class="ci-qval" value="${quantity}" inputmode="numeric" aria-label="Cantidad"><button class="ci-plus" type="button" aria-label="Más">+</button></div>
-            <span class="ci-unit">${isValue ? money(price.amount) + " c/u" : "Consultar"}</span>
-          </div>
-          <div class="row"><span class="sub tabular">${isValue ? money(sub) : "Consultar"}</span><button class="remove-link">Quitar</button></div>
-        </div>
-      </div>`;
-    })
-    .join("");
-  document.getElementById("cartTotal").textContent = money(total);
-  footEl.style.display = "flex";
-}
-function setCartQty(id, qty) {
-  const entry = cart.get(id);
-  if (!entry) return;
-  entry.quantity = Math.max(1, qty || 1);
-  renderCart();
-  // reflejar en la tarjeta si está visible
-  const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
-  if (card) {
-    card.querySelector(".qval").value = entry.quantity;
-    card.querySelector(".estval").textContent = estText(entry.product, entry.quantity);
-    const btn = card.querySelector(".add-btn");
-    btn.textContent = `Agregado ✓ (${entry.quantity})`;
-  }
-}
-
-// --------------------------------------------------------- scroll a catálogo
-function scrollToCatalog() {
-  document.getElementById("catalogSection").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-// ============================ RENDER GENERAL ================================
-function renderFiltersUI() {
-  renderBrandFilter();
-  renderCategoryFilter();
-  renderAvailCounts();
-}
-function renderAll() {
-  renderStats();
-  renderBrandCards();
-  renderFiltersUI();
-  renderActiveChips();
-  renderProducts();
-}
-
-// =============================== EVENTOS ===================================
-function setQuick(q, scroll) {
-  state.quick = q;
-  renderActiveChips();
-  renderProducts();
-  if (scroll) scrollToCatalog();
-}
-
-// Accesos rápidos
-document.getElementById("quickAccess").addEventListener("click", (e) => {
-  const card = e.target.closest(".qa-card");
-  if (!card) return;
-  setQuick(card.dataset.quick === "all" ? "all" : card.dataset.quick, true);
-});
-
-// Tarjetas de marca
-document.getElementById("brandCards").addEventListener("click", (e) => {
-  const card = e.target.closest(".brand-card");
-  if (!card) return;
-  const brand = card.dataset.brand;
-  state.quick = "all";
-  state.filters.brands = new Set([brand]);
-  renderFiltersUI();
-  renderActiveChips();
-  renderProducts();
-  scrollToCatalog();
-});
-
-// Filtros: marca (live)
-document.getElementById("brandFilterList").addEventListener("change", (e) => {
-  const chk = e.target.closest("input[data-brand]");
-  if (!chk) return;
-  if (chk.checked) state.filters.brands.add(chk.dataset.brand);
-  else state.filters.brands.delete(chk.dataset.brand);
-  renderActiveChips();
-  renderProducts();
-});
-// Filtros: categoría (live)
-document.getElementById("catFilterList").addEventListener("change", (e) => {
-  const chk = e.target.closest("input[data-cat]");
-  if (!chk) return;
-  if (chk.checked) state.filters.categories.add(chk.dataset.cat);
-  else state.filters.categories.delete(chk.dataset.cat);
-  renderActiveChips();
-  renderProducts();
-});
-let catSearchTimer;
-document.getElementById("catSearchInput").addEventListener("input", () => {
-  clearTimeout(catSearchTimer);
-  catSearchTimer = setTimeout(renderCategoryFilter, 150);
-});
-document.getElementById("catMoreBtn").addEventListener("click", () => {
-  state.catExpanded = !state.catExpanded;
-  renderCategoryFilter();
-});
-// Filtros: disponibilidad (live)
-document.getElementById("availFilterList").addEventListener("change", (e) => {
-  const chk = e.target.closest("input[type=checkbox]");
-  if (!chk) return;
-  if (chk.checked) state.filters.availability.add(chk.value);
-  else state.filters.availability.delete(chk.value);
-  renderActiveChips();
-  renderProducts();
-});
-// Precio: se aplica con el botón (o Enter)
-function applyPriceInputs() {
-  const min = document.getElementById("priceMin").value.trim();
-  const max = document.getElementById("priceMax").value.trim();
-  state.filters.priceMin = min === "" ? null : Number(min);
-  state.filters.priceMax = max === "" ? null : Number(max);
-  if (state.filters.priceMin != null && !Number.isFinite(state.filters.priceMin)) state.filters.priceMin = null;
-  if (state.filters.priceMax != null && !Number.isFinite(state.filters.priceMax)) state.filters.priceMax = null;
-}
-document.getElementById("applyFilters").addEventListener("click", () => {
-  applyPriceInputs();
-  renderActiveChips();
-  renderProducts();
-  closeFilters();
-});
-document.querySelectorAll("#priceMin, #priceMax").forEach((inp) =>
-  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("applyFilters").click(); })
-);
-document.getElementById("clearFilters").addEventListener("click", () => {
-  state.filters = { brands: new Set(), categories: new Set(), availability: new Set(), priceMin: null, priceMax: null };
-  state.quick = "all";
-  state.search = "";
-  document.getElementById("searchInput").value = "";
-  document.getElementById("priceMin").value = "";
-  document.getElementById("priceMax").value = "";
-  document.getElementById("catSearchInput").value = "";
-  state.catExpanded = false;
-  renderFiltersUI();
-  renderActiveChips();
-  renderProducts();
-});
-
-// Chips de filtros activos: quitar individual
-document.getElementById("activeChips").addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (!chip) return;
-  const type = chip.dataset.chip;
-  const val = chip.dataset.val;
-  if (type === "quick") state.quick = "all";
-  else if (type === "brand") state.filters.brands.delete(val);
-  else if (type === "category") state.filters.categories.delete(val);
-  else if (type === "availability") state.filters.availability.delete(val);
-  else if (type === "priceMin") { state.filters.priceMin = null; document.getElementById("priceMin").value = ""; }
-  else if (type === "priceMax") { state.filters.priceMax = null; document.getElementById("priceMax").value = ""; }
-  else if (type === "search") { state.search = ""; document.getElementById("searchInput").value = ""; }
-  renderFiltersUI();
-  renderActiveChips();
-  renderProducts();
-});
-
-// Orden
-document.getElementById("sortSelect").addEventListener("change", (e) => {
-  state.sort = e.target.value;
-  renderProducts();
-});
-// Vista grilla/lista
-function setView(v) {
-  state.view = v;
-  document.getElementById("viewGrid").classList.toggle("active", v === "grid");
-  document.getElementById("viewGrid").setAttribute("aria-pressed", String(v === "grid"));
-  document.getElementById("viewList").classList.toggle("active", v === "list");
-  document.getElementById("viewList").setAttribute("aria-pressed", String(v === "list"));
-  renderProducts();
-}
-document.getElementById("viewGrid").addEventListener("click", () => setView("grid"));
-document.getElementById("viewList").addEventListener("click", () => setView("list"));
-
-// Panel de filtros en móvil
-function openFilters() {
-  document.getElementById("filtersPanel").classList.add("open");
-  document.getElementById("filtersOverlay").classList.add("open");
-}
-function closeFilters() {
-  document.getElementById("filtersPanel").classList.remove("open");
-  document.getElementById("filtersOverlay").classList.remove("open");
-}
-document.getElementById("filtersToggle").addEventListener("click", openFilters);
-document.getElementById("filtersClose").addEventListener("click", closeFilters);
-document.getElementById("filtersOverlay").addEventListener("click", closeFilters);
-
-// Búsqueda principal
-let searchTimer;
-document.getElementById("searchInput").addEventListener("input", (e) => {
-  state.search = e.target.value;
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    renderActiveChips();
-    renderProducts();
-  }, 220);
-});
-
-// Navegación
-document.getElementById("logoBtn").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
-document.querySelector(".cat-nav").addEventListener("click", (e) => {
-  const btn = e.target.closest(".cn-link");
-  if (!btn) return;
-  document.querySelectorAll(".cn-link").forEach((b) => b.classList.remove("active"));
-  const nav = btn.dataset.nav;
-  if (nav === "catalogo") { btn.classList.add("active"); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  else if (nav === "favoritos") { btn.classList.add("active"); setQuick("favoritos", true); }
-  else if (nav === "solicitudes") openRequests("all");
-  else if (nav === "cotizaciones") openRequests("quoted");
-});
-
-// Interacción con las tarjetas de producto
-document.getElementById("productGrid").addEventListener("click", (e) => {
-  const card = e.target.closest(".pcard");
-  if (!card) return;
-  const id = card.dataset.id;
-  const favBtn = e.target.closest(".fav-btn");
-  if (favBtn) { toggleFavorite(id, favBtn); return; }
-  const product = window.__products.get(id);
-  const qtyInput = card.querySelector(".qval");
-  let qty = parseInt(qtyInput.value, 10) || 1;
-  if (e.target.closest(".qminus")) qty = Math.max(1, qty - 1);
-  else if (e.target.closest(".qplus")) qty = qty + 1;
-  else if (e.target.closest(".add-btn")) {
-    cart.set(id, { product, quantity: qty });
-    renderCart();
-    const btn = card.querySelector(".add-btn");
-    btn.textContent = `Agregado ✓ (${qty})`;
-    btn.classList.add("added");
-    toast("Producto agregado a tu solicitud.");
-    return;
-  } else return;
-  qtyInput.value = qty;
-  card.querySelector(".estval").textContent = estText(product, qty);
-  if (cart.has(id)) setCartQty(id, qty);
-});
-document.getElementById("productGrid").addEventListener("input", (e) => {
-  const qtyInput = e.target.closest(".qval");
-  if (!qtyInput) return;
-  const digitsOnly = qtyInput.value.replace(/[^0-9]/g, "");
-  if (digitsOnly !== qtyInput.value) qtyInput.value = digitsOnly;
-  const card = qtyInput.closest(".pcard");
-  const product = window.__products.get(card.dataset.id);
-  const qty = parseInt(digitsOnly, 10) || 1;
-  card.querySelector(".estval").textContent = estText(product, qty);
-});
-document.getElementById("productGrid").addEventListener("change", (e) => {
-  const qtyInput = e.target.closest(".qval");
-  if (!qtyInput) return;
-  const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
-  qtyInput.value = qty;
-  const card = qtyInput.closest(".pcard");
-  const product = window.__products.get(card.dataset.id);
-  card.querySelector(".estval").textContent = estText(product, qty);
-  if (cart.has(card.dataset.id)) setCartQty(card.dataset.id, qty);
-});
-
-// Drawer "Solicitud actual"
-const cartDrawer = document.getElementById("cartDrawer");
-const cartOverlay = document.getElementById("cartOverlay");
-document.getElementById("cartBtn").addEventListener("click", () => {
-  cartDrawer.classList.add("open");
-  cartOverlay.classList.add("open");
-});
-function closeCart() {
-  cartDrawer.classList.remove("open");
-  cartOverlay.classList.remove("open");
-}
-document.getElementById("cartClose").addEventListener("click", closeCart);
-cartOverlay.addEventListener("click", closeCart);
-document.getElementById("cartItems").addEventListener("click", (e) => {
-  const item = e.target.closest(".cart-item");
-  if (!item) return;
-  const id = item.dataset.id;
-  const entry = cart.get(id);
-  if (e.target.closest(".remove-link")) {
+  document.getElementById("resu…4387 tokens truncated…)) {
     cart.delete(id);
     renderCart();
     const card = document.querySelector(`#productGrid .pcard[data-id="${id}"]`);
     if (card) { const b = card.querySelector(".add-btn"); b.textContent = "Agregar a solicitud"; b.classList.remove("added"); }
+    toast("Producto quitado de tu solicitud.");
     return;
   }
   if (!entry) return;
   if (e.target.closest(".ci-minus")) setCartQty(id, entry.quantity - 1);
   else if (e.target.closest(".ci-plus")) setCartQty(id, entry.quantity + 1);
+});
+document.getElementById("cartQuickBtn").addEventListener("click", () => document.getElementById("cartBtn").click());
+document.getElementById("compareOpen").addEventListener("click", openCompare);
+document.getElementById("compareClear").addEventListener("click", () => {
+  state.compare.clear();
+  renderCompareBar();
+  renderProducts();
+});
+document.getElementById("compareClose").addEventListener("click", () => (document.getElementById("compareOverlay").hidden = true));
+document.getElementById("compareOverlay").addEventListener("click", (e) => {
+  if (e.target.id === "compareOverlay") e.currentTarget.hidden = true;
+});
+document.getElementById("compareBody").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-compare-add]");
+  if (!btn) return;
+  const product = state.products.find((p) => p.id === btn.dataset.compareAdd);
+  if (!product) return;
+  const current = cart.get(product.id);
+  cart.set(product.id, { product, quantity: current?.quantity || 1 });
+  renderCart();
+  toast("Producto agregado a tu solicitud.");
 });
 document.getElementById("cartItems").addEventListener("change", (e) => {
   const inp = e.target.closest(".ci-qval");
@@ -777,6 +453,7 @@ document.getElementById("submitQuoteBtn").addEventListener("click", async (e) =>
     document.getElementById("cartItems").innerHTML = `<div class="cart-success"><div class="ok-icon">&#10003;</div>
       <p><strong>Solicitud #${quote.requestNumber} enviada.</strong><br>Un administrador la va a revisar y te confirmará precios y disponibilidad.</p></div>`;
     renderProducts(); // limpia los "Agregado ✓" de las tarjetas
+    toast(`Solicitud #${quote.requestNumber} enviada correctamente.`);
   } catch (error) {
     alert("No se pudo enviar la solicitud: " + error.message);
   } finally {
@@ -959,17 +636,40 @@ async function openRequests(mode) {
               <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
               <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
               <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}${finState.financial ? `<button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}<button class="link-btn" data-repeat="${q.id}">Repetir solicitud</button>${finState.financial ? ` <button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
             </tr>`
           )
           .join("")}</tbody></table></div>`;
     }
     body.querySelectorAll("[data-proforma]").forEach((b) => b.addEventListener("click", () => window.open(`/api/quotes/${b.dataset.proforma}/proforma`, "_blank")));
+    body.querySelectorAll("[data-repeat]").forEach((b) => b.addEventListener("click", () => repeatRequest(b.dataset.repeat)));
     body.querySelectorAll("[data-fin]").forEach((b) => b.addEventListener("click", () => openOrderFinance(b.dataset.fin, b.dataset.num, mode)));
     const stmt = document.getElementById("stmtDownload");
     if (stmt) stmt.addEventListener("click", () => window.open("/api/account/statement", "_blank"));
   } catch (error) {
     body.innerHTML = `<div style="text-align:center;color:var(--danger,#c8102e);padding:30px">No se pudieron cargar: ${esc(error.message)}</div>`;
+  }
+}
+
+async function repeatRequest(id) {
+  try {
+    const { items } = await fetchJson(`/api/quotes/${id}`);
+    let added = 0;
+    let unavailable = 0;
+    for (const item of items || []) {
+      if (!item.product_id || (item.line_type && item.line_type !== "product")) continue;
+      const product = state.products.find((p) => p.id === item.product_id);
+      if (!product) { unavailable += 1; continue; }
+      cart.set(product.id, { product, quantity: Math.max(1, Number(item.quantity) || 1) });
+      added += 1;
+    }
+    renderCart();
+    renderProducts();
+    closeRequests();
+    document.getElementById("cartBtn").click();
+    toast(`${added} producto${added === 1 ? "" : "s"} agregado${added === 1 ? "" : "s"}${unavailable ? ` · ${unavailable} ya no disponible${unavailable === 1 ? "" : "s"}` : ""}.`);
+  } catch (error) {
+    toast("No se pudo repetir la solicitud.", true);
   }
 }
 
