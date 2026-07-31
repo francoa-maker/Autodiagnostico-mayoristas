@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AutodiagnÃ³stico - Panel administrador</title>
+    <title>Autodiagnóstico - Panel administrador</title>
     <link rel="stylesheet" href="/assets/styles.css">
   </head>
   <body>
@@ -15,18 +15,18 @@
         </div>
         <div class="admin-workspace">
           <span class="admin-workspace-dot" aria-hidden="true"></span>
-          <div><strong>Portal mayorista</strong><span>Operaciones en lÃ­nea</span></div>
+          <div><strong>Portal mayorista</strong><span>Operaciones en línea</span></div>
         </div>
         <div class="admin-section-label">General</div>
         <nav class="admin-nav" id="adminNav">
           <a class="active" data-section="dashboard"><span class="ic">&#9635;</span>Dashboard</a>
-          <a data-section="catalog"><span class="ic">&#9776;</span>CatÃ¡logo</a>
+          <a data-section="catalog"><span class="ic">&#9776;</span>Catálogo</a>
           <a data-section="products"><span class="ic">&#128230;</span>Productos y precios</a>
           <a data-section="clients"><span class="ic">&#128100;</span>Clientes</a>
           <a data-section="quotes"><span class="ic">&#128172;</span>Cotizaciones</a>
-          <a data-section="billing"><span class="ic">&#129534;</span>FacturaciÃ³n</a>
-          <a data-section="logistics"><span class="ic">&#128666;</span>LogÃ­stica</a>
-          <a data-section="settings"><span class="ic">&#9881;</span>ConfiguraciÃ³n</a>
+          <a data-section="billing"><span class="ic">&#129534;</span>Facturación</a>
+          <a data-section="logistics"><span class="ic">&#128666;</span>Logística</a>
+          <a data-section="settings"><span class="ic">&#9881;</span>Configuración</a>
         </nav>
         <div class="admin-user">
           <div class="av"></div>
@@ -54,7 +54,7 @@
 
           <div class="dash-grid">
             <div class="panel">
-              <h3>Usuarios pendientes de aprobaciÃ³n</h3>
+              <h3>Usuarios pendientes de aprobación</h3>
               <div style="overflow-x:auto">
                 <table>
                   <thead><tr><th>Email</th><th>Empresa</th><th>Solicitado</th><th></th></tr></thead>
@@ -63,7 +63,7 @@
               </div>
             </div>
             <div class="panel">
-              <h3>Ãšltimas cotizaciones</h3>
+              <h3>Últimas cotizaciones</h3>
               <div id="recentQuotes">Cargando...</div>
             </div>
           </div>
@@ -88,18 +88,18 @@
           </div>
         </div>
 
-        <!-- ==================== CATÃLOGO (editor visual) ==================== -->
+        <!-- ==================== CATÁLOGO (editor visual) ==================== -->
         <div class="admin-section" id="section-catalog" hidden>
           <div class="admin-topline">
             <div>
-              <h1>CatÃ¡logo</h1>
-              <p>ArrastrÃ¡ las tarjetas para reordenar (dentro del filtro actual). EditÃ¡ o borrÃ¡ cada producto. El orden se refleja en el catÃ¡logo del cliente.</p>
+              <h1>Catálogo</h1>
+              <p>Arrastrá las tarjetas para reordenar (dentro del filtro actual). Editá o borrá cada producto. El orden se refleja en el catálogo del cliente.</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select id="catBrandFilter" class="admin-search" style="min-width:150px"><option value="">Todas las marcas</option></select>
-              <select id="catCategoryFilter" class="admin-search" style="min-width:160px"><option value="">Todas las categorÃ­as</option></select>
+              <select id="catCategoryFilter" class="admin-search" style="min-width:160px"><option value="">Todas las categorías</option></select>
               <input type="search" id="catSearch" class="admin-search" placeholder="Buscar...">
-              <button class="link-btn" id="catManageBtn">Marcas y categorÃ­as</button>
+              <button class="link-btn" id="catManageBtn">Marcas y categorías</button>
               <button class="link-btn" id="brandLogosBtn">Logos de marca</button>
               <button class="btn-primary" id="catNewBtn">+ Nuevo producto</button>
             </div>
@@ -108,9 +108,9 @@
             <div id="catBulkBar" class="cat-bulk-bar" hidden>
               <span id="catBulkCount">0 seleccionados</span>
               <select id="catBulkBrand" class="admin-search"><option value="">Marca (sin cambios)</option></select>
-              <select id="catBulkCategory" class="admin-search"><option value="">CategorÃ­a (sin cambios)</option></select>
+              <select id="catBulkCategory" class="admin-search"><option value="">Categoría (sin cambios)</option></select>
               <button class="btn-primary" id="catBulkApply">Aplicar</button>
-              <button class="link-btn ghost" id="catBulkClear">Limpiar selecciÃ³n</button>
+              <button class="link-btn ghost" id="catBulkClear">Limpiar selección</button>
             </div>
             <div id="catalogEditorGrid" class="cat-editor-grid"><div class="empty-row">Cargando...</div></div>
           </div>
@@ -121,7 +121,7 @@
           <div class="admin-topline">
             <div>
               <h1>Productos y precios</h1>
-              <p>EditÃ¡ los precios distribuidor (1u/4u/8u), el orden y la visibilidad (ojito). El PVP y el stock se leen en vivo. Precio vacÃ­o = oculto; escribÃ­ "consultar" para mostrar "Consultar".</p>
+              <p>Editá los precios distribuidor (1u/4u/8u), el orden y la visibilidad (ojito). El PVP y el stock se leen en vivo. Precio vacío = oculto; escribí "consultar" para mostrar "Consultar".</p>
             </div>
             <div style="display:flex;gap:10px;align-items:center">
               <input type="search" id="productSearch" class="admin-search" placeholder="Buscar por SKU, nombre o marca...">
@@ -161,7 +161,7 @@
           <div class="panel">
             <div style="overflow-x:auto">
               <table>
-                <thead><tr><th>CÃ³digo</th><th>Email</th><th>Nombre</th><th>Empresa</th><th>Rol</th><th>Estado</th><th>Alta</th><th>Ãšltimo login</th><th></th></tr></thead>
+                <thead><tr><th>Código</th><th>Email</th><th>Nombre</th><th>Empresa</th><th>Rol</th><th>Estado</th><th>Alta</th><th>Último login</th><th></th></tr></thead>
                 <tbody id="clientsBody"><tr><td colspan="9" class="empty-row">Cargando...</td></tr></tbody>
               </table>
             </div>
@@ -173,7 +173,7 @@
           <div class="admin-topline">
             <div>
               <h1>Cotizaciones</h1>
-              <p>Solicitudes de los distribuidores. AbrÃ­ una para editar precios, cantidades e items y generar la pre-compra.</p>
+              <p>Solicitudes de los distribuidores. Abrí una para editar precios, cantidades e items y generar la pre-compra.</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
               <select id="quoteMonthFilter" class="admin-search" style="min-width:150px">
@@ -181,8 +181,8 @@
               </select>
               <select id="quoteStatusFilter" class="admin-search" style="min-width:150px">
                 <option value="">Todos los estados</option>
-                <option value="cotizacion">CotizaciÃ³n</option>
-                <option value="enviada">CotizaciÃ³n enviada</option>
+                <option value="cotizacion">Cotización</option>
+                <option value="enviada">Cotización enviada</option>
                 <option value="orden">Orden de venta</option>
                 <option value="despachado">Despachado</option>
                 <option value="cancelado">Cancelado</option>
@@ -200,16 +200,16 @@
               </div>
             </div>
             <div class="panel" id="quoteDetailPanel">
-              <div id="quoteDetailBody" class="empty-row">ElegÃ­ una cotizaciÃ³n de la lista para ver y editar el detalle.</div>
+              <div id="quoteDetailBody" class="empty-row">Elegí una cotización de la lista para ver y editar el detalle.</div>
             </div>
           </div>
         </div>
 
-        <!-- ==================== FACTURACIÃ“N ==================== -->
+        <!-- ==================== FACTURACIÓN ==================== -->
         <div class="admin-section" id="section-billing" hidden>
           <div class="admin-topline">
             <div>
-              <h1>FacturaciÃ³n</h1>
+              <h1>Facturación</h1>
               <p>Pedidos confirmados listos para facturar y cobrar</p>
             </div>
             <select id="billingFilter" class="admin-search" style="min-width:150px">
@@ -222,15 +222,15 @@
             <div id="billingOrders">Cargando...</div>
           </div>
           <div class="panel" style="margin-top:14px">
-            <div id="billingDetailBody" class="empty-row">ElegÃ­ un pedido de la lista para facturar y cobrar.</div>
+            <div id="billingDetailBody" class="empty-row">Elegí un pedido de la lista para facturar y cobrar.</div>
           </div>
         </div>
 
-        <!-- ==================== LOGÃSTICA / DEPÃ“SITO ==================== -->
+        <!-- ==================== LOGÍSTICA / DEPÓSITO ==================== -->
         <div class="admin-section" id="section-logistics" hidden>
           <div class="admin-topline">
             <div>
-              <h1>LogÃ­stica / DepÃ³sito</h1>
+              <h1>Logística / Depósito</h1>
               <p>Pedidos autorizados para preparar (sin datos de precios)</p>
             </div>
           </div>
@@ -240,27 +240,27 @@
           <div id="logiDetailAdmin" style="margin-top:14px"></div>
         </div>
 
-        <!-- ==================== CONFIGURACIÃ“N ==================== -->
+        <!-- ==================== CONFIGURACIÓN ==================== -->
         <div class="admin-section" id="section-settings" hidden>
           <div class="admin-topline">
             <div>
-              <h1>ConfiguraciÃ³n</h1>
-              <p>Datos de la empresa que aparecen en la pre-compra/compra que se envÃ­a a los clientes</p>
+              <h1>Configuración</h1>
+              <p>Datos de la empresa que aparecen en la pre-compra/compra que se envía a los clientes</p>
             </div>
           </div>
           <div class="panel" style="max-width:640px">
             <form id="companyForm" class="form-grid">
-              <label>Nombre comercial<input name="name" placeholder="AutodiagnÃ³stico"></label>
-              <label>RazÃ³n social<input name="legalName" placeholder="Patagonian Tools S.A."></label>
-              <label class="full">DirecciÃ³n (una lÃ­nea por renglÃ³n)<textarea name="addressLines" rows="3" placeholder="Dorrego Av. 2079 Dpto 509&#10;Buenos Aires, Argentina (1414)"></textarea></label>
-              <label>TelÃ©fono<input name="phone" placeholder="54-11-5263-5484"></label>
+              <label>Nombre comercial<input name="name" placeholder="Autodiagnóstico"></label>
+              <label>Razón social<input name="legalName" placeholder="Patagonian Tools S.A."></label>
+              <label class="full">Dirección (una línea por renglón)<textarea name="addressLines" rows="3" placeholder="Dorrego Av. 2079 Dpto 509&#10;Buenos Aires, Argentina (1414)"></textarea></label>
+              <label>Teléfono<input name="phone" placeholder="54-11-5263-5484"></label>
               <label>Email<input name="email" placeholder="ventas@autodiagnostico.com.ar"></label>
               <label>Sitio web<input name="website" placeholder="autodiagnostico.com.ar"></label>
               <label>CUIT / Tax ID<input name="taxId" placeholder="30-71610175-0"></label>
-              <label>Casilla del depÃ³sito<input name="warehouseEmail" placeholder="joaquin.guerri@patagoniatools.com.ar"></label>
-              <label class="full">URL del logo (opcional; si se deja vacÃ­o se usa el texto "Autodiagnostico")<input name="logoUrl" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label>
-              <label>Validez de la pre-compra (dÃ­as)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label>
-              <label class="full">Texto al pie de la pre-compra<textarea name="proformaFooter" rows="2" placeholder="Documento no vÃ¡lido como factura. Precios sujetos a confirmaciÃ³n."></textarea></label>
+              <label>Casilla del depósito<input name="warehouseEmail" placeholder="joaquin.guerri@patagoniatools.com.ar"></label>
+              <label class="full">URL del logo (opcional; si se deja vacío se usa el texto "Autodiagnostico")<input name="logoUrl" placeholder="https://autodiagnostico.com.ar/.../logo.png"></label>
+              <label>Validez de la pre-compra (días)<input name="proformaValidityDays" type="number" min="0" placeholder="7"></label>
+              <label class="full">Texto al pie de la pre-compra<textarea name="proformaFooter" rows="2" placeholder="Documento no válido como factura. Precios sujetos a confirmación."></textarea></label>
               <div class="full" style="display:flex;gap:10px;align-items:center">
                 <button type="submit" class="btn-primary">Guardar cambios</button>
                 <span id="companySaveMsg" style="font-size:12.5px;color:var(--success,#137333)"></span>
@@ -269,11 +269,11 @@
           </div>
 
           <div class="panel" style="max-width:640px;margin-top:16px">
-            <h3 style="margin:0 0 4px">Notificaciones automÃ¡ticas por email</h3>
-            <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px">DefinÃ­ a quiÃ©n se copia en cada aviso. El "CC siempre" se precarga en el compositor al enviar. SeparÃ¡ varios correos con coma.</p>
+            <h3 style="margin:0 0 4px">Notificaciones automáticas por email</h3>
+            <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px">Definí a quién se copia en cada aviso. El "CC siempre" se precarga en el compositor al enviar. Separá varios correos con coma.</p>
             <form id="notifyForm" class="form-grid">
               <label class="full">CC siempre (global)<input name="globalCc" placeholder="ventas@empresa.com, contador@empresa.com"></label>
-              <label>CotizaciÃ³n enviada<input name="ev_enviada" placeholder="correo@empresa.com"></label>
+              <label>Cotización enviada<input name="ev_enviada" placeholder="correo@empresa.com"></label>
               <label>Orden de venta<input name="ev_orden" placeholder="correo@empresa.com"></label>
               <label>Pago recibido<input name="ev_pago" placeholder="correo@empresa.com"></label>
               <label>Despachado<input name="ev_despachado" placeholder="correo@empresa.com"></label>
@@ -287,7 +287,7 @@
       </main>
     </div>
 
-    <!-- Modal genÃ©rico (nuevo producto / agregar item) -->
+    <!-- Modal genérico (nuevo producto / agregar item) -->
     <div class="modal-overlay" id="modalOverlay" hidden>
       <div class="modal" id="modalBox"></div>
     </div>
@@ -295,4 +295,3 @@
     <script type="module" src="/assets/admin.js"></script>
   </body>
 </html>
-
