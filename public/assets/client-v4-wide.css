@@ -49,17 +49,52 @@
   }
 }
 
-/* Marca horizontal construida desde el logo provisto por el usuario. */
+/* Encabezado simple: isotipo cuadrado + nombre al lado. */
 .cat-logo {
-  width: clamp(225px, 15vw, 285px);
-  height: 58px;
+  width: auto;
+  height: auto;
   flex: 0 0 auto;
-  background: url('/assets/autodiagnostico-header-brand.svg?v=20260731-r3') no-repeat left center / contain;
+  background: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.cat-logo-mark,
+.cat-logo-mark {
+  display: grid !important;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--red);
+}
+
+.cat-logo-mark svg {
+  display: none;
+}
+
+.cat-logo-mark img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 .cat-logo-word {
-  display: none !important;
+  display: inline-block !important;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.035em;
+  white-space: nowrap;
+}
+
+.cat-logo-word span {
+  color: var(--red);
 }
 
 /* El bloque promocional no forma parte de esta versión del portal. */
@@ -67,16 +102,23 @@
   display: none !important;
 }
 
-@media (max-width: 980px) {
-  .cat-logo {
-    width: 210px;
-    height: 54px;
-  }
-}
-
 @media (max-width: 620px) {
   .cat-logo {
-    width: 170px;
-    height: 48px;
+    gap: 8px;
+  }
+
+  .cat-logo-mark {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .cat-logo-mark img {
+    width: 20px;
+    height: 20px;
+  }
+
+  .cat-logo-word {
+    font-size: 18px;
   }
 }
