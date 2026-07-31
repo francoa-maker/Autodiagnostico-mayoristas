@@ -16,6 +16,87 @@ function esc(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+const AUDIT_ACTION_INFO = {
+  "user.create": ["Se agregó un cliente", "👤"],
+  "user.update": ["Se actualizaron el acceso o el rol de un usuario", "👤"],
+  "user.profile.update": ["Se actualizaron los datos de un cliente", "👤"],
+  "user.delete": ["Se eliminó un cliente", "👤"],
+  "brand_logos.update": ["Se actualizaron los logos de las marcas", "🏷️"],
+  "catalog.order.update": ["Se cambió el orden del catálogo", "↕️"],
+  "product.reorder": ["Se cambió el orden de los productos", "↕️"],
+  "brand.rename": ["Se cambió el nombre de una marca", "🏷️"],
+  "category.rename": ["Se cambió el nombre de una categoría", "🏷️"],
+  "product.bulk_assign": ["Se reasignaron productos en el catálogo", "📦"],
+  "product.create": ["Se creó un producto", "📦"],
+  "product.update": ["Se actualizaron los datos de un producto", "📦"],
+  "product.delete": ["Se eliminó un producto", "📦"],
+  "price.update": ["Se actualizaron los precios de un producto", "💲"],
+  "quote.create": ["Se creó una cotización", "📝"],
+  "quote.submit": ["Un cliente envió una solicitud de cotización", "📝"],
+  "quote.update": ["Se actualizó una cotización", "📝"],
+  "quote.delete": ["Se eliminó una cotización", "📝"],
+  "quote.note": ["Se agregó una nota interna a una cotización", "💬"],
+  "quote.items.reorder": ["Se cambió el orden de una cotización", "↕️"],
+  "quote.item.add": ["Se agregó un producto a una cotización", "➕"],
+  "quote.item.update": ["Se modificó un producto de una cotización", "✏️"],
+  "quote.item.delete": ["Se quitó un producto de una cotización", "➖"],
+  "quote.line.add": ["Se agregó una sección o nota a una cotización", "➕"],
+  "quote.proforma.sent": ["Se envió una pre-compra por email", "✉️"],
+  "quote.warehouse.sent": ["Se envió una orden al depósito", "🚚"],
+  "order.authorize": ["Se autorizó una orden de venta", "✅"],
+  "order.payment_condition.update": ["Se cambió la condición de pago de una orden", "💳"],
+  "order.dispatch": ["Se registró el despacho de una orden", "🚚"],
+  "invoice.create": ["Se creó una factura", "🧾"],
+  "invoice.void": ["Se anuló una factura", "🧾"],
+  "account.adjustment": ["Se registró un ajuste de cuenta", "💰"],
+  "account.movement.reverse": ["Se revirtió un movimiento de cuenta", "↩️"],
+  "payment.create": ["Se registró un pago", "💳"],
+  "payment.confirm": ["Se confirmó un pago", "✅"],
+  "payment.apply": ["Se aplicó un pago a una factura", "💳"],
+  "payment.reverse": ["Se revirtió un pago", "↩️"],
+  "payment.inform": ["Un cliente informó un pago", "💳"],
+  "echeq.create": ["Se registró un eCheq", "🏦"],
+  "echeq.accept": ["Se aceptó un eCheq", "🏦"],
+  "echeq.accredit": ["Se acreditó un eCheq", "✅"],
+  "echeq.reject": ["Se rechazó un eCheq", "⚠️"],
+  "serial.register": ["Se registraron números de serie", "🔢"],
+  "serial.remove": ["Se quitó un número de serie", "🔢"],
+  "document.upload": ["Se subió un documento", "📎"],
+  "document.upload.client": ["Un cliente subió un documento", "📎"],
+  "document.delete": ["Se eliminó un documento", "📎"],
+  "company_profile.update": ["Se actualizaron los datos de la empresa", "⚙️"],
+  "email_recipients.update": ["Se actualizaron los destinatarios de email", "✉️"]
+};
+
+const AUDIT_ENTITY_LABELS = {
+  user: "Cliente",
+  product: "Producto",
+  quote_request: "Cotización",
+  quote_item: "Producto de cotización",
+  invoice: "Factura",
+  payment: "Pago",
+  echeq: "eCheq",
+  account_movement: "Movimiento de cuenta",
+  document: "Documento",
+  order_item_serial: "Número de serie",
+  app_settings: "Configuración"
+};
+
+function auditInfo(action) {
+  if (AUDIT_ACTION_INFO[action]) {
+    const [label, icon] = AUDIT_ACTION_INFO[action];
+    return { label, icon };
+  }
+  const readable = String(action || "actividad")
+    .replace(/[._]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return { label: readable, icon: "•" };
+}
+
+function auditActor(entry) {
+  return entry.actor_name || entry.actor_email || "Sistema";
+}
+
 async function deleteJson(url) {
   return fetchJson(url, { method: "DELETE" });
 }
@@ -164,12 +245,19 @@ async function loadAudit() {
   el.innerHTML =
     entries
       .slice(0, 8)
-      .map(
-        (entry) => `<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f0f1f3;font-size:12.5px">
-          <span>${esc(entry.action)} · ${esc(entry.entity_type)}</span>
-          <span style="color:var(--muted)">${timeAgo(entry.created_at)}</span>
-        </div>`
-      )
+      .map((entry) => {
+        const info = auditInfo(entry.action);
+        const entity = AUDIT_ENTITY_LABELS[entry.entity_type] || "Registro";
+        const exactDate = entry.created_at ? new Date(entry.created_at).toLocaleString("es-AR") : "";
+        return `<div class="audit-item">
+          <span class="audit-icon" aria-hidden="true">${info.icon}</span>
+          <span class="audit-copy">
+            <strong>${esc(info.label)}</strong>
+            <span>${esc(entity)} · por ${esc(auditActor(entry))}</span>
+          </span>
+          <time datetime="${esc(entry.created_at)}" title="${esc(exactDate)}">${timeAgo(entry.created_at)}</time>
+        </div>`;
+      })
       .join("") || '<div class="empty-row">Sin actividad reciente.</div>';
 }
 
