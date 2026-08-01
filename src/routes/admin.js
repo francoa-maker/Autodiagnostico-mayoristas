@@ -743,27 +743,6 @@ router.post("/admin/quotes", canQuotes, async (req, res) => {
 });
 
 // Borrado definitivo de una cotización (cascada a items y revisiones).
-// Mantenimiento único: se elimina después de vaciar las cotizaciones de prueba.
-router.get("/admin/maintenance/purge-quotes-20260801-7f4c9d", canQuotes, async (req, res) => {
-  try {
-    const deleted = await pool.query(`delete from portal.quote_requests returning id, request_number`);
-    for (const quote of deleted.rows) {
-      await recordAudit({
-        actorUserId: req.user.id,
-        action: "quote.delete",
-        entityType: "quote_request",
-        entityId: quote.id,
-        before: { request_number: quote.request_number },
-        metadata: { reason: "maintenance_purge" }
-      });
-    }
-    res.json({ ok: true, deletedCount: deleted.rowCount, requestNumbers: deleted.rows.map((quote) => quote.request_number) });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "quote_purge_failed" });
-  }
-});
-
 router.delete("/admin/quotes/:id", canQuotes, async (req, res) => {
   const del = await pool.query(`delete from portal.quote_requests where id = $1 returning request_number`, [req.params.id]);
   if (!del.rows[0]) return res.status(404).json({ error: "not_found" });
