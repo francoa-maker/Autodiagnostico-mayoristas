@@ -2910,6 +2910,7 @@ async function loadCompanyProfile() {
   f.website.value = profile.website || "";
   f.taxId.value = profile.taxId || "";
   f.warehouseEmail.value = profile.warehouseEmail || "";
+  f.bankDetails.value = profile.bankDetails || profile.bank_details || "";
   f.logoUrl.value = profile.logoUrl || "";
   f.proformaValidityDays.value = profile.proformaValidityDays ?? "";
   f.proformaFooter.value = profile.proformaFooter || "";
@@ -2930,6 +2931,7 @@ document.getElementById("companyForm").addEventListener("submit", async (e) => {
         website: f.website.value.trim(),
         taxId: f.taxId.value.trim(),
         warehouseEmail: f.warehouseEmail.value.trim(),
+        bankDetails: f.bankDetails.value.trim(),
         logoUrl: f.logoUrl.value.trim(),
         proformaValidityDays: f.proformaValidityDays.value ? Number(f.proformaValidityDays.value) : 0,
         proformaFooter: f.proformaFooter.value.trim()
