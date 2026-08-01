@@ -1181,6 +1181,7 @@ async function loadClients() {
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="link-btn" data-action="edit-profile">Datos</button>
             <button class="link-btn" data-action="view-orders">Ver compras</button>
+            ${u.status === "approved" && normStatus(u.role) === "client" ? '<button class="link-btn" data-action="open-order">Abrir pedido mensual</button>' : ""}
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
             <button class="link-btn ghost" data-action="delete-user" title="Eliminar cliente">🗑</button>
@@ -1235,6 +1236,20 @@ document.getElementById("clientsBody").addEventListener("click", async (e) => {
 
   if (btn.dataset.action === "view-orders") {
     openClientOrders(id, row.dataset.email);
+    return;
+  }
+
+  if (btn.dataset.action === "open-order") {
+    btn.disabled=true;
+    try {
+      const {quote}=await postJson(`/api/admin/clients/${id}/open-order`,{});
+      await loadQuotes();
+      currentQuoteId=quote.id;
+      openAdminSection("quotes");
+      renderQuoteEditor(quote.id);
+    } catch(error) {
+      alert("No se pudo abrir el pedido mensual: "+(error.body?.detail||error.body?.error||error.message));
+    } finally { btn.disabled=false; }
     return;
   }
 
@@ -1420,7 +1435,7 @@ document.getElementById("newClientBtn").addEventListener("click", () => {
 // no migró (lectura robusta). 'despachado' lo dispara Logística.
 const QUOTE_STATUS = ["cotizacion", "enviada", "orden", "despachado", "cancelado"];
 const QUOTE_STATUS_LABEL = {
-  cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
+  abierto: "Pedido abierto", cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
   submitted: "Cotización", reviewing: "Cotización", quoted: "Cotización enviada", accepted: "Orden de venta", rejected: "Cancelado", expired: "Cancelado", cancelled: "Cancelado"
 };
 // Normaliza estados viejos → nuevos (por si se lee data sin migrar todavía).
@@ -1430,6 +1445,7 @@ function normStatus(s) { return STATUS_OLD_TO_NEW[s] || s; }
 const STATUS_COMPRA = new Set(["orden", "despachado", "accepted"]);
 // Ribbon progresivo de la venta; 'cancelado' se muestra aparte en rojo (estilo Odoo).
 const STEPPER_STEPS = [
+  { key: "abierto", label: "Abierto" },
   { key: "cotizacion", label: "Cotización" },
   { key: "enviada", label: "Cotización enviada" },
   { key: "orden", label: "Orden de venta" },
@@ -1437,10 +1453,10 @@ const STEPPER_STEPS = [
 ];
 // Estados que el admin puede setear a mano en el editor. 'despachado' NO está:
 // lo dispara Logística al despachar (evita desincronizar con logistics_status).
-const QUOTE_STATUS_MANUAL = ["cotizacion", "enviada", "orden", "cancelado"];
+const QUOTE_STATUS_MANUAL = ["abierto", "cotizacion", "enviada", "orden", "cancelado"];
 function statusPillClass(status) {
   const s = normStatus(status);
-  return s === "cotizacion" ? "pending" : (s === "cancelado" ? "rejected" : "approved");
+  return ["abierto","cotizacion"].includes(s) ? "pending" : (s === "cancelado" ? "rejected" : "approved");
 }
 function quoteStepper(status) {
   const st = normStatus(status);
@@ -1532,7 +1548,9 @@ document.querySelectorAll("[data-view-menu] [data-col]").forEach((checkbox) => c
 document.querySelectorAll("[data-save-view]").forEach((button) => button.addEventListener("click", () => saveCurrentView(button.dataset.saveView)));
 
 function itemUnit(it) {
-  if (it.quoted_unit_price != null) return Number(it.quoted_unit_price);
+  if (Object.prototype.hasOwnProperty.call(it, "quoted_unit_price")) {
+    return it.quoted_unit_price == null ? null : Number(it.quoted_unit_price);
+  }
   const snap = it.displayed_price_snapshot || {};
   return snap.amount != null ? Number(snap.amount) : null;
 }
@@ -1713,6 +1731,7 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
         ${canEditQuote
           ? `<select id="quoteStatus" class="admin-search" style="min-width:140px">${(normStatus(quote.status) === "despachado" ? [...QUOTE_STATUS_MANUAL, "despachado"] : QUOTE_STATUS_MANUAL).map((s) => `<option value="${s}"${normStatus(quote.status) === s ? " selected" : ""}>${QUOTE_STATUS_LABEL[s]}</option>`).join("")}</select>`
           : `<span class="status-pill approved">${QUOTE_STATUS_LABEL[quote.status] || quote.status}</span>`}
+        ${quote.status === "abierto" && canEditQuote ? '<button class="btn-primary" id="closeOpenOrderBtn">Cerrar pedido del mes</button>' : ""}
         <button class="btn-primary" id="proformaBtn">Ver ${docTerm.toLowerCase()}</button>
       </div>
     </div>
@@ -1948,6 +1967,22 @@ async function renderQuoteEditor(id, targetId = "quoteDetailBody") {
   loadQuoteChatter(id, canEditQuote);
 
   document.getElementById("proformaBtn").addEventListener("click", () => window.open(`/api/admin/quotes/${id}/proforma`, "_blank"));
+
+  document.getElementById("closeOpenOrderBtn")?.addEventListener("click", async () => {
+    const button=document.getElementById("closeOpenOrderBtn");
+    button.disabled=true;button.textContent="Validando precios...";
+    try {
+      await postJson(`/api/admin/quotes/${id}/close-open-order`,{
+        paymentTerms:document.getElementById("qPaymentTerms")?.value || "dias_30",
+        dueDate:document.getElementById("qDueDate")?.value || null
+      });
+      toast("Pedido mensual cerrado y listo para cotizar");
+      await renderQuoteEditor(id); await loadQuotes();
+    } catch(error) {
+      alert(error.body?.detail || error.body?.error || error.message);
+      button.disabled=false;button.textContent="Cerrar pedido del mes";
+    }
+  });
 
   if (canEditQuote) {
     const recalc = () => {
@@ -2802,9 +2837,70 @@ document.getElementById("notifyForm")?.addEventListener("submit", async (e) => {
   }
 });
 
+async function loadEmailConfiguration() {
+  const section=document.getElementById("section-settings");
+  if(!section) return;
+  let host=document.getElementById("emailTemplateSettings");
+  if(!host){
+    host=document.createElement("div");
+    host.id="emailTemplateSettings";
+    host.className="panel";
+    host.style.cssText="max-width:900px;margin-top:16px";
+    host.innerHTML=`<h3 style="margin-top:0">Plantillas de correo</h3>
+      <p style="color:var(--muted)">Editá asunto y cuerpo. Las variables entre llaves dobles se reemplazan al enviar.</p>
+      <div class="form-grid"><label class="full">Evento<select id="emailTemplateKey"></select></label>
+      <label class="full">Asunto<input id="emailTemplateSubject"></label>
+      <label class="full">Cuerpo HTML<textarea id="emailTemplateBody" rows="10"></textarea></label>
+      <div class="full"><button class="btn-primary" id="saveEmailTemplate">Guardar plantilla</button> <span id="emailTemplateMsg"></span></div></div>
+      <hr style="margin:22px 0;border:0;border-top:1px solid var(--border)">
+      <h3>Certificado de exclusión de retenciones</h3>
+      <div class="form-grid"><label>Vencimiento<input type="date" id="certificateExpires"></label>
+      <label>Avisar con anticipación (días)<input type="number" min="1" id="certificateWarningDays" value="30"></label>
+      <div class="full"><button class="btn-primary" id="saveCertificate">Guardar vencimiento</button> <span id="certificateMsg"></span></div></div>`;
+    section.appendChild(host);
+  }
+  const [{templates},{configuration,status}]=await Promise.all([
+    fetchJson("/api/admin/email-templates"),
+    fetchJson("/api/admin/certificate-expiry")
+  ]);
+  const select=document.getElementById("emailTemplateKey");
+  select.innerHTML=templates.map(t=>`<option value="${esc(t.key)}">${esc(t.key)}</option>`).join("");
+  const fill=()=>{
+    const t=templates.find(x=>x.key===select.value);
+    document.getElementById("emailTemplateSubject").value=t?.subject||"";
+    document.getElementById("emailTemplateBody").value=t?.body_html||"";
+  };
+  select.onchange=fill;fill();
+  document.getElementById("saveEmailTemplate").onclick=async()=>{
+    const key=select.value,msg=document.getElementById("emailTemplateMsg");
+    try{
+      await putJson(`/api/admin/email-templates/${encodeURIComponent(key)}`,{
+        subject:document.getElementById("emailTemplateSubject").value,
+        bodyHtml:document.getElementById("emailTemplateBody").value,
+        variables:templates.find(x=>x.key===key)?.variables||[]
+      });
+      msg.textContent="Guardado ✓";
+    }catch(e){msg.textContent=e.body?.error||e.message;}
+  };
+  document.getElementById("certificateExpires").value=configuration.expiresAt?String(configuration.expiresAt).slice(0,10):"";
+  document.getElementById("certificateWarningDays").value=configuration.warningDays||30;
+  const certMsg=document.getElementById("certificateMsg");
+  if(status?.warning) certMsg.textContent=`Atención: vence en ${status.daysRemaining} día(s)`;
+  document.getElementById("saveCertificate").onclick=async()=>{
+    try{
+      await putJson("/api/admin/certificate-expiry",{
+        documentId:configuration.documentId||null,
+        expiresAt:document.getElementById("certificateExpires").value||null,
+        warningDays:Number(document.getElementById("certificateWarningDays").value)||30
+      });
+      certMsg.textContent="Guardado ✓";
+    }catch(e){certMsg.textContent=e.body?.error||e.message;}
+  };
+}
+
 async function loadCompanyProfile() {
   const { profile } = await fetchJson("/api/admin/company-profile");
-  await loadNotifyRecipients();
+  await Promise.all([loadNotifyRecipients(), loadEmailConfiguration()]);
   const f = document.getElementById("companyForm");
   f.name.value = profile.name || "";
   f.legalName.value = profile.legalName || "";
