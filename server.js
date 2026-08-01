@@ -12,6 +12,7 @@ import profileRouter from "./src/routes/profile.js";
 import documentsRouter from "./src/routes/documents.js";
 import financeRouter from "./src/routes/finance.js";
 import logisticsRouter from "./src/routes/logistics.js";
+import { startEmailWorker } from "./src/email/worker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -120,4 +121,5 @@ app.use((error, req, res, next) => {
 
 app.listen(port, () => {
   console.log(`Portal Autodiagnóstico corriendo en ${process.env.APP_BASE_URL || `http://localhost:${port}`}`);
+  startEmailWorker().catch((error) => console.error("email_worker_start_failed", error.message));
 });

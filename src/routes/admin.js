@@ -11,6 +11,10 @@ import { resolveWholesaleUnit } from "../pricing.js";
 import { saveUserProfile, profileComplete, PROFILE_COLUMNS } from "./profile.js";
 import { generateClientCode } from "../auth.js";
 import { ROLES, normalizeRole, isSuperadmin, isAdminStaff } from "../permissions.js";
+import { computeDueDate, PAYMENT_TERMS } from "../finance/paymentTerms.js";
+import { listEmailTemplates, saveEmailTemplate } from "../email/queue.js";
+import { certificateWarning } from "../email/worker.js";
+import { notifyQuoteEventSafe } from "../notifications.js";
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -31,7 +35,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const USER_STATUSES = ["pending", "approved", "rejected", "blocked"];
 const USER_ROLES = ROLES; // superadmin/sales_billing/administration/logistics/client
 // Modelo simplificado de 5 estados (guía §11.2). 'despachado' lo setea Logística.
-const QUOTE_STATUSES = ["cotizacion", "enviada", "orden", "despachado", "cancelado"];
+const QUOTE_STATUSES = ["abierto", "cotizacion", "enviada", "orden", "despachado", "cancelado"];
 const PRICE_STATES = ["value", "consult", "hidden", "unavailable", "custom"];
 
 // Reject a malformed :id / :itemId with a clean 400 before it reaches
@@ -82,7 +86,7 @@ async function recomputeQuoteTotals(client, quoteId) {
     `update portal.quote_requests set quoted_subtotal = $2, tax = $3, quoted_total = $4, updated_at = now() where id = $1`,
     [quoteId, totals.itemsGross, totals.ivaTotal, totals.total]
   );
-  return { quotedSubtotal: totals.itemsGross, iva: totals.ivaTotal, neto: totals.netoTotal, quotedTotal: totals.total, ivaGroups: totals.ivaGroups };
+  return { quotedSubtotal: totals.itemsGross, iva: totals.ivaTotal, neto: totals.netoTotal, quotedTotal: totals.total, ivaGroups: totals.ivaGroups, unpricedLines: totals.unpricedLines };
 }
 
 const DEFAULT_COMPANY_PROFILE = {
@@ -719,6 +723,68 @@ router.get("/admin/quotes/months", async (req, res) => {
   res.json({ months: result.rows.map((r) => r.month) });
 });
 
+// Pedido mensual acumulativo: una sola fila abierta por cliente y mes.
+router.post("/admin/clients/:clientId/open-order", canQuotes, async (req, res) => {
+  if (!UUID_RE.test(String(req.params.clientId))) return res.status(400).json({ error: "invalid_user_id" });
+  const period = /^\d{4}-\d{2}$/.test(String(req.body?.period || "")) ? String(req.body.period) : new Date().toISOString().slice(0, 7);
+  const periodDate = period + "-01";
+  const clientRow = (await pool.query(
+    `select id, default_payment_term from portal.users where id=$1 and role in ('client','customer')`,
+    [req.params.clientId]
+  )).rows[0];
+  if (!clientRow) return res.status(404).json({ error: "client_not_found" });
+  const term = PAYMENT_TERMS.includes(req.body?.paymentTerms)
+    ? req.body.paymentTerms
+    : (PAYMENT_TERMS.includes(clientRow.default_payment_term) ? clientRow.default_payment_term : "dias_30");
+  const dueDate = computeDueDate(term, new Date().toISOString().slice(0, 10));
+  const result = await pool.query(
+    `insert into portal.quote_requests
+       (user_id,status,assigned_admin_id,period_month,payment_terms,due_date,customer_notes)
+     values ($1,'abierto',$2,$3,$4,$5,$6)
+     on conflict (user_id,period_month) where status='abierto'
+     do update set assigned_admin_id=coalesce(portal.quote_requests.assigned_admin_id,excluded.assigned_admin_id),
+       updated_at=now()
+     returning *`,
+    [req.params.clientId, req.user.id, periodDate, term, dueDate, req.body?.notes || null]
+  );
+  const quote = result.rows[0];
+  await recordAudit({ actorUserId:req.user.id, action:"order.open", entityType:"quote_request", entityId:quote.id, after:{ period, status:"abierto" } });
+  await notifyQuoteEventSafe("open_order", quote.id, { version: period });
+  res.status(201).json({ quote });
+});
+
+router.post("/admin/quotes/:id/close-open-order", canQuotes, async (req, res) => {
+  try {
+    const result = await withTransaction(async (client) => {
+      const q = (await client.query(
+        `select q.*, u.default_payment_term from portal.quote_requests q join portal.users u on u.id=q.user_id
+         where q.id=$1 for update`, [req.params.id]
+      )).rows[0];
+      if (!q) throw Object.assign(new Error("not_found"), { statusCode:404 });
+      if (q.status !== "abierto") throw Object.assign(new Error("pedido_no_esta_abierto"), { statusCode:409 });
+      const totals = await recomputeQuoteTotals(client, q.id);
+      if (totals.unpricedLines > 0) {
+        throw Object.assign(new Error("faltan_precios"), { statusCode:409, detail: `${totals.unpricedLines} producto(s) sin precio` });
+      }
+      const term = PAYMENT_TERMS.includes(req.body?.paymentTerms)
+        ? req.body.paymentTerms
+        : (PAYMENT_TERMS.includes(q.payment_terms) ? q.payment_terms : (PAYMENT_TERMS.includes(q.default_payment_term) ? q.default_payment_term : "dias_30"));
+      const dueDate = req.body?.dueDate || computeDueDate(term, new Date().toISOString().slice(0,10));
+      const quote = (await client.query(
+        `update portal.quote_requests set status='cotizacion', closed_at=now(), closed_by=$2,
+           payment_terms=$3, due_date=$4, updated_at=now() where id=$1 returning *`,
+        [q.id, req.user.id, term, dueDate]
+      )).rows[0];
+      return { quote, totals };
+    });
+    await recordAudit({ actorUserId:req.user.id, action:"order.close", entityType:"quote_request", entityId:req.params.id, after:{ status:"cotizacion" } });
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error:error.message, detail:error.detail });
+    throw error;
+  }
+});
+
 // Alta manual de una cotización vacía para un cliente existente (a diferencia
 // de POST /api/quotes, que la arma el propio cliente desde su carrito). Nace en
 // 'cotizacion' pero con assigned_admin_id seteado, para distinguir "la está
@@ -896,6 +962,12 @@ router.patch("/admin/quotes/:id", canQuotes, async (req, res) => {
       before: { status: result.beforeStatus }, after: { status: result.quote.status },
       metadata: { statusChanged: result.beforeStatus !== result.quote.status }
     });
+    if (result.beforeStatus !== result.quote.status && result.quote.status === "enviada") {
+      await notifyQuoteEventSafe("quote_sent", result.quote.id, { version: String(result.quote.quoted_at || Date.now()) });
+    }
+    if (result.beforeStatus !== result.quote.status && result.quote.status === "orden") {
+      await notifyQuoteEventSafe("order_confirmed", result.quote.id, { version: String(result.quote.updated_at || Date.now()) });
+    }
     res.json(result);
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -1044,6 +1116,46 @@ router.delete("/admin/quotes/:id/items/:itemId", canQuotes, async (req, res) => 
     console.error(error);
     res.status(500).json({ error: "quote_item_delete_failed" });
   }
+});
+
+// Plantillas editables y alerta de vencimiento del certificado.
+router.get("/admin/email-templates", async (_req, res) => {
+  res.json({ templates: await listEmailTemplates() });
+});
+
+router.put("/admin/email-templates/:key", canCatalog, async (req, res) => {
+  const key = String(req.params.key || "");
+  if (!/^[a-z0-9_.-]+$/i.test(key)) return res.status(400).json({ error:"invalid_template_key" });
+  const subject = String(req.body?.subject || "").trim();
+  const bodyHtml = String(req.body?.bodyHtml || "").trim();
+  if (!subject || !bodyHtml) return res.status(400).json({ error:"subject_and_body_required" });
+  const template = await saveEmailTemplate({
+    key, subject, bodyHtml, bodyText:req.body?.bodyText || null,
+    variables:Array.isArray(req.body?.variables) ? req.body.variables : [], updatedBy:req.user.id
+  });
+  await recordAudit({ actorUserId:req.user.id, action:"email_template.update", entityType:"email_template", entityId:key });
+  res.json({ template });
+});
+
+router.get("/admin/certificate-expiry", async (_req, res) => {
+  const row = (await pool.query(`select value from portal.app_settings where key='certificate_expiry'`)).rows[0];
+  res.json({ configuration:row?.value || {}, status:await certificateWarning() });
+});
+
+router.put("/admin/certificate-expiry", canCatalog, async (req, res) => {
+  const value = {
+    documentId:req.body?.documentId || null,
+    expiresAt:req.body?.expiresAt || null,
+    warningDays:Math.max(1, Number(req.body?.warningDays) || 30)
+  };
+  await pool.query(
+    `insert into portal.app_settings(key,value,description,updated_by,updated_at)
+     values('certificate_expiry',$1,'Certificado de exclusión de retenciones',$2,now())
+     on conflict(key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+    [JSON.stringify(value),req.user.id]
+  );
+  await recordAudit({ actorUserId:req.user.id, action:"certificate_expiry.update", entityType:"app_settings", entityId:"certificate_expiry", after:value });
+  res.json({ configuration:value, status:await certificateWarning() });
 });
 
 // ------------------------------------------------------ company profile

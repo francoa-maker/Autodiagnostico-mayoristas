@@ -1,10 +1,5 @@
-// Sends email "from the vendor's own mailbox" via the Gmail API, using a
-// per-user refresh token obtained through the incremental gmail.send consent
-// (see /auth/google/gmail in routes/auth.js). No SMTP, no extra dependency:
-// exchange the refresh token for an access token, then POST an RFC822 message
-// to Gmail's users.messages.send. Gmail always sends as the authenticated
-// account, so the From header is the vendor.
-
+// Gmail API mailer. Each message is sent from the connected mailbox of the
+// responsible internal user. Supports HTML plus optional PDF/image attachments.
 async function accessTokenFromRefresh(refreshToken) {
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -23,34 +18,23 @@ async function accessTokenFromRefresh(refreshToken) {
   return (await response.json()).access_token;
 }
 
-// RFC 2047 encode a header value so non-ASCII (accents) survive.
 function encodeHeader(value) {
   // eslint-disable-next-line no-control-regex
-  if (/^[\x00-\x7F]*$/.test(value)) return value;
-  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+  if (/^[\x00-\x7F]*$/.test(String(value))) return String(value);
+  return `=?UTF-8?B?${Buffer.from(String(value), "utf8").toString("base64")}?=`;
 }
 
 function base64url(buffer) {
   return Buffer.from(buffer).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// Builds a minimal MIME message. Body is HTML; an optional plain-text
-// fallback keeps spam filters happier. `from`/`to` are plain email addresses;
-// fromName is used as the display name.
-function buildMime({ from, fromName, to, cc, subject, html, replyTo }) {
-  const boundary = "b_" + base64url(Buffer.from(String(subject + to))).slice(0, 16);
-  const headers = [
-    `From: ${fromName ? `${encodeHeader(fromName)} <${from}>` : from}`,
-    `To: ${to}`,
-    cc ? `Cc: ${cc}` : null,
-    replyTo ? `Reply-To: ${replyTo}` : null,
-    `Subject: ${encodeHeader(subject)}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`
-  ].filter(Boolean);
+function safeFilename(value) {
+  return String(value || "archivo").replace(/[\r\n"]/g, "_");
+}
 
-  const textFallback = "El documento está adjunto en formato HTML. Si no lo ve, abra este correo en un cliente que soporte HTML.";
-  const body = [
+function alternativePart({ html, boundary }) {
+  const textFallback = "Este correo contiene información de Autodiagnóstico. Abra el mensaje en un cliente compatible con HTML.";
+  return [
     `--${boundary}`,
     "Content-Type: text/plain; charset=UTF-8",
     "Content-Transfer-Encoding: 8bit",
@@ -66,13 +50,51 @@ function buildMime({ from, fromName, to, cc, subject, html, replyTo }) {
     `--${boundary}--`,
     ""
   ].join("\r\n");
-
-  return headers.join("\r\n") + "\r\n\r\n" + body;
 }
 
-export async function sendGmail({ refreshToken, from, fromName, to, cc, subject, html, replyTo }) {
+function buildMime({ from, fromName, to, cc, subject, html, replyTo, attachments = [] }) {
+  const seed = base64url(Buffer.from(String(subject + to + Date.now()))).slice(0, 20);
+  const altBoundary = "alt_" + seed;
+  const mixedBoundary = "mix_" + seed;
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+  const headers = [
+    `From: ${fromName ? `${encodeHeader(fromName)} <${from}>` : from}`,
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : null,
+    replyTo ? `Reply-To: ${replyTo}` : null,
+    `Subject: ${encodeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    hasAttachments
+      ? `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`
+      : `Content-Type: multipart/alternative; boundary="${altBoundary}"`
+  ].filter(Boolean);
+
+  if (!hasAttachments) return headers.join("\r\n") + "\r\n\r\n" + alternativePart({ html, boundary: altBoundary });
+
+  const body = [
+    `--${mixedBoundary}`,
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    "",
+    alternativePart({ html, boundary: altBoundary })
+  ];
+  for (const attachment of attachments) {
+    body.push(
+      `--${mixedBoundary}`,
+      `Content-Type: ${attachment.mimeType || "application/octet-stream"}; name="${safeFilename(attachment.filename)}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${safeFilename(attachment.filename)}"`,
+      "",
+      Buffer.from(attachment.content).toString("base64").replace(/(.{76})/g, "$1\r\n"),
+      ""
+    );
+  }
+  body.push(`--${mixedBoundary}--`, "");
+  return headers.join("\r\n") + "\r\n\r\n" + body.join("\r\n");
+}
+
+export async function sendGmail({ refreshToken, from, fromName, to, cc, subject, html, replyTo, attachments = [] }) {
   const accessToken = await accessTokenFromRefresh(refreshToken);
-  const raw = base64url(Buffer.from(buildMime({ from, fromName, to, cc, subject, html, replyTo }), "utf8"));
+  const raw = base64url(Buffer.from(buildMime({ from, fromName, to, cc, subject, html, replyTo, attachments }), "utf8"));
   const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
@@ -82,5 +104,5 @@ export async function sendGmail({ refreshToken, from, fromName, to, cc, subject,
     const detail = await response.text();
     throw new Error(`gmail_send_failed: ${response.status} ${detail.slice(0, 300)}`);
   }
-  return await response.json();
+  return response.json();
 }

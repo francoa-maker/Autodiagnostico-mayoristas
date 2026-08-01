@@ -983,11 +983,11 @@ const requestsOverlay = document.getElementById("requestsOverlay");
 // Modelo simplificado de 5 estados (guía §11.2). Se mantienen las claves viejas
 // mapeadas al mismo label para que la vista no se rompa si la DB aún no migró.
 const REQ_STATUS_LABEL = {
-  cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
+  abierto: "Pedido abierto", cotizacion: "Cotización", enviada: "Cotización enviada", orden: "Orden de venta", despachado: "Despachado", cancelado: "Cancelado",
   submitted: "Cotización", reviewing: "Cotización", quoted: "Cotización enviada", accepted: "Orden de venta", rejected: "Cancelado", expired: "Cancelado", cancelled: "Cancelado"
 };
 const REQ_STATUS_HINT = {
-  cotizacion: "Recibida, la está revisando un administrador", enviada: "Cotización enviada, esperando tu confirmación", orden: "Confirmada como compra", despachado: "Pedido despachado", cancelado: "Cancelada",
+  abierto: "Podés seguir agregando productos durante el mes", cotizacion: "Recibida, la está revisando un administrador", enviada: "Cotización enviada, esperando tu confirmación", orden: "Confirmada como compra", despachado: "Pedido despachado", cancelado: "Cancelada",
   submitted: "Recibida, la está revisando un administrador", reviewing: "En revisión por un administrador", quoted: "Cotización enviada, esperando tu confirmación", accepted: "Confirmada como compra", rejected: "Cancelada", expired: "Cancelada", cancelled: "Cancelada"
 };
 // Estados a partir de los cuales existe documento "enviado"/compra.
@@ -1034,11 +1034,15 @@ async function openRequests(mode) {
               <td><span class="req-badge ${q.status}">${REQ_STATUS_LABEL[q.status] || q.status}</span><div class="req-hint">${REQ_STATUS_HINT[q.status] || ""}</div></td>
               <td style="text-align:right" class="tabular">${q.quoted_total != null ? money(q.quoted_total) : "<span style='color:#999'>a confirmar</span>"}</td>
               <td>${q.quoted_by_name ? esc(q.quoted_by_name) : "<span style='color:#999'>pendiente</span>"}${q.quoted_at ? `<br><span style='color:#999;font-size:11px'>${fmtDate(q.quoted_at)}</span>` : ""}</td>
-              <td style="white-space:nowrap">${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="btn-primary sm" data-proforma="${q.id}">${REQ_COMPRA.has(q.status) ? "Ver compra" : "Ver pre-compra"}</button> ` : ""}<button class="link-btn" data-repeat="${q.id}">Repetir solicitud</button>${finState.financial ? ` <button class="link-btn" data-fin="${q.id}" data-num="${q.request_number}">Facturas/pago</button>` : ""}</td>
+              <td style="white-space:nowrap"><button class="btn-primary sm" data-detail="${q.id}" data-num="${q.request_number}">Ver detalle</button> ${(q.quoted_at || REQ_SENT.has(q.status)) ? `<button class="link-btn" data-proforma="${q.id}">Documento</button> ` : ""}<button class="link-btn" data-repeat="${q.id}">Repetir</button></td>
             </tr>`
           )
           .join("")}</tbody></table></div>`;
     }
+    body.querySelectorAll("[data-detail]").forEach((b) => b.addEventListener("click", () => {
+      history.pushState(null, "", `#/pedido/${b.dataset.detail}`);
+      openOrderFinance(b.dataset.detail, b.dataset.num, mode);
+    }));
     body.querySelectorAll("[data-proforma]").forEach((b) => b.addEventListener("click", () => window.open(`/api/quotes/${b.dataset.proforma}/proforma`, "_blank")));
     body.querySelectorAll("[data-repeat]").forEach((b) => b.addEventListener("click", () => repeatRequest(b.dataset.repeat)));
     body.querySelectorAll("[data-fin]").forEach((b) => b.addEventListener("click", () => openOrderFinance(b.dataset.fin, b.dataset.num, mode)));
@@ -1073,56 +1077,96 @@ async function repeatRequest(id) {
 
 // Detalle financiero de un pedido para el cliente: facturas visibles + informar
 // una transferencia (con comprobante opcional).
-async function openOrderFinance(orderId, num, mode) {
+async function openOrderFinance(orderId, num, mode = "all") {
   const body = document.getElementById("requestsBody");
-  body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando...</div>';
-  let invoices = [];
-  try { ({ invoices } = await fetchJson(`/api/orders/${orderId}/invoices`)); } catch { /* módulo puede estar off */ }
-  const invHtml = invoices.length
-    ? invoices.map((i) => {
-        const insts = (i.installments || []).map((it) => `<div style="margin-left:12px;color:var(--muted)">· Cuota ${it.installment_number}: vence ${it.due_date} · ${money(it.amount)} · ${it.display_status}</div>`).join("");
-        return `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b>${esc(i.invoice_type)}</b> ${esc(i.point_of_sale || "")}-${esc(i.invoice_number || "s/n")} · ${money(i.total_amount)} · ${i.issue_date}
-          ${i.document_id ? `<button class="link-btn" data-doc="${i.document_id}">Ver PDF</button>` : ""}</div>${insts}`;
-      }).join("")
-    : '<div style="color:var(--muted)">Sin facturas cargadas todavía.</div>';
-  body.innerHTML = `
-    <button class="link-btn" id="finBack" style="margin-bottom:12px">&larr; Volver</button>
-    <h4 style="margin:0 0 8px">Pedido #${esc(num)} — Facturas</h4>
-    ${invHtml}
-    <h4 style="margin:16px 0 8px">Informar una transferencia</h4>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Queda registrada como <b>informada</b>; un administrador la confirma. Podés adjuntar el comprobante.</p>
-    <div class="form-grid">
-      <label>Monto<input id="cInfAmount" type="number" step="0.01"></label>
-      <label>Referencia<input id="cInfRef" placeholder="N° operación"></label>
-      <label class="full">Comprobante (opcional)<input id="cInfFile" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></label>
-      <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn-primary" id="cInfBtn" type="button">Informar transferencia</button><span id="cInfMsg" style="font-size:12px"></span></div>
-    </div>`;
-  document.getElementById("finBack").addEventListener("click", () => openRequests(mode));
-  body.querySelectorAll("[data-doc]").forEach((b) => b.addEventListener("click", () => window.open(`/api/documents/${b.dataset.doc}/download`, "_blank")));
-  document.getElementById("cInfBtn").addEventListener("click", async () => {
-    const msg = document.getElementById("cInfMsg");
-    const amount = Number(document.getElementById("cInfAmount").value);
-    if (!Number.isFinite(amount) || amount <= 0) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "Monto inválido."; return; }
-    msg.style.color = "var(--muted)"; msg.textContent = "Enviando...";
-    try {
-      let documentId = null;
-      const file = document.getElementById("cInfFile").files[0];
-      if (file) {
-        const qs = new URLSearchParams({ documentType: "comprobante_transferencia", orderId, filename: file.name });
-        const r = await fetch(`/api/documents?${qs}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
-        const jb = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(jb.detail || jb.error || "no se pudo subir");
-        documentId = jb.document?.id || null;
-      }
-      await postJson(`/api/orders/${orderId}/payments/inform`, { amount, reference: document.getElementById("cInfRef").value.trim() || null, documentId });
-      msg.style.color = "var(--success,#137333)"; msg.textContent = "Transferencia informada ✓";
-      document.getElementById("cInfAmount").value = ""; document.getElementById("cInfRef").value = "";
-    } catch (e) { msg.style.color = "var(--danger,#c8102e)"; msg.textContent = "No se pudo informar: " + (e.body?.detail || e.message); }
-  });
+  requestsOverlay.hidden = false;
+  body.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px">Cargando detalle...</div>';
+  try {
+    const [{ quote, items }, invoiceData, documentData] = await Promise.all([
+      fetchJson(`/api/quotes/${orderId}`),
+      fetchJson(`/api/orders/${orderId}/invoices`).catch(() => ({ invoices: [] })),
+      fetchJson(`/api/documents?orderId=${orderId}`).catch(() => ({ documents: [] }))
+    ]);
+    num = num || quote.request_number;
+    const productItems = (items || []).filter((i) => !i.line_type || i.line_type === "product");
+    const itemHtml = productItems.length ? `<div style="overflow-x:auto"><table class="req-table"><thead><tr><th>Producto</th><th>Cantidad</th><th style="text-align:right">Precio</th><th style="text-align:right">Subtotal</th></tr></thead><tbody>${productItems.map((i) => {
+      const unit = i.quoted_unit_price == null ? null : Number(i.quoted_unit_price);
+      return `<tr><td><b>${esc(i.product_name_snapshot)}</b><br><small>${esc(i.sku_snapshot || "")}</small></td><td>${i.quantity}</td><td style="text-align:right">${unit == null ? "A cotizar" : money(unit)}</td><td style="text-align:right">${unit == null ? "—" : money(unit * Number(i.quantity))}</td></tr>`;
+    }).join("")}</tbody></table></div>` : '<p style="color:var(--muted)">Todavía no hay productos.</p>';
+    const invoices = invoiceData.invoices || [];
+    const invHtml = invoices.length ? invoices.map((i) => {
+      const insts = (i.installments || []).map((it) => `<div style="margin:4px 0 0 12px;color:var(--muted)">Cuota ${it.installment_number}: vence ${String(it.due_date).slice(0,10)} · ${money(it.amount)} · ${esc(it.display_status)}</div>`).join("");
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border)"><b>Factura ${esc(i.invoice_type)}</b> ${esc(i.point_of_sale || "")}-${esc(i.invoice_number || "s/n")} · ${money(i.total_amount)}
+        ${i.document_id ? `<button class="link-btn" data-doc="${i.document_id}">Ver archivo</button>` : ""}</div>${insts}`;
+    }).join("") : '<p style="color:var(--muted)">Sin facturas cargadas todavía.</p>';
+    const docs = documentData.documents || [];
+    const docsHtml = docs.length ? docs.map((d) => `<button class="link-btn" data-doc="${d.id}">${esc(d.original_filename || d.document_type)}</button>`).join(" · ") : '<span style="color:var(--muted)">Sin documentos visibles.</span>';
+    const canAccept = quote.status === "enviada" && (!quote.due_date || String(quote.due_date).slice(0,10) >= new Date().toISOString().slice(0,10));
+    body.innerHTML = `
+      <button class="link-btn" id="finBack" style="margin-bottom:12px">&larr; Volver a mis pedidos</button>
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div><h3 style="margin:0">Pedido #${esc(num)}</h3><p style="margin:4px 0;color:var(--muted)">${REQ_STATUS_LABEL[quote.status] || esc(quote.status)} · ${REQ_STATUS_HINT[quote.status] || ""}</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${quote.quoted_at ? `<button class="link-btn" id="detailProforma">Ver documento</button>` : ""}
+          ${canAccept ? '<button class="btn-primary" id="acceptQuote">Aceptar cotización</button>' : ""}
+        </div>
+      </div>
+      <h4 style="margin:18px 0 8px">Productos</h4>${itemHtml}
+      <div style="text-align:right;margin:12px 0;font-size:18px"><b>Total: ${quote.quoted_total == null ? "A confirmar" : money(quote.quoted_total)}</b></div>
+      <h4 style="margin:18px 0 8px">Facturas y vencimientos</h4>${invHtml}
+      <h4 style="margin:18px 0 8px">Documentos</h4><div>${docsHtml}</div>
+      <h4 style="margin:20px 0 8px">Informar una transferencia</h4>
+      <p style="font-size:12px;color:var(--muted)">Adjuntá el comprobante. Administración verificará la acreditación antes de aplicarla.</p>
+      <div class="form-grid">
+        <label>Monto<input id="cInfAmount" type="number" min="0.01" step="0.01"></label>
+        <label>Referencia bancaria<input id="cInfRef" placeholder="N° de operación"></label>
+        <label>Nombre del pagador<input id="cInfPayer" value="${esc(window.currentUser?.display_name || "")}"></label>
+        <label>CUIT/DNI del pagador<input id="cInfTax" placeholder="Opcional"></label>
+        <label class="full">Comprobante<input id="cInfFile" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></label>
+        <div class="full" style="display:flex;gap:10px;align-items:center"><button class="btn-primary" id="cInfBtn" type="button">Enviar comprobante</button><span id="cInfMsg" style="font-size:12px"></span></div>
+      </div>`;
+    document.getElementById("finBack").addEventListener("click", () => { history.pushState(null, "", "#/pedidos"); openRequests(mode); });
+    document.getElementById("detailProforma")?.addEventListener("click", () => window.open(`/api/quotes/${orderId}/proforma`, "_blank"));
+    document.getElementById("acceptQuote")?.addEventListener("click", async () => {
+      const button=document.getElementById("acceptQuote"); button.disabled=true; button.textContent="Confirmando...";
+      try { await postJson(`/api/quotes/${orderId}/accept`, {}); toast("Cotización aceptada. Ya es una orden de venta."); await openOrderFinance(orderId,num,mode); }
+      catch(e) { button.disabled=false; button.textContent="Aceptar cotización"; toast(e.body?.error || e.message,true); }
+    });
+    body.querySelectorAll("[data-doc]").forEach((b) => b.addEventListener("click", () => window.open(`/api/documents/${b.dataset.doc}/download`, "_blank")));
+    document.getElementById("cInfBtn").addEventListener("click", async () => {
+      const msg=document.getElementById("cInfMsg"), amount=Number(document.getElementById("cInfAmount").value);
+      if(!Number.isFinite(amount)||amount<=0){msg.textContent="Ingresá un monto válido.";return;}
+      const file=document.getElementById("cInfFile").files[0];
+      if(!file){msg.textContent="Adjuntá el comprobante.";return;}
+      msg.textContent="Subiendo...";
+      try {
+        const qs=new URLSearchParams({documentType:"comprobante_transferencia",orderId,filename:file.name});
+        const upload=await fetch(`/api/documents?${qs}`,{method:"POST",headers:{"Content-Type":file.type||"application/octet-stream"},body:file});
+        const data=await upload.json().catch(()=>({}));
+        if(!upload.ok) throw new Error(data.error||"No se pudo subir el archivo");
+        await postJson(`/api/orders/${orderId}/payments/inform`,{
+          amount,reference:document.getElementById("cInfRef").value.trim()||null,
+          payerName:document.getElementById("cInfPayer").value.trim()||null,
+          payerTaxId:document.getElementById("cInfTax").value.trim()||null,
+          payerBankRef:document.getElementById("cInfRef").value.trim()||null,
+          documentId:data.document?.id||null
+        });
+        msg.style.color="var(--success,#137333)";msg.textContent="Comprobante enviado correctamente.";
+      } catch(e) {msg.style.color="var(--danger,#c8102e)";msg.textContent=e.body?.error||e.message;}
+    });
+  } catch (error) {
+    body.innerHTML = `<p style="color:var(--danger,#c8102e)">No se pudo cargar el pedido: ${esc(error.message)}</p>`;
+  }
 }
+
 function closeRequests() { requestsOverlay.hidden = true; }
 document.getElementById("requestsClose").addEventListener("click", closeRequests);
 requestsOverlay.addEventListener("click", (e) => { if (e.target === requestsOverlay) closeRequests(); });
+
+window.addEventListener("client:open-order", (event) => {
+  const id=event.detail;
+  if(id) fetchJson(`/api/quotes/${id}`).then(({quote})=>openOrderFinance(id,quote.request_number,"all")).catch(()=>{});
+});
 
 // =============================== INIT ======================================
 (async function init() {

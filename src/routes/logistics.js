@@ -5,6 +5,7 @@ import { requireFlag } from "../featureFlags.js";
 import { can, isSuperadmin } from "../permissions.js";
 import { recordAudit } from "../audit.js";
 import { setPreparedQuantity, registerSerials, removeSerial, listSerialsByOrder } from "../logistics/serials.js";
+import { notifyQuoteEventSafe } from "../notifications.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const router = express.Router();
@@ -72,6 +73,7 @@ router.post("/logistics/orders/:id/dispatch", requireFlag("serialNumbers"), requ
     actorUserId: req.user.id, action: "order.dispatch", entityType: "quote_request", entityId: req.params.id,
     before: { status: before.status, logistics_status: before.logistics_status }, after: r.rows[0]
   });
+  await notifyQuoteEventSafe("order_dispatched", req.params.id, { version:String(r.rows[0].updated_at || Date.now()) });
   res.json({ order: r.rows[0] });
 });
 

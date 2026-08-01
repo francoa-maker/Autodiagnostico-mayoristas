@@ -94,12 +94,13 @@ function buildRoutePages() {
   ordersPage.innerHTML = `<div class="v5-route-title"><div><h1>Mis pedidos</h1><p>Solicitudes, cotizaciones, compras, facturas y seguimiento en un único lugar.</p></div><a class="v5-btn" href="/api/catalog/pdf" target="_blank" rel="noopener">${icon("file")} Lista de precios</a></div>
     <div class="v5-orders-toolbar" role="group" aria-label="Filtrar pedidos">
       <button class="v5-order-filter is-active" type="button" data-v5-order-filter="all">Todos</button>
+      <button class="v5-order-filter" type="button" data-v5-order-filter="abierto">Abiertos</button>
       <button class="v5-order-filter" type="button" data-v5-order-filter="cotizacion">Cotización</button>
       <button class="v5-order-filter" type="button" data-v5-order-filter="enviada">Enviada</button>
       <button class="v5-order-filter" type="button" data-v5-order-filter="orden">Orden</button>
       <button class="v5-order-filter" type="button" data-v5-order-filter="despachado">Despachado</button>
     </div>
-    <div class="v5-order-stepper" aria-label="Estados del pedido"><span>Cotización</span><span>Enviada</span><span>Orden</span><span>Preparación</span><span>Despachado</span></div>`;
+    <div class="v5-order-stepper" aria-label="Estados del pedido"><span>Abierto</span><span>Cotización</span><span>Enviada</span><span>Orden</span><span>Preparación</span><span>Despachado</span></div>`;
 
   const requestsModal = q("#requestsModal");
   if (requestsModal) ordersPage.appendChild(requestsModal);
@@ -172,6 +173,7 @@ function orderItems() {
 
 function filterOrders(filter) {
   const aliases = {
+    abierto: ["abierto", "pedido abierto"],
     cotizacion: ["cotizacion", "solicitud"],
     enviada: ["enviada", "pre-compra", "precompra"],
     orden: ["orden", "compra"],
@@ -197,7 +199,14 @@ function setRoute(route, { updateHash = true } = {}) {
   q("#clientOrdersPage").hidden = currentRoute !== "pedidos";
   q("#clientAccountPage").hidden = currentRoute !== "cuenta";
   qa("[data-v5-route]").forEach((button) => button.classList.toggle("is-active", button.dataset.v5Route === currentRoute));
-  if (currentRoute === "pedidos") triggerOrdersLoad();
+  if (currentRoute === "pedidos") {
+    triggerOrdersLoad();
+    const raw=location.hash.replace(/^#\/?/, "").split("?")[0];
+    if(raw.startsWith("pedido/")) {
+      const id=raw.split("/")[1];
+      setTimeout(()=>window.dispatchEvent(new CustomEvent("client:open-order",{detail:id})),120);
+    }
+  }
   if (currentRoute === "cuenta") activateAccountTab(q("[data-v5-account-tab].is-active")?.dataset.v5AccountTab || "account");
   if (updateHash) history.pushState(null, "", `#/${currentRoute}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -208,7 +217,8 @@ function navigate(route) {
 }
 
 function routeFromHash() {
-  return location.hash.replace(/^#\/?/, "").split("?")[0] || "catalogo";
+  const raw=location.hash.replace(/^#\/?/, "").split("?")[0] || "catalogo";
+  return raw.startsWith("pedido/") ? "pedidos" : raw;
 }
 
 async function enhanceIdentity() {

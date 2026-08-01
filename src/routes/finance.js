@@ -10,6 +10,7 @@ import { createEcheq, acceptEcheq, accreditEcheq, rejectEcheq, listEcheqs } from
 import { getOrderFinancialSummary, authorizeOrder, AUTHORIZATION_REASONS } from "../finance/orders.js";
 import { renderAccountStatementHtml } from "../finance/statement.js";
 import { isAdminStaff } from "../permissions.js";
+import { notifyQuoteEventSafe } from "../notifications.js";
 
 async function buildStatementHtml(clientId) {
   const client = (await pool.query(`select id, email, display_name, company_name, client_code, tax_cuit from portal.users where id = $1`, [clientId])).rows[0];
@@ -137,6 +138,10 @@ router.post("/admin/orders/:orderId/invoices", requireFlag("financial"), require
       uploadedBy: req.user.id
     });
     await recordAudit({ actorUserId: req.user.id, action: "invoice.create", entityType: "invoice", entityId: invoice.id, after: { order_id: invoice.order_id, total: invoice.total_amount, type: invoice.invoice_type } });
+    await notifyQuoteEventSafe("invoice_issued", invoice.order_id, {
+      version:String(invoice.id),
+      attachments:invoice.document_id ? [{ documentId:invoice.document_id }] : []
+    });
     res.status(201).json({ invoice });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message, detail: error.detail });
@@ -224,6 +229,33 @@ router.get("/admin/orders/:orderId/payments", requireFlag("financial"), requireC
   res.json({ payments });
 });
 
+// Pago a nivel cliente: puede distribuirse entre cuotas de pedidos distintos.
+router.post("/admin/clients/:clientId/payments", requireFlag("financial"), requireCapability("payments.register"), async (req, res) => {
+  if (!UUID_RE.test(String(req.params.clientId))) return res.status(400).json({ error:"invalid_id" });
+  const b=req.body || {};
+  try {
+    const payment=await createPayment({
+      clientId:req.params.clientId,
+      orderId:b.orderId && UUID_RE.test(String(b.orderId)) ? b.orderId : null,
+      method:b.method, amount:b.amount, paymentDate:b.paymentDate || null,
+      accountingDate:b.accountingDate || null, reference:b.reference || null, notes:b.notes || null,
+      documentId:b.documentId && UUID_RE.test(String(b.documentId)) ? b.documentId : null,
+      payerName:b.payerName || null, payerTaxId:b.payerTaxId || null, payerBankRef:b.payerBankRef || null,
+      status:b.status === "informed" ? "informed" : "confirmed",
+      createdBy:req.user.id, confirmedBy:req.user.id
+    });
+    let allocation=null;
+    if (payment.status === "confirmed" && Array.isArray(b.allocations) && b.allocations.length) {
+      allocation=await applyPayment(payment.id,b.allocations,{actorId:req.user.id});
+    }
+    await recordAudit({ actorUserId:req.user.id, action:"payment.create.client", entityType:"payment", entityId:payment.id, after:{amount:payment.amount,allocation} });
+    res.status(201).json({payment,allocation});
+  } catch(error) {
+    if(error.statusCode) return res.status(error.statusCode).json({error:error.message,detail:error.detail});
+    throw error;
+  }
+});
+
 router.post("/admin/orders/:orderId/payments", requireFlag("financial"), requireCapability("payments.register"), async (req, res) => {
   if (!UUID_RE.test(String(req.params.orderId))) return res.status(400).json({ error: "invalid_id" });
   const b = req.body || {};
@@ -233,6 +265,7 @@ router.post("/admin/orders/:orderId/payments", requireFlag("financial"), require
       paymentDate: b.paymentDate || null, accountingDate: b.accountingDate || null,
       reference: b.reference || null, notes: b.notes || null,
       documentId: b.documentId && UUID_RE.test(String(b.documentId)) ? b.documentId : null,
+      payerName: b.payerName || null, payerTaxId: b.payerTaxId || null, payerBankRef: b.payerBankRef || null,
       status: b.status === "informed" ? "informed" : "confirmed", // por defecto el staff confirma en el acto
       createdBy: req.user.id, confirmedBy: req.user.id
     });
@@ -249,6 +282,7 @@ router.post("/admin/payments/:paymentId/confirm", requireFlag("financial"), requ
   try {
     const payment = await confirmPayment(req.params.paymentId, { confirmedBy: req.user.id, accountingDate: req.body?.accountingDate || null });
     await recordAudit({ actorUserId: req.user.id, action: "payment.confirm", entityType: "payment", entityId: req.params.paymentId });
+    if (payment.order_id) await notifyQuoteEventSafe("payment_confirmed", payment.order_id, { version: String(payment.confirmed_at || Date.now()) });
     res.json({ payment });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -293,6 +327,8 @@ router.post("/orders/:orderId/payments/inform", requireFlag("financial"), requir
       clientId: req.user.id, orderId: req.params.orderId, method: "bank_transfer", amount: b.amount,
       paymentDate: b.paymentDate || null, reference: b.reference || null, notes: b.notes || null,
       documentId: b.documentId && UUID_RE.test(String(b.documentId)) ? b.documentId : null,
+      payerName:b.payerName || req.user.display_name || null,
+      payerTaxId:b.payerTaxId || null, payerBankRef:b.payerBankRef || b.reference || null,
       status: "informed", createdBy: req.user.id
     });
     await recordAudit({ actorUserId: req.user.id, action: "payment.inform", entityType: "payment", entityId: payment.id, after: { amount: payment.amount } });

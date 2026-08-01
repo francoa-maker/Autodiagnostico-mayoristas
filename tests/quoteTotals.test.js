@@ -1,19 +1,28 @@
 import { describe, it, expect } from "vitest";
 import { computeQuoteTotals, resolveItemUnit, resolveItemRate } from "../src/quoteTotals.js";
 
-const item = (unit, qty, rate, quoted) => ({
-  quantity: qty,
-  iva_rate: rate,
-  quoted_unit_price: quoted ?? null,
-  displayed_price_snapshot: unit == null ? {} : { amount: unit }
-});
+const item = (unit, qty, rate, quoted) => {
+  const row = {
+    quantity: qty,
+    iva_rate: rate,
+    displayed_price_snapshot: unit == null ? {} : { amount: unit }
+  };
+  if (quoted !== undefined) row.quoted_unit_price = quoted;
+  return row;
+};
 
 describe("resolveItemUnit", () => {
   it("prefers the admin's quoted unit price over the displayed snapshot", () => {
     expect(resolveItemUnit(item(1000, 1, 21, 800))).toBe(800);
   });
-  it("falls back to the displayed snapshot amount", () => {
+  it("falls back to the displayed snapshot amount for legacy rows", () => {
     expect(resolveItemUnit(item(1000, 1, 21))).toBe(1000);
+  });
+  it("treats an explicitly null quoted price as pending pricing", () => {
+    expect(resolveItemUnit(item(1000, 1, 21, null))).toBeNull();
+    const totals = computeQuoteTotals({ items: [item(1000, 2, 21, null)] });
+    expect(totals.itemsGross).toBe(0);
+    expect(totals.unpricedLines).toBe(1);
   });
 });
 

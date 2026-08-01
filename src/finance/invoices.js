@@ -5,6 +5,7 @@
 import { pool, withTransaction } from "../db.js";
 import { flags } from "../featureFlags.js";
 import { insertMovement, reverseMovement } from "./ledger.js";
+import { computeDueDate, PAYMENT_TERMS } from "./paymentTerms.js";
 
 export const PAYMENT_CONDITIONS = [
   "contado", "transferencia_anticipada", "efectivo", "cuenta_corriente", "echeq", "mixto", "personalizado"
@@ -59,13 +60,22 @@ export async function createInvoice({
 
   // Resolver cliente desde el pedido si no vino explícito.
   let resolvedClient = clientId;
+  let orderPaymentTerm = null;
+  let orderDueDate = null;
   if (orderId) {
-    const q = await pool.query(`select user_id from portal.quote_requests where id = $1`, [orderId]);
+    const q = await pool.query(`select user_id, payment_terms, due_date from portal.quote_requests where id = $1`, [orderId]);
     if (!q.rows[0]) throw Object.assign(new Error("pedido_no_encontrado"), { statusCode: 404 });
     if (!resolvedClient) resolvedClient = q.rows[0].user_id;
+    orderPaymentTerm = q.rows[0].payment_terms;
+    orderDueDate = q.rows[0].due_date ? String(q.rows[0].due_date).slice(0, 10) : null;
   }
 
-  const insts = normalizeInstallments(installments, total, issue);
+  const defaultDue = orderDueDate || (PAYMENT_TERMS.includes(orderPaymentTerm) ? computeDueDate(orderPaymentTerm, issue) : issue);
+  const insts = normalizeInstallments(
+    Array.isArray(installments) && installments.length ? installments : [{ dueDate: defaultDue, amount: total }],
+    total,
+    issue
+  );
 
   return withTransaction(async (client) => {
     const inv = await client.query(
