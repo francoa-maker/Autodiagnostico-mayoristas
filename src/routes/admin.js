@@ -729,7 +729,7 @@ router.post("/admin/clients/:clientId/open-order", canQuotes, async (req, res) =
   const period = /^\d{4}-\d{2}$/.test(String(req.body?.period || "")) ? String(req.body.period) : new Date().toISOString().slice(0, 7);
   const periodDate = period + "-01";
   const clientRow = (await pool.query(
-    `select id, default_payment_term from portal.users where id=$1 and role='client'`,
+    `select id, default_payment_term from portal.users where id=$1 and role in ('client','customer')`,
     [req.params.clientId]
   )).rows[0];
   if (!clientRow) return res.status(404).json({ error: "client_not_found" });
