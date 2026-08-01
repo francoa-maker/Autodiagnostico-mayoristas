@@ -27,7 +27,7 @@ export async function notifyQuoteEvent(event, quoteId, overrides = {}) {
   const templateKey = EVENT_TEMPLATE[event];
   if (!templateKey) throw new Error("evento_email_desconocido");
   const q = (await pool.query(
-    `select q.*, u.email, u.display_name, u.company_name, u.client_code, u.legal_name, u.tax_id
+    `select q.*, u.email, u.display_name, u.company_name, u.client_code, u.company_name as legal_name, u.tax_cuit as tax_id
      from portal.quote_requests q join portal.users u on u.id=q.user_id where q.id=$1`,
     [quoteId]
   )).rows[0];
