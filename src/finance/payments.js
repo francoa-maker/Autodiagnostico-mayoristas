@@ -29,6 +29,17 @@ export function computeOrderPaymentState({ invoiced, applied, hasOverdue, pendin
   return "unpaid";
 }
 
+export function validateAllocationPlan(paymentAmount, allocations, alreadyAllocated = 0) {
+  const available = round2(Number(paymentAmount) - Number(alreadyAllocated || 0));
+  const normalized = (Array.isArray(allocations) ? allocations : [])
+    .map((a) => ({ installmentId: a.installmentId, amount: round2(a.amount) }))
+    .filter((a) => a.installmentId && a.amount > 0);
+  if (!normalized.length) throw Object.assign(new Error("sin_asignaciones"), { statusCode: 400 });
+  const sum = round2(normalized.reduce((total, a) => total + a.amount, 0));
+  if (sum > available + 0.005) throw Object.assign(new Error("excede_saldo_del_pago"), { statusCode: 400, detail: `Disponible ${available}` });
+  return { sum, available };
+}
+
 function installmentStatus(paidAmount, amount) {
   if (paidAmount >= amount - 0.005) return "paid";
   if (paidAmount > 0) return "partially_paid";
@@ -145,9 +156,7 @@ export async function applyPayment(paymentId, allocations, { actorId }) {
     if (!p) throw Object.assign(new Error("pago_no_encontrado"), { statusCode: 404 });
     if (p.status !== "confirmed") throw Object.assign(new Error("pago_no_confirmado"), { statusCode: 400 });
     const allocated = Number((await client.query(`select coalesce(sum(amount_applied),0) s from portal.payment_allocations where payment_id=$1 and reversed_at is null`, [paymentId])).rows[0].s);
-    const available = round2(Number(p.amount) - allocated);
-    const sum = round2(allocs.reduce((a, x) => a + x.amount, 0));
-    if (sum > available + 0.005) throw Object.assign(new Error("excede_saldo_del_pago"), { statusCode: 400, detail: `Disponible ${available}` });
+    const { available, sum } = validateAllocationPlan(p.amount, allocs, allocated);
 
     const ordersTouched = new Set();
     for (const a of allocs) {
