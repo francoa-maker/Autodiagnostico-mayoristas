@@ -18,7 +18,11 @@ function round2(n) {
 }
 
 export function resolveItemUnit(item) {
-  if (item.quoted_unit_price != null) return Number(item.quoted_unit_price);
+  // When the column is explicitly present and null, the line is deliberately
+  // pending pricing (open monthly order) and must not use a stale snapshot.
+  if (Object.prototype.hasOwnProperty.call(item, "quoted_unit_price")) {
+    return item.quoted_unit_price == null ? null : Number(item.quoted_unit_price);
+  }
   const snap = item.displayed_price_snapshot || {};
   return snap.amount != null ? Number(snap.amount) : null;
 }
@@ -30,9 +34,13 @@ export function resolveItemRate(item) {
 export function computeQuoteTotals({ items = [], discount = 0, discountType = "nominal", shipping = 0, surcharge = 0 }) {
   const lines = [];
   let itemsGross = 0;
+  let unpricedLines = 0;
   for (const it of items) {
     const unit = resolveItemUnit(it);
-    if (unit == null) continue;
+    if (unit == null) {
+      unpricedLines++;
+      continue;
+    }
     const gross = unit * Number(it.quantity || 0);
     itemsGross += gross;
     lines.push({ gross, rate: resolveItemRate(it) });
@@ -75,6 +83,7 @@ export function computeQuoteTotals({ items = [], discount = 0, discountType = "n
     ivaTotal,
     shipping: round2(Number(shipping) || 0),
     surcharge: round2(Number(surcharge) || 0),
-    total
+    total,
+    unpricedLines
   };
 }
