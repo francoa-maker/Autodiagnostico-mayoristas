@@ -6,7 +6,7 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 const CLIENT_IDS = [
   "catalogPage", "productGrid", "brandCards", "searchInput", "filtersPanel", "cartBtn", "cartDrawer",
-  "cartItems", "submitQuoteBtn", "profileForm", "requestsBody", "accountBody", "compareBody"
+  "cartItems", "submitQuoteBtn", "profileForm", "requestsBody", "accountBody"
 ];
 const ADMIN_IDS = [
   "adminNav", "section-dashboard", "section-catalog", "section-products", "section-clients", "section-quotes",
@@ -51,6 +51,11 @@ describe("UX v5 architecture", () => {
   it("keeps the critical functional DOM anchors", () => {
     for (const id of CLIENT_IDS) expect(clientHtml).toContain(`id=\"${id}\"`);
     for (const id of ADMIN_IDS) expect(adminHtml).toContain(`id=\"${id}\"`);
+  });
+
+  it("does not restore the removed product comparison UI", () => {
+    expect(clientHtml).not.toMatch(/compareOverlay|compareBar|compareBody|Comparar productos/);
+    expect(catalogJs).not.toMatch(/data-compare|compareOverlay|state\.compare/);
   });
 
   it("declares every literal ID referenced by the legacy client modules", () => {

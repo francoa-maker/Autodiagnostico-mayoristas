@@ -869,11 +869,26 @@ function catPriceTxt(p, t) {
   return "—";
 }
 
+function bindCatalogImageFallbacks(root) {
+  root.querySelectorAll("img[data-catalog-image]").forEach((img) => {
+    const showFallback = () => {
+      if (!img.isConnected) return;
+      const holder = document.createElement("div");
+      holder.className = "cc-noimg";
+      holder.setAttribute("role", "img");
+      holder.setAttribute("aria-label", "Imagen no disponible");
+      img.replaceWith(holder);
+    };
+    img.addEventListener("error", showFallback, { once: true });
+    if (img.complete && img.naturalWidth === 0) showFallback();
+  });
+}
+
 function catalogCardHtml(p) {
   return `<div class="cat-card${p.visible ? "" : " hidden-prod"}" draggable="true" data-id="${p.id}">
     <input type="checkbox" class="cc-check" title="Seleccionar" aria-label="Seleccionar producto"${catSelected.has(p.id) ? " checked" : ""}>
     <span class="cc-handle" aria-hidden="true">⠿</span>
-    <div class="cc-thumb">${p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy">` : '<div class="cc-noimg"></div>'}</div>
+    <div class="cc-thumb">${p.image_url ? `<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" decoding="async" data-catalog-image>` : '<div class="cc-noimg" role="img" aria-label="Imagen no disponible"></div>'}</div>
     <div class="cc-info">
       <div class="cc-name">${esc(p.name)}</div>
       <div class="cc-meta"><span class="cc-sku">${esc(p.sku)}</span> · ${esc(p.brand)} · ${esc(p.category)}</div>
@@ -903,6 +918,7 @@ async function loadCatalogCards() {
   catSelected.clear();
   const grid = document.getElementById("catalogEditorGrid");
   grid.innerHTML = products.map(catalogCardHtml).join("") || '<div class="empty-row">Sin productos con ese filtro.</div>';
+  bindCatalogImageFallbacks(grid);
   updateCatBulkBar();
 }
 
