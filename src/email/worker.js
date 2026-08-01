@@ -34,7 +34,7 @@ async function senderFor(item) {
      where u.gmail_refresh_token is not null
        and (u.id=(select quoted_by_user_id from portal.quote_requests where id=$1)
          or u.id=(select assigned_admin_id from portal.quote_requests where id=$1)
-         or u.role in ('superadmin','admin','sales'))
+         or u.role in ('superadmin','admin','sales_billing','administration'))
      order by
        case when u.id=(select quoted_by_user_id from portal.quote_requests where id=$1) then 0
             when u.id=(select assigned_admin_id from portal.quote_requests where id=$1) then 1 else 2 end,
