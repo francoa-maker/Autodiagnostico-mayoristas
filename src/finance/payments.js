@@ -93,7 +93,8 @@ async function postCreditMovement(client, payment, { effectiveDate } = {}) {
 
 // Crea un pago. status: 'informed' (transferencia informada por cliente/staff),
 // 'confirmed' (staff lo verifica en el acto -> genera el crédito) o 'draft'.
-export async function createPayment({ clientId = null, orderId = null, method, amount, paymentDate = null, accountingDate = null, reference = null, notes = null, documentId = null, status = "informed", createdBy, confirmedBy = null }) {
+export async function createPayment({ clientId = null, orderId = null, method, amount, paymentDate = null, accountingDate = null, reference = null, notes = null, documentId = null, status = "informed", createdBy, confirmedBy = null,
+  payerName = null, payerTaxId = null, payerBankRef = null }) {
   if (!MONEY_METHODS.includes(method)) throw Object.assign(new Error("metodo_no_soportado_en_esta_etapa"), { statusCode: 400 });
   const amt = round2(amount);
   if (!Number.isFinite(amt) || amt <= 0) throw Object.assign(new Error("monto_invalido"), { statusCode: 400 });
@@ -113,10 +114,12 @@ export async function createPayment({ clientId = null, orderId = null, method, a
     const ins = await client.query(
       `insert into portal.payments
          (client_id, order_id, payment_method, amount, currency, payment_date, accounting_date, status,
-          reference_number, notes, document_id, created_by, confirmed_by, confirmed_at)
-       values ($1,$2,$3,$4,'ARS',$5,$6,$7,$8,$9,$10,$11,$12,$13) returning *`,
+          reference_number, notes, document_id, created_by, confirmed_by, confirmed_at,
+          payer_name, payer_tax_id, payer_bank_ref)
+       values ($1,$2,$3,$4,'ARS',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning *`,
       [resolvedClient, orderId, method, amt, paymentDate, confirmed ? (accountingDate || paymentDate || new Date().toISOString().slice(0, 10)) : accountingDate,
-       status, reference, notes, documentId, createdBy, confirmed ? (confirmedBy || createdBy) : null, confirmed ? new Date() : null]
+       status, reference, notes, documentId, createdBy, confirmed ? (confirmedBy || createdBy) : null, confirmed ? new Date() : null,
+       payerName, payerTaxId, payerBankRef]
     );
     const payment = ins.rows[0];
     if (confirmed) {
