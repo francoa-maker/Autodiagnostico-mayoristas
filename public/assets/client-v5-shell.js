@@ -13,7 +13,7 @@ function injectStyles() {
     const link = document.createElement("link");
     link.id = id;
     link.rel = "stylesheet";
-    link.href = `/assets/${file}?v=20260801-width-logo`;
+    link.href = `/assets/${file}?v=20260801-width-logo-2`;
     document.head.appendChild(link);
   }
 }
