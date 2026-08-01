@@ -1181,7 +1181,7 @@ async function loadClients() {
           <td style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="link-btn" data-action="edit-profile">Datos</button>
             <button class="link-btn" data-action="view-orders">Ver compras</button>
-            ${u.status === "approved" && normStatus(u.role) === "client" ? '<button class="link-btn" data-action="open-order">Abrir pedido mensual</button>' : ""}
+            ${u.status === "approved" && ["client","customer"].includes(u.role) ? '<button class="link-btn" data-action="open-order">Abrir pedido mensual</button>' : ""}
             ${u.status !== "approved" ? '<button class="link-btn" data-action="approve">Aprobar</button>' : ""}
             ${u.status !== "rejected" ? '<button class="link-btn ghost" data-action="reject">Rechazar</button>' : ""}
             <button class="link-btn ghost" data-action="delete-user" title="Eliminar cliente">🗑</button>
