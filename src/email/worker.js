@@ -1,6 +1,7 @@
 import { pool } from "../db.js";
 import { sendGmail } from "../mailer.js";
 import { downloadDocument } from "../documents.js";
+import { notifyQuoteEventSafe } from "../notifications.js";
 
 let timer = null;
 let running = false;
@@ -86,11 +87,34 @@ async function sendItem(item, maxAttempts) {
   }
 }
 
+export async function enqueueDueReminders(reminderDays = 3) {
+  const rows = (await pool.query(
+    `select i.order_id, min(ii.due_date)::text as due_date,
+            sum(greatest(ii.amount-ii.paid_amount,0)) as balance
+     from portal.invoice_installments ii
+     join portal.invoices i on i.id=ii.invoice_id
+     where i.voided_at is null and i.order_id is not null
+       and ii.status in ('pending','partially_paid','overdue')
+       and ii.due_date <= current_date + $1::int
+     group by i.order_id
+     having sum(greatest(ii.amount-ii.paid_amount,0)) > 0`,
+    [Math.max(0, Number(reminderDays) || 0)]
+  )).rows;
+  for (const row of rows) {
+    await notifyQuoteEventSafe("balance_reminder", row.order_id, {
+      balance:Number(row.balance), dueDate:String(row.due_date).slice(0,10),
+      version:`due:${String(row.due_date).slice(0,10)}`
+    });
+  }
+  return rows.length;
+}
+
 export async function runEmailWorkerOnce() {
   if (!pool || running) return { processed: 0 };
   running = true;
   try {
     const cfg = await config();
+    await enqueueDueReminders(cfg.reminderDays);
     const batch = await claimBatch(10);
     for (const item of batch) await sendItem(item, cfg.maxAttempts);
     return { processed: batch.length };
