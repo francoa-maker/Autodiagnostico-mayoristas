@@ -7,6 +7,7 @@ import { tierForQuantity, resolveWholesaleUnit } from "../pricing.js";
 import { loadProformaContext } from "./admin.js";
 import { renderProformaHtml } from "../proforma.js";
 import { isAdminStaff } from "../permissions.js";
+import { notifyQuoteEventSafe } from "../notifications.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -149,6 +150,39 @@ router.get("/quotes/:id/proforma", async (req, res) => {
   const ctx = await loadProformaContext(req.params.id, null);
   if (!ctx) return res.status(404).send("Cotización no encontrada");
   res.set("Content-Type", "text/html; charset=utf-8").send(renderProformaHtml({ ...ctx, forEmail: false }));
+});
+
+// El cliente puede aceptar únicamente su cotización enviada y vigente. No se
+// usan enlaces con tokens: requiere la sesión normal de Google del portal.
+router.post("/quotes/:id/accept", async (req, res) => {
+  if (!UUID_RE.test(String(req.params.id))) return res.status(400).json({ error: "invalid_id" });
+  try {
+    const quote = await withTransaction(async (client) => {
+      const current = (await client.query(
+        `select * from portal.quote_requests where id=$1 and user_id=$2 for update`,
+        [req.params.id, req.user.id]
+      )).rows[0];
+      if (!current) throw Object.assign(new Error("not_found"), { statusCode: 404 });
+      if (current.status !== "enviada") throw Object.assign(new Error("cotizacion_no_aceptable"), { statusCode: 409 });
+      if (current.due_date && String(current.due_date).slice(0, 10) < new Date().toISOString().slice(0, 10)) {
+        throw Object.assign(new Error("cotizacion_vencida"), { statusCode: 409 });
+      }
+      return (await client.query(
+        `update portal.quote_requests set status='orden', accepted_at=now(), accepted_by=$2, updated_at=now()
+         where id=$1 returning *`,
+        [req.params.id, req.user.id]
+      )).rows[0];
+    });
+    await recordAudit({
+      actorUserId: req.user.id, action: "quote.accept", entityType: "quote_request",
+      entityId: quote.id, before: { status: "enviada" }, after: { status: "orden" }
+    });
+    await notifyQuoteEventSafe("order_confirmed", quote.id, { version: String(quote.accepted_at || Date.now()) });
+    res.json({ quote });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    throw error;
+  }
 });
 
 router.get("/quotes/:id", async (req, res) => {
