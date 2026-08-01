@@ -58,8 +58,7 @@ const state = {
   search: "",
   sort: "default",
   view: "grid",
-  catExpanded: false,
-  compare: new Set()
+  catExpanded: false
 };
 const cart = new Map(); // productId -> { product, quantity }
 const CAT_INITIAL = 8;
@@ -351,6 +350,29 @@ function updateDownloadBtn(list) {
 // ------------------------------------------------------------- productos ----
 function heartIco(on) { return on ? "&#9829;" : "&#9825;"; }
 
+function imagePlaceholderHtml(compact = false) {
+  return `<div class="image-fallback${compact ? " compact" : ""}" role="img" aria-label="Imagen no disponible"><span aria-hidden="true">▧</span><small>Imagen no disponible</small></div>`;
+}
+function productImageHtml(url, alt = "", compact = false) {
+  if (!url) return imagePlaceholderHtml(compact);
+  return `<img src="${esc(url)}" alt="${esc(alt)}" loading="lazy" decoding="async" data-product-image${compact ? ' data-compact="true"' : ""}>`;
+}
+function bindProductImageFallbacks(root) {
+  root.querySelectorAll("img[data-product-image]").forEach((img) => {
+    const showFallback = () => {
+      if (!img.isConnected) return;
+      const holder = document.createElement("div");
+      holder.className = "image-fallback" + (img.dataset.compact === "true" ? " compact" : "");
+      holder.setAttribute("role", "img");
+      holder.setAttribute("aria-label", "Imagen no disponible");
+      holder.innerHTML = '<span aria-hidden="true">▧</span><small>Imagen no disponible</small>';
+      img.replaceWith(holder);
+    };
+    img.addEventListener("error", showFallback, { once: true });
+    if (img.complete && img.naturalWidth === 0) showFallback();
+  });
+}
+
 function productCardHtml(p) {
   const cartEntry = cart.get(p.id);
   const qty = cartEntry ? cartEntry.quantity : 1;
@@ -359,12 +381,11 @@ function productCardHtml(p) {
   const one = resolveDisplay(p, "one");
   const four = resolveDisplay(p, "four");
   const eight = resolveDisplay(p, "eight");
-  const comparing = state.compare.has(p.id);
   return `<div class="pcard" data-id="${p.id}">
     <div class="img-wrap">
       <div class="cat-chip">${esc(p.category)}</div>
       <button class="fav-btn${isFav ? " on" : ""}" data-fav aria-label="${isFav ? "Quitar de favoritos" : "Agregar a favoritos"}" aria-pressed="${isFav}">${heartIco(isFav)}</button>
-      ${p.imageUrl ? pubLink(p.publicationUrl, `<img src="${esc(p.imageUrl)}" alt="${esc(p.name)}" loading="lazy">`, "imglink") : '<div class="img-ph"></div>'}
+      ${p.imageUrl ? pubLink(p.publicationUrl, productImageHtml(p.imageUrl, p.name), "imglink") : imagePlaceholderHtml()}
     </div>
     <div class="body">
       <div class="pbrand">${esc(p.brand)}</div>
@@ -379,9 +400,6 @@ function productCardHtml(p) {
         <div class="price-row"><span class="pl">8u</span><span class="pv tabular">${priceCell(eight)}</span></div>
       </div>
       <div class="price-disclaimer">Precio y cantidad sujetos a confirmación.</div>
-      <button class="compare-toggle${comparing ? " active" : ""}" type="button" data-compare aria-pressed="${comparing}">
-        ${comparing ? "✓ Seleccionado para comparar" : "Comparar"}
-      </button>
       <div class="qty-row">
         <div class="qty-stepper"><button class="qminus" type="button" aria-label="Menos">&minus;</button><input class="qval" value="${qty}" inputmode="numeric" pattern="[0-9]*" aria-label="Cantidad"><button class="qplus" type="button" aria-label="Más">+</button></div>
         <div class="est-price">Estimado<b class="tabular estval">${estText(p, qty)}</b></div>
@@ -409,6 +427,7 @@ function renderProducts() {
     return;
   }
   grid.innerHTML = list.map(productCardHtml).join("");
+  bindProductImageFallbacks(grid);
 }
 
 // --------------------------------------------------------------- favoritos --
@@ -472,7 +491,7 @@ function renderCart() {
       const isValue = price.state === "value";
       const sub = isValue ? price.amount * quantity : null;
       return `<div class="cart-item" data-id="${product.id}">
-        <div class="ci-thumb">${product.imageUrl ? `<img src="${esc(product.imageUrl)}" alt="">` : ""}</div>
+        <div class="ci-thumb">${productImageHtml(product.imageUrl, product.name, true)}</div>
         <div class="info">
           <div class="name">${esc(product.name)}</div>
           <div class="ci-qty">
@@ -484,51 +503,11 @@ function renderCart() {
       </div>`;
     })
     .join("");
+  bindProductImageFallbacks(itemsEl);
   document.getElementById("cartTotal").textContent = money(total);
   footEl.style.display = "flex";
 }
 
-function renderCompareBar() {
-  const bar = document.getElementById("compareBar");
-  const count = state.compare.size;
-  bar.hidden = count === 0;
-  document.getElementById("compareCount").textContent = String(count);
-  document.getElementById("compareOpen").disabled = count < 2;
-}
-
-function toggleCompare(id) {
-  if (state.compare.has(id)) {
-    state.compare.delete(id);
-  } else {
-    if (state.compare.size >= 3) {
-      toast("Podés comparar hasta 3 productos.", true);
-      return;
-    }
-    state.compare.add(id);
-  }
-  renderProducts();
-  renderCompareBar();
-}
-
-function openCompare() {
-  const selected = [...state.compare].map((id) => state.products.find((p) => p.id === id)).filter(Boolean);
-  if (selected.length < 2) return;
-  const cells = (render) => selected.map(render).join("");
-  document.getElementById("compareBody").innerHTML = `<div class="compare-table-wrap"><table class="compare-table">
-    <thead><tr><th>Característica</th>${cells((p) => `<th>${esc(p.name)}</th>`)}</tr></thead>
-    <tbody>
-      <tr><th>Imagen</th>${cells((p) => `<td>${p.imageUrl ? `<img src="${esc(p.imageUrl)}" alt="">` : "Sin imagen"}</td>`)}</tr>
-      <tr><th>Marca</th>${cells((p) => `<td>${esc(p.brand)}</td>`)}</tr>
-      <tr><th>SKU</th>${cells((p) => `<td class="tabular">${esc(p.sku)}</td>`)}</tr>
-      <tr><th>Disponibilidad</th>${cells((p) => `<td><span class="stock-pill ${p.stockStatus}">${STOCK_LABEL[p.stockStatus]}</span></td>`)}</tr>
-      <tr><th>1 unidad</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "one"))}</b></td>`)}</tr>
-      <tr><th>4 unidades</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "four"))}</b></td>`)}</tr>
-      <tr><th>8 unidades</th>${cells((p) => `<td class="tabular"><b>${priceCell(resolveDisplay(p, "eight"))}</b></td>`)}</tr>
-      <tr><th></th>${cells((p) => `<td><button class="btn-primary sm" data-compare-add="${p.id}">Agregar a solicitud</button></td>`)}</tr>
-    </tbody>
-  </table></div>`;
-  document.getElementById("compareOverlay").hidden = false;
-}
 function setCartQty(id, qty) {
   const entry = cart.get(id);
   if (!entry) return;
@@ -738,7 +717,6 @@ document.getElementById("productGrid").addEventListener("click", (e) => {
   const id = card.dataset.id;
   const favBtn = e.target.closest(".fav-btn");
   if (favBtn) { toggleFavorite(id, favBtn); return; }
-  if (e.target.closest("[data-compare]")) { toggleCompare(id); return; }
   const product = window.__products.get(id);
   const qtyInput = card.querySelector(".qval");
   let qty = parseInt(qtyInput.value, 10) || 1;
@@ -809,26 +787,6 @@ document.getElementById("cartItems").addEventListener("click", (e) => {
   else if (e.target.closest(".ci-plus")) setCartQty(id, entry.quantity + 1);
 });
 document.getElementById("cartQuickBtn").addEventListener("click", () => document.getElementById("cartBtn").click());
-document.getElementById("compareOpen").addEventListener("click", openCompare);
-document.getElementById("compareClear").addEventListener("click", () => {
-  state.compare.clear();
-  renderCompareBar();
-  renderProducts();
-});
-document.getElementById("compareClose").addEventListener("click", () => (document.getElementById("compareOverlay").hidden = true));
-document.getElementById("compareOverlay").addEventListener("click", (e) => {
-  if (e.target.id === "compareOverlay") e.currentTarget.hidden = true;
-});
-document.getElementById("compareBody").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-compare-add]");
-  if (!btn) return;
-  const product = state.products.find((p) => p.id === btn.dataset.compareAdd);
-  if (!product) return;
-  const current = cart.get(product.id);
-  cart.set(product.id, { product, quantity: current?.quantity || 1 });
-  renderCart();
-  toast("Producto agregado a tu solicitud.");
-});
 document.getElementById("cartItems").addEventListener("change", (e) => {
   const inp = e.target.closest(".ci-qval");
   if (!inp) return;
