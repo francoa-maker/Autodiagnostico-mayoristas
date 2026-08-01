@@ -400,7 +400,16 @@ function installDetailObservers() {
   for (const id of ["quoteDetailBody", "billingDetailBody", "logiDetailAdmin"]) {
     const container = q(`#${id}`);
     if (!container) continue;
-    new MutationObserver(() => { container.dataset.v5Enhanced = "false"; enhanceDetail(container); }).observe(container, { childList: true, subtree: true });
+    // El editor reemplaza los hijos directos del panel cada vez que abre un pedido.
+    // Desconectamos el observador mientras agregamos las pestañas: de lo contrario,
+    // la inserción de esas pestañas vuelve a dispararlo y bloquea la página en un bucle.
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      container.dataset.v5Enhanced = "false";
+      enhanceDetail(container);
+      observer.observe(container, { childList: true });
+    });
+    observer.observe(container, { childList: true });
     enhanceDetail(container);
   }
 }
