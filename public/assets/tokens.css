@@ -34,7 +34,7 @@
   --space-8: 32px;
   --space-10: 40px;
   --sidebar-w: 250px;
-  --content-max: 1680px;
+  --content-max: 100%;
   --bp-sm: 640px;
   --bp-md: 1024px;
   --bp-lg: 1280px;
