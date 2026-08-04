@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -8,6 +9,7 @@ import authRouter from "./src/routes/auth.js";
 import catalogRouter from "./src/routes/catalog.js";
 import quotesRouter from "./src/routes/quotes.js";
 import adminRouter from "./src/routes/admin.js";
+import salesManagementRouter from "./src/routes/salesManagement.js";
 import profileRouter from "./src/routes/profile.js";
 import documentsRouter from "./src/routes/documents.js";
 import financeRouter from "./src/routes/finance.js";
@@ -17,6 +19,12 @@ import { startEmailWorker } from "./src/email/worker.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 const port = Number(process.env.PORT || 3000);
+const adminHtml = fs
+  .readFileSync(path.join(publicDir, "admin.html"), "utf8")
+  .replace(
+    "</body>",
+    '<script type="module" src="/assets/sales-management.js?v=20260804-sales1"></script>\n</body>'
+  );
 
 // Express 4 does not forward rejected promises from async route handlers to
 // the error middleware, so a single failing query (e.g. a misconfigured
@@ -75,6 +83,7 @@ app.use("/api", wrapRouterErrors(quotesRouter));
 app.use("/api", wrapRouterErrors(documentsRouter));
 app.use("/api", wrapRouterErrors(financeRouter));
 app.use("/api", wrapRouterErrors(logisticsRouter));
+app.use("/api", wrapRouterErrors(salesManagementRouter));
 // adminRouter va ÚLTIMO: usa router.use(requireAdmin) global, así que si se
 // montara antes interceptaría (con 403 admin_required) cualquier ruta /api/*
 // de cliente no resuelta por un router previo (documentos, facturas, etc.).
@@ -98,7 +107,11 @@ app.get("/", (req, res) => {
   // muestra sólo las pestañas del rol. El cliente ve el catálogo.
   const role = normalizeRole(req.user.role);
   const staff = isAdminStaff(req.user.role) || role === "logistics";
-  res.sendFile(path.join(publicDir, staff ? "admin.html" : "index.html"));
+  if (staff) {
+    res.setHeader("Cache-Control", "no-store");
+    return res.type("html").send(adminHtml);
+  }
+  res.sendFile(path.join(publicDir, "index.html"));
 });
 
 app.use((req, res) => {
