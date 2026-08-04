@@ -47,6 +47,48 @@
   .account-mini {
     margin-left: auto;
   }
+
+  /* V5 desktop cart drawer fix: el rediseño usa dos columnas, por lo que el
+     resumen debe abrirse como panel lateral y no quedar auto-ubicado debajo. */
+  body.v5-client .cart-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    background: rgba(10, 10, 10, .4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+
+  body.v5-client .cart-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  body.v5-client .cart-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    max-width: 92vw;
+    height: 100vh;
+    max-height: none;
+    z-index: 601;
+    border-radius: 0;
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    overflow: hidden;
+  }
+
+  body.v5-client .cart-drawer.open {
+    transform: translateX(0);
+  }
+
+  body.v5-client .cart-close {
+    display: block;
+  }
 }
 
 /* Encabezado simple: isotipo cuadrado + nombre al lado. */
