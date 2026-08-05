@@ -23,14 +23,27 @@ describe("selector financiero de dos acciones", () => {
     expect(source).toContain('paymentFlow.close.addEventListener("click", () => setFlow(null))');
   });
 
-  it("mantiene los medios de pago y absorbe eCheq y cuenta corriente", () => {
+  it("deja en factura solamente formulario e historial de facturas", () => {
+    expect(source).toContain('card.append(header, form, history);');
+    expect(source).toContain('makeHistory("Ver facturas cargadas"');
+    expect(source).not.toContain('makeHistory("Ver facturas cargadas", [\n    { label: "Pagos"');
+  });
+
+  it("deja pagos, eCheq y cuenta corriente dentro del flujo de pagos", () => {
     for (const method of ["bank_transfer", "cash", "echeq", "other"]) {
       expect(source).toContain(`["${method}"`);
     }
+    expect(source).toContain('makeHistory("Ver pagos registrados"');
     expect(source).toContain("finance-method-menu");
     expect(source).toContain("finance-legacy-shell");
     expect(source).toContain("finance-embedded-section");
     expect(source).toContain('summary.textContent = "Ver cuenta corriente del cliente"');
+  });
+
+  it("neutraliza las pestañas automáticas que mezclaban ambos flujos", () => {
+    expect(source).toContain('#billingDetailBody .v5-tabs { display: none !important; }');
+    expect(source).toContain('function normalizeFinancialSeparation()');
+    expect(source).toContain('container.querySelectorAll(".finance-flow-form, .finance-history")');
   });
 
   it("reutiliza los formularios existentes sin agregar APIs", () => {
@@ -41,6 +54,6 @@ describe("selector financiero de dos acciones", () => {
   });
 
   it("carga la nueva versión sin caché", () => {
-    expect(server).toContain('/assets/progressive-finance.js?v=20260805-finance2');
+    expect(server).toContain('/assets/progressive-finance.js?v=20260805-finance3');
   });
 });
