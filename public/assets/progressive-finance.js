@@ -213,8 +213,12 @@ function simplifyPayments() {
   });
 
   const echeqButton = menu.querySelector('[data-payment-method="echeq"]');
+  const echeqHistoryGroup = echeqList.closest(".simple-finance-history-group");
   const syncEcheqAvailability = () => {
-    if (echeqButton) echeqButton.hidden = Boolean(echeqSection.hidden);
+    const disabled = Boolean(echeqSection.hidden);
+    if (echeqButton) echeqButton.hidden = disabled;
+    if (echeqHistoryGroup) echeqHistoryGroup.hidden = disabled;
+    if (disabled) echeqDetails.open = false;
   };
   setTimeout(syncEcheqAvailability, 350);
   new MutationObserver(syncEcheqAvailability).observe(echeqSection, { attributes: true, attributeFilter: ["hidden"] });
