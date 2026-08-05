@@ -59,6 +59,10 @@ function injectStyles() {
     .finance-action-copy strong { font-size: 16px; }
     .finance-action-copy small { color: var(--muted,#6b7280); font-size: 12px; line-height:1.35; }
 
+    /* El shell V5 agregaba una segunda navegación con acciones cruzadas dentro
+       del detalle financiero. El selector de dos acciones reemplaza ese patrón. */
+    #billingDetailBody .v5-tabs { display: none !important; }
+
     .finance-flow-panel {
       grid-column: 1 / -1;
       display: none !important;
@@ -305,6 +309,8 @@ function buildInvoiceFlow(section) {
     close,
     open() {
       section.classList.add("is-open");
+      form.hidden = false;
+      history.hidden = false;
       form.open = true;
       history.open = false;
       setTimeout(() => section.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
@@ -324,6 +330,8 @@ function makePaymentMethodMenu(genericForm, echeqForm) {
   let genericTitle = null;
 
   const showMenu = () => {
+    genericForm.hidden = false;
+    echeqForm.hidden = false;
     genericForm.open = false;
     echeqForm.open = false;
     menu.hidden = false;
@@ -342,6 +350,8 @@ function makePaymentMethodMenu(genericForm, echeqForm) {
 
     button.addEventListener("click", () => {
       menu.hidden = true;
+      genericForm.hidden = false;
+      echeqForm.hidden = false;
       if (value === "echeq") {
         genericForm.open = false;
         echeqForm.open = true;
@@ -431,6 +441,9 @@ function buildPaymentFlow(section, echeqSection, accountSection) {
     close,
     open() {
       section.classList.add("is-open");
+      genericForm.hidden = false;
+      echeqForm.hidden = false;
+      history.hidden = false;
       history.open = false;
       if (accountDetails) accountDetails.open = false;
       showMenu();
@@ -470,6 +483,18 @@ function makeHub() {
   return { hub, invoiceButton, paymentButton };
 }
 
+function normalizeFinancialSeparation() {
+  const container = document.getElementById("billingDetailBody");
+  if (!container) return;
+
+  /* El observador visual anterior puede marcar como hidden los details que usa
+     cada flujo. Se restituyen solo los formularios e historiales de Finanzas;
+     la cuenta corriente conserva su propia disponibilidad por feature flag. */
+  container.querySelectorAll(".finance-flow-form, .finance-history").forEach((node) => {
+    node.hidden = false;
+  });
+}
+
 function setupFinancialActions() {
   if (document.getElementById(HUB_ID)) return;
   const invoiceSection = document.getElementById("financeSection");
@@ -497,6 +522,7 @@ function setupFinancialActions() {
     paymentButton.setAttribute("aria-pressed", String(flow === "payment"));
     if (flow === "invoice") invoiceFlow.open();
     if (flow === "payment") paymentFlow.open();
+    normalizeFinancialSeparation();
   };
 
   invoiceButton.addEventListener("click", () => setFlow("invoice"));
@@ -513,6 +539,8 @@ function scheduleEnhancement() {
   requestAnimationFrame(() => {
     scheduled = false;
     setupFinancialActions();
+    normalizeFinancialSeparation();
+    setTimeout(normalizeFinancialSeparation, 0);
   });
 }
 
