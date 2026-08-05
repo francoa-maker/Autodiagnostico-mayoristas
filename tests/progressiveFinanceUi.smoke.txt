@@ -1,6 +1,0 @@
-Cargar factura
-Informar pago
-Transferencia
-Efectivo
-eCheq
-Otro
