@@ -1,59 +1,58 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const source = fs.readFileSync(new URL("../public/assets/progressive-finance.js", import.meta.url), "utf8");
+const entry = fs.readFileSync(new URL("../public/assets/progressive-finance.js", import.meta.url), "utf8");
+const context = fs.readFileSync(new URL("../public/assets/finance-context.js", import.meta.url), "utf8");
+const invoice = fs.readFileSync(new URL("../public/assets/finance-invoice-drawer.js", import.meta.url), "utf8");
+const payment = fs.readFileSync(new URL("../public/assets/finance-payment-drawer.js", import.meta.url), "utf8");
+const common = fs.readFileSync(new URL("../public/assets/finance-common.js", import.meta.url), "utf8");
+const css = fs.readFileSync(new URL("../public/assets/finance-drawer.css", import.meta.url), "utf8");
 const server = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
 
-describe("selector financiero de dos acciones", () => {
-  it("muestra inicialmente solo cargar factura y cargar pago", () => {
-    expect(source).toContain('hub.id = HUB_ID');
-    expect(source).toContain('<strong>Cargar factura</strong>');
-    expect(source).toContain('<strong>Cargar pago</strong>');
-    expect(source).toContain('setFlow(null)');
-    expect(source).toContain('.finance-flow-panel {');
-    expect(source).toContain('.finance-flow-panel.is-open');
+describe("rediseño financiero con panel lateral", () => {
+  it("muestra sólo las dos acciones principales y abre un drawer por flujo", () => {
+    expect(entry).toContain('<strong>${title}</strong>');
+    expect(entry).toContain('title: "Cargar factura"');
+    expect(entry).toContain('title: "Cargar pago"');
+    expect(entry).toContain("openInvoiceDrawer");
+    expect(entry).toContain("openPaymentDrawer");
+    expect(css).toContain("#billingDetailBody #financeSection,");
+    expect(css).toContain("#billingDetailBody #accountSection { display: none !important; }");
+    expect(entry).toContain('invoiceSection.closest("#billingDetailBody")');
+    expect(entry).toContain("invoiceSection.hidden || paymentSection.hidden");
   });
 
-  it("abre un solo flujo por vez y permite volver al inicio", () => {
-    expect(source).toContain('invoiceFlow.hide();');
-    expect(source).toContain('paymentFlow.hide();');
-    expect(source).toContain('if (flow === "invoice") invoiceFlow.open();');
-    expect(source).toContain('if (flow === "payment") paymentFlow.open();');
-    expect(source).toContain('invoiceFlow.close.addEventListener("click", () => setFlow(null))');
-    expect(source).toContain('paymentFlow.close.addEventListener("click", () => setFlow(null))');
+  it("captura el pedido activo una sola vez sin modificar admin.js", () => {
+    expect(context).toContain("if (installed) return;");
+    expect(context).toContain("window.fetch = async");
+    expect(context).toContain("/api/admin/quotes/");
+    expect(context).toContain('emit("finance:context"');
   });
 
-  it("deja en factura solamente formulario e historial de facturas", () => {
-    expect(source).toContain('card.append(header, form, history);');
-    expect(source).toContain('makeHistory("Ver facturas cargadas"');
-    expect(source).not.toContain('makeHistory("Ver facturas cargadas", [\n    { label: "Pagos"');
+  it("crea facturas con fecha local, moneda y condición persistida antes del alta", () => {
+    expect(invoice).toContain("issueDate: localIsoDate()");
+    expect(invoice).toContain("currency: ctx.currency");
+    expect(invoice.indexOf("payment-condition")).toBeLessThan(invoice.indexOf("/invoices`, {"));
   });
 
-  it("deja pagos, eCheq y cuenta corriente dentro del flujo de pagos", () => {
-    for (const method of ["bank_transfer", "cash", "echeq", "other"]) {
-      expect(source).toContain(`["${method}"`);
+  it("separa historiales y acciones de facturas y pagos", () => {
+    expect(invoice).toContain('sourceId: "finInvoicesList"');
+    expect(invoice).not.toContain('sourceId: "paymentsList"');
+    for (const source of ["paymentsList", "echeqList", "accountBalance", "accountMovements"]) {
+      expect(payment).toContain(`sourceId: "${source}"`);
     }
-    expect(source).toContain('makeHistory("Ver pagos registrados"');
-    expect(source).toContain("finance-method-menu");
-    expect(source).toContain("finance-legacy-shell");
-    expect(source).toContain("finance-embedded-section");
-    expect(source).toContain('summary.textContent = "Ver cuenta corriente del cliente"');
+    expect(common).toContain("confirmDialog");
+    expect(common).toContain("data-payreverse");
+    expect(common).toContain("data-echrej");
   });
 
-  it("neutraliza las pestañas automáticas que mezclaban ambos flujos", () => {
-    expect(source).toContain('#billingDetailBody .v5-tabs { display: none !important; }');
-    expect(source).toContain('function normalizeFinancialSeparation()');
-    expect(source).toContain('container.querySelectorAll(".finance-flow-form, .finance-history")');
-  });
-
-  it("reutiliza los formularios existentes sin agregar APIs", () => {
-    for (const id of ["financeSection", "paymentsSection", "echeqSection", "accountSection", "finInvoicesList", "paymentsList", "payMethod"]) {
-      expect(source).toContain(`"${id}"`);
-    }
-    expect(source).not.toContain("/api/");
+  it("limita el ocultamiento de pestañas al detalle de facturación", () => {
+    expect(css).toContain("#billingDetailBody > .v5-tabs");
+    expect(css).not.toContain("#quoteDetailBody > .v5-tabs");
+    expect(css).not.toContain("#logiDetailAdmin > .v5-tabs");
   });
 
   it("carga la nueva versión sin caché", () => {
-    expect(server).toContain('/assets/progressive-finance.js?v=20260805-finance3');
+    expect(server).toContain('/assets/progressive-finance.js?v=20260806-drawer2');
   });
 });
