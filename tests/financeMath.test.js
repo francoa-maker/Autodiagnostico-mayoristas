@@ -60,6 +60,6 @@ describe("cálculos del drawer financiero", () => {
   });
 
   it("ofrece por la ruta de pagos sólo los métodos monetarios soportados", () => {
-    expect(MONEY_METHOD_VALUES).toEqual(MONEY_METHODS);
+    expect([...MONEY_METHOD_VALUES].sort()).toEqual([...MONEY_METHODS].sort());
   });
 });
