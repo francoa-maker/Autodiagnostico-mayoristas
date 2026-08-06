@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tierForQuantity, hasAnyWholesale, resolveWholesaleUnit } from "../src/pricing.js";
+import { WHOLESALE_DISCOUNT_PCT, tierForQuantity, hasAnyWholesale, resolveWholesaleUnit } from "../src/pricing.js";
 
 const val = (amount) => ({ state: "value", amount });
 
@@ -22,13 +22,17 @@ describe("resolveWholesaleUnit", () => {
     expect(resolveWholesaleUnit(prices, 2000, 10)).toEqual({ state: "value", amount: 800, source: "tier" });
   });
 
-  it("falls back to 15% off PVP when there is NO wholesale price at all", () => {
-    const r = resolveWholesaleUnit({}, 1000, 1);
-    expect(r).toEqual({ state: "value", amount: 850, source: "pvp_discount" });
+  it("uses a 20% automatic discount", () => {
+    expect(WHOLESALE_DISCOUNT_PCT).toBe(20);
   });
 
-  it("uses 15% off PVP for any quantity when no wholesale exists", () => {
-    expect(resolveWholesaleUnit({}, 1000, 20).amount).toBe(850);
+  it("falls back to 20% off PVP when there is NO wholesale price at all", () => {
+    const r = resolveWholesaleUnit({}, 1000, 1);
+    expect(r).toEqual({ state: "value", amount: 800, source: "pvp_discount" });
+  });
+
+  it("uses 20% off PVP for any quantity when no wholesale exists", () => {
+    expect(resolveWholesaleUnit({}, 1000, 20).amount).toBe(800);
   });
 
   it("says consultar when a tier is missing but other wholesale prices exist", () => {
