@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/cobranzas-clientes-saldo-favor
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
