@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -95,7 +96,7 @@ describe("UX v5 architecture", () => {
 
   it("the v5 modules parse with Node", () => {
     for (const path of ["public/assets/client-v5-shell.js", "public/assets/admin-v5-shell.js"]) {
-      execFileSync(process.execPath, ["--check", new URL(`../${path}`, import.meta.url).pathname]);
+      execFileSync(process.execPath, ["--check", fileURLToPath(new URL(`../${path}`, import.meta.url))]);
     }
   });
 
