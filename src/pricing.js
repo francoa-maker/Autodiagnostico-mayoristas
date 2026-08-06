@@ -2,12 +2,12 @@
 // Reglas (definidas con el cliente):
 //  1) Si existe precio para el tier que corresponde a la cantidad → ese.
 //  2) Si el producto NO tiene NINGÚN precio mayorista (1u/4u/8u) → PVP menos
-//     15% (el PVP ya viene con fallback a precio_web desde Supabase).
+//     20% (el PVP ya viene con fallback a precio_web desde Supabase).
 //  3) Si tiene algún precio mayorista pero NO para el tier pedido (p. ej. pide
 //     más unidades de las estipuladas) → "consultar" (no $0).
 //  4) Si no hay tier ni PVP → "consultar".
 
-export const WHOLESALE_DISCOUNT_PCT = 15;
+export const WHOLESALE_DISCOUNT_PCT = 20;
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
