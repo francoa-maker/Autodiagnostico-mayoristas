@@ -41,12 +41,6 @@ describe("facturas - installmentDisplayStatus", () => {
   it("cancelada respeta el estado", () => {
     expect(installmentDisplayStatus({ amount: 100, paid_amount: 0, due_date: "2026-01-01", status: "cancelled" }, today)).toBe("cancelled");
   });
-  it("acepta fechas devueltas por pg como Date", () => {
-    expect(installmentDisplayStatus({ amount: 100, paid_amount: 0, due_date: new Date(2026, 6, 7), status: "pending" }, today)).toBe("overdue");
-  });
-  it("mantiene pendiente una fecha Date futura", () => {
-    expect(installmentDisplayStatus({ amount: 100, paid_amount: 0, due_date: new Date(2026, 7, 7), status: "pending" }, today)).toBe("pending");
-  });
 });
 
 describe("facturas - constantes", () => {

@@ -15,26 +15,14 @@ export const INVOICE_TYPES = ["A", "B", "C", "E", "nota_credito", "nota_debito",
 function round2(n) { return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
 function isValidDate(s) { return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s); }
 
-function dueDateKey(value) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, "0");
-    const d = String(value.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-  const raw = String(value || "").slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
-}
-
 // Estado a mostrar de una cuota (deriva de paid_amount + due_date).
 export function installmentDisplayStatus(inst, today = new Date()) {
   const amount = Number(inst.amount);
   const paid = Number(inst.paid_amount);
   if (inst.status === "cancelled") return "cancelled";
   if (paid >= amount - 0.005) return "paid";
-  const dueKey = dueDateKey(inst.due_date);
-  const todayKey = dueDateKey(today);
-  const overdue = Boolean(dueKey && todayKey && dueKey < todayKey);
+  const due = new Date(inst.due_date + "T23:59:59");
+  const overdue = due < today;
   if (paid > 0) return overdue ? "overdue" : "partially_paid";
   return overdue ? "overdue" : "pending";
 }

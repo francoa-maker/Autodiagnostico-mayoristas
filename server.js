@@ -13,7 +13,6 @@ import salesManagementRouter from "./src/routes/salesManagement.js";
 import profileRouter from "./src/routes/profile.js";
 import documentsRouter from "./src/routes/documents.js";
 import financeRouter from "./src/routes/finance.js";
-import collectionsRouter from "./src/routes/collections.js";
 import logisticsRouter from "./src/routes/logistics.js";
 import { startEmailWorker } from "./src/email/worker.js";
 
@@ -24,7 +23,7 @@ const adminHtml = fs
   .readFileSync(path.join(publicDir, "admin.html"), "utf8")
   .replace(
     "</body>",
-    '<script type="module" src="/assets/sales-management.js?v=20260804-sales1"></script>\n<script type="module" src="/assets/progressive-finance.js?v=20260806-payments1"></script>\n<script type="module" src="/assets/sidebar-overflow-fix.js?v=20260806-sidebar1"></script>\n</body>'
+    '<script type="module" src="/assets/sales-management.js?v=20260804-sales1"></script>\n<script type="module" src="/assets/progressive-finance.js?v=20260806-drawer2"></script>\n<script type="module" src="/assets/sidebar-overflow-fix.js?v=20260806-sidebar1"></script>\n</body>'
   );
 
 // Express 4 does not forward rejected promises from async route handlers to
@@ -82,7 +81,6 @@ app.use("/api", wrapRouterErrors(profileRouter));
 app.use("/api", wrapRouterErrors(catalogRouter));
 app.use("/api", wrapRouterErrors(quotesRouter));
 app.use("/api", wrapRouterErrors(documentsRouter));
-app.use("/api", wrapRouterErrors(collectionsRouter));
 app.use("/api", wrapRouterErrors(financeRouter));
 app.use("/api", wrapRouterErrors(logisticsRouter));
 app.use("/api", wrapRouterErrors(salesManagementRouter));
