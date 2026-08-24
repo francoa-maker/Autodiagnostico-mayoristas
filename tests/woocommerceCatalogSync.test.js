@@ -79,3 +79,40 @@ describe("WooCommerce catalog sync", () => {
     expect(String(fetchImpl.mock.calls[1][0])).toContain("page=2");
   });
 });
+
+describe("Modo agregar productos nuevos", () => {
+  const web = [
+    { sku: "A", skuNormalized: "A" },
+    { sku: "B", skuNormalized: "B" },
+    { sku: "C", skuNormalized: "C" }
+  ];
+  const portal = [
+    { id: "1", sku: "A", sku_normalized: "A", active: true },
+    { id: "2", sku: "B", sku_normalized: "B", active: false },
+    { id: "3", sku: "D", sku_normalized: "D", active: true }
+  ];
+
+  it("con deactivateMissing:false no desactiva nada pero informa los faltantes", () => {
+    const plan = buildWooSyncPlan(web, portal, { deactivateMissing: false });
+    expect(plan.created.map((item) => item.sku)).toEqual(["C"]);
+    expect(plan.deactivated).toEqual([]);
+    expect(plan.missingFromWeb.map((item) => item.sku)).toEqual(["D"]);
+  });
+
+  it("la sincronizacion completa sigue desactivando por defecto", () => {
+    const plan = buildWooSyncPlan(web, portal);
+    expect(plan.deactivated.map((item) => item.sku)).toEqual(["D"]);
+    expect(plan.missingFromWeb.map((item) => item.sku)).toEqual(["D"]);
+  });
+
+  it("no crea nada cuando la web no aporta SKU nuevos", () => {
+    const plan = buildWooSyncPlan(
+      [{ sku: "A", skuNormalized: "A" }],
+      [{ id: "1", sku: "A", sku_normalized: "A", active: true }],
+      { deactivateMissing: false }
+    );
+    expect(plan.created).toEqual([]);
+    expect(plan.deactivated).toEqual([]);
+    expect(plan.missingFromWeb).toEqual([]);
+  });
+});
