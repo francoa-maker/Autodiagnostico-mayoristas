@@ -75,13 +75,14 @@ export function prepareWooProducts(rawProducts, knownBrands = []) {
   return { products, skippedNoSku, duplicateWebSkus };
 }
 
-export function buildWooSyncPlan(webProducts, portalProducts) {
+export function buildWooSyncPlan(webProducts, portalProducts, { deactivateMissing = true } = {}) {
   const portalBySku = new Map((portalProducts || []).filter((row) => row.sku_normalized).map((row) => [row.sku_normalized, row]));
   const webSkuSet = new Set((webProducts || []).map((row) => row.skuNormalized));
   const created = [];
   const reactivated = [];
   const unchanged = [];
   const deactivated = [];
+  const missingFromWeb = [];
 
   for (const product of webProducts || []) {
     const current = portalBySku.get(product.skuNormalized);
@@ -90,13 +91,17 @@ export function buildWooSyncPlan(webProducts, portalProducts) {
     else unchanged.push({ current, product });
   }
 
+  // Los faltantes se listan siempre para poder informarlos, pero sólo pasan a
+  // `deactivated` cuando la sincronización completa lo pide. El botón "Agregar
+  // productos nuevos" usa deactivateMissing:false para no tocar nada existente.
   for (const current of portalProducts || []) {
     if (current.active && current.sku_normalized && !webSkuSet.has(current.sku_normalized)) {
-      deactivated.push(current);
+      missingFromWeb.push(current);
+      if (deactivateMissing) deactivated.push(current);
     }
   }
 
-  return { created, reactivated, unchanged, deactivated };
+  return { created, reactivated, unchanged, deactivated, missingFromWeb };
 }
 
 export async function fetchWooCommerceCatalog({ baseUrl = process.env.WOOCOMMERCE_STORE_URL || DEFAULT_STORE_URL, fetchImpl = fetch } = {}) {

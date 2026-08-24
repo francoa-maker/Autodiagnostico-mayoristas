@@ -24,7 +24,7 @@ const adminHtml = fs
   .readFileSync(path.join(publicDir, "admin.html"), "utf8")
   .replace(
     "</body>",
-    '<script type="module" src="/assets/sales-management.js?v=20260804-sales1"></script>\n<script type="module" src="/assets/progressive-finance.js?v=20260806-drawer2"></script>\n<script type="module" src="/assets/sidebar-overflow-fix.js?v=20260806-sidebar1"></script>\n<script type="module" src="/assets/woocommerce-sync.js?v=20260824-sync1"></script>\n</body>'
+    '<script type="module" src="/assets/sales-management.js?v=20260804-sales1"></script>\n<script type="module" src="/assets/progressive-finance.js?v=20260806-drawer2"></script>\n<script type="module" src="/assets/sidebar-overflow-fix.js?v=20260806-sidebar1"></script>\n<script type="module" src="/assets/woocommerce-sync.js?v=20260824-addnew1"></script>\n</body>'
   );
 
 // Express 4 does not forward rejected promises from async route handlers to

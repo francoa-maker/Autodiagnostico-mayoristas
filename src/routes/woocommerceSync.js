@@ -24,24 +24,41 @@ async function loadKnownBrands() {
   return result.rows.map((row) => row.brand);
 }
 
-function summarize(rawCount, prepared, plan) {
+// "full" reconcilia en ambas direcciones (crea, reactiva y desactiva).
+// "add-new" sólo inserta los SKU publicados que faltan: no reactiva, no
+// desactiva y no reescribe ninguna fila existente.
+function resolveMode(body) {
+  return body?.mode === "add-new" ? "add-new" : "full";
+}
+
+function summarize(rawCount, prepared, plan, mode) {
+  const addNew = mode === "add-new";
   return {
+    mode,
     webProducts: rawCount,
     validWebProducts: prepared.products.length,
     skippedNoSku: prepared.skippedNoSku,
     duplicateWebSkus: prepared.duplicateWebSkus,
     created: plan.created.length,
-    reactivated: plan.reactivated.length,
-    deactivated: plan.deactivated.length,
+    // En "add-new" nada se reactiva ni se desactiva: esos dos grupos se
+    // informan aparte (inactiveInPortal / missingFromWeb) para que el resumen
+    // no diga que se tocaron filas que quedaron intactas.
+    reactivated: addNew ? 0 : plan.reactivated.length,
+    deactivated: addNew ? 0 : plan.deactivated.length,
     unchanged: plan.unchanged.length,
+    inactiveInPortal: addNew ? plan.reactivated.length : 0,
+    missingFromWeb: plan.missingFromWeb.length,
     newSkus: plan.created.map((item) => item.sku).slice(0, 100),
-    reactivatedSkus: plan.reactivated.map((item) => item.product.sku).slice(0, 100),
+    reactivatedSkus: addNew ? [] : plan.reactivated.map((item) => item.product.sku).slice(0, 100),
     removedSkus: plan.deactivated.map((item) => item.sku).slice(0, 100)
   };
 }
 
 router.post("/admin/catalog/sync-woocommerce", canCatalog, async (req, res) => {
   if (!pool) return res.status(503).json({ error: "db_unavailable" });
+
+  const mode = resolveMode(req.body);
+  const planOptions = { deactivateMissing: mode === "full" };
 
   let rawProducts;
   try {
@@ -64,8 +81,8 @@ router.post("/admin/catalog/sync-woocommerce", canCatalog, async (req, res) => {
   }
 
   const portalProducts = await loadPortalProducts();
-  const previewPlan = buildWooSyncPlan(prepared.products, portalProducts);
-  const preview = summarize(rawProducts.length, prepared, previewPlan);
+  const previewPlan = buildWooSyncPlan(prepared.products, portalProducts, planOptions);
+  const preview = summarize(rawProducts.length, prepared, previewPlan, mode);
 
   if (req.body?.apply !== true) {
     return res.json({ ok: true, preview: true, summary: preview });
@@ -73,7 +90,7 @@ router.post("/admin/catalog/sync-woocommerce", canCatalog, async (req, res) => {
 
   const applied = await withTransaction(async (client) => {
     const currentProducts = await loadPortalProducts(client);
-    const plan = buildWooSyncPlan(prepared.products, currentProducts);
+    const plan = buildWooSyncPlan(prepared.products, currentProducts, planOptions);
 
     for (const product of plan.created) {
       await client.query(
@@ -84,7 +101,8 @@ router.post("/admin/catalog/sync-woocommerce", canCatalog, async (req, res) => {
       );
     }
 
-    for (const entry of plan.reactivated) {
+    const reactivations = mode === "add-new" ? [] : plan.reactivated;
+    for (const entry of reactivations) {
       await client.query(
         `update portal.products
          set active = true,
@@ -110,12 +128,12 @@ router.post("/admin/catalog/sync-woocommerce", canCatalog, async (req, res) => {
       );
     }
 
-    return summarize(rawProducts.length, prepared, plan);
+    return summarize(rawProducts.length, prepared, plan, mode);
   });
 
   await recordAudit({
     actorUserId: req.user.id,
-    action: "catalog.sync.woocommerce",
+    action: mode === "add-new" ? "catalog.sync.woocommerce.addNew" : "catalog.sync.woocommerce",
     entityType: "product",
     metadata: applied
   });
